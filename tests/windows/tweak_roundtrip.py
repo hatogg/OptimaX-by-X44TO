@@ -168,25 +168,25 @@ def service_starts() -> dict:
     """Тип запуску кожної служби І драйвера прямо з реєстру (за частку секунди замість ~10 с через CIM).
     Драйвери теж: побічна зміна запуску драйвера (клавіатура, диск, USB) — найгірше, що може зробити твік."""
     import winreg
-    out = {}
-    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services") as root:
-        i = 0
+    out, base = {}, r"SYSTEM\CurrentControlSet\Services"
+    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, base) as root:
+        names = []
         while True:
             try:
-                name = winreg.EnumKey(root, i)
+                names.append(winreg.EnumKey(root, len(names)))
             except OSError:
                 break
-            i += 1
-            try:
-                with winreg.OpenKey(root, name) as k:
-                    start = winreg.QueryValueEx(k, "Start")[0]
-                    try:
-                        delayed = winreg.QueryValueEx(k, "DelayedAutostart")[0]
-                    except OSError:
-                        delayed = 0
-            except OSError:
-                continue
-            out[name] = f"{start}{' delayed' if delayed else ''}"
+    for name in names:
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, base + "\\" + name) as k:
+                start = winreg.QueryValueEx(k, "Start")[0]
+                try:
+                    delayed = winreg.QueryValueEx(k, "DelayedAutostart")[0]
+                except OSError:
+                    delayed = 0
+        except OSError:
+            continue
+        out[name] = f"{start}{' delayed' if delayed else ''}"
     return out
 
 

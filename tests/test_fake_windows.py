@@ -33,7 +33,7 @@ def test_every_tweak_round_trips(hw):
     assert all(b["records"] >= 200 for b in rep["batches"])
 
 
-@cases("bug", ["svc", "reg", "rescue"])
+@cases("bug", ["svc", "reg", "rescue", "task"])
 def test_broken_rollback_is_caught(bug):
     rc, rep, _ = fake("gaming", bug)
     assert rc == 1 and not rep["ok"], f"FAKE_BUG={bug} was not detected"

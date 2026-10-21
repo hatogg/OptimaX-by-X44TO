@@ -2,7 +2,7 @@
 «існує», як на справжній системі), sc / schtasks / powercfg / bcdedit / netsh / reg, запити PowerShell і виконання
 згенерованого OptimaX-Rescue.cmd /all (та підмножина cmd, яку він використовує).
 
-    python tests/scripts/fake_windows.py --out DIR      FAKE_HW=gaming|laptop|old   FAKE_BUG=svc|reg|rescue
+    python tests/scripts/fake_windows.py --out DIR      FAKE_HW=gaming|laptop|old   FAKE_BUG=svc|reg|rescue|task
 
 Перевіряє саму логіку перевірки й команди Rescue-файлу. Справжню Windows це не замінює — для неї CI запускає
 tests/windows/tweak_roundtrip.py на windows-2022 / windows-2025."""
@@ -286,6 +286,8 @@ def run_argv(a):
         if "/change" in low:
             if tn.lower() not in TASKS:
                 return 1, "ERROR: The system cannot find the file specified."
+            if BUG == "task" and "/enable" in low:  # зламаний відкат: задача лишається вимкненою
+                return 0, "SUCCESS"
             TASKS[tn.lower()] = "/enable" in low
             return 0, "SUCCESS"
         return 0, ""
@@ -350,6 +352,14 @@ def run_argv(a):
 
 def fake_ps(code):
     PS_LOG.append(code[-200:])
+    if "foreach ($n in @(" in code and "Get-ScheduledTask" in code:  # task_states() перевірки твіків
+        arr = code.split("foreach ($n in @(", 1)[1].split("))", 1)[0]
+        names = [n.replace("''", "'") for n in re.findall(r"'((?:[^']|'')*)'", arr)]
+        out = []
+        for n in names:
+            st = TASKS.get(n.lower())
+            out.append(f"{n}|{'MISSING' if st is None else 'Ready' if st else 'Disabled'}")
+        return 0, "\n".join(out)
     m = re.search(r"Get-ScheduledTask -TaskPath '([^']*)' -TaskName '([^']*)'", code)
     if m:
         name = (m.group(1) + m.group(2)).lower()
