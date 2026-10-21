@@ -12,7 +12,7 @@ body:
     attributes:
       label: "Версія OptimaX · OptimaX version"
       description: "Видно в заголовку вікна й унизу бічного меню · Shown in the window title and at the bottom of the sidebar"
-      placeholder: "6.3.3"
+      placeholder: "6.3.4"
     validations:
       required: true
   - type: dropdown
