@@ -81,7 +81,8 @@ def roundtrip(path):
     if not os.path.exists(path):
         return [("tweak round-trip", f"no report at {path}: the harness crashed")]
     rep = json.load(open(path, encoding="utf-8"))
-    out = [(f"tweak {r['id']}", "\n".join(r.get("problems", [])[:8])) for r in rep.get("tweaks", []) if r["status"] == "fail"]
+    out = [("tweak round-trip", p) for p in rep.get("problems", [])]
+    out += [(f"tweak {r['id']}", "\n".join(r.get("problems", [])[:8])) for r in rep.get("tweaks", []) if r["status"] == "fail"]
     for b in rep.get("batches", []):
         if b.get("problems"):
             out.append((f"batch via {b['how']}", "\n".join(b["problems"][:12]) + ("\n" + b.get("rescue_out", "")[-600:]

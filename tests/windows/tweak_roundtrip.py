@@ -49,6 +49,8 @@ def parse_args():
     ap.add_argument("--no-batch", action="store_true")
     ap.add_argument("--no-rescue", action="store_true")
     ap.add_argument("--yes-change-this-pc", action="store_true")
+    ap.add_argument("--budget-min", type=float, default=0,
+                    help="stop starting new checks after this many minutes and still write the report")
     return ap.parse_args()
 
 
@@ -95,16 +97,28 @@ def reg_matches_target(cur, value) -> bool:
     return str(cur[1]).lower() == str(value).lower()
 
 
+def task_states(names) -> dict:
+    """{задача: True (увімкнена) | False | None (немає)} — одним запуском PowerShell на всі задачі (кожен запуск
+    коштує 1–3 с, а твіки вимикають до півтора десятка задач). Стан із PowerShell не перекладається, на відміну
+    від schtasks."""
+    names = sorted(set(names))
+    if not names:
+        return {}
+    arr = ",".join("'" + n.replace("'", "''") + "'" for n in names)
+    q = (f"foreach ($n in @({arr})) {{ $i = $n.LastIndexOf('\\'); "
+         "$t = Get-ScheduledTask -TaskPath ($n.Substring(0, $i + 1)) -TaskName ($n.Substring($i + 1)) "
+         "-ErrorAction SilentlyContinue; if ($t) { $n + '|' + [string]$t.State } else { $n + '|MISSING' } }")
+    _, out = E.ps(q, 120, ro=True)
+    res = {n: None for n in names}
+    for ln in out.splitlines():
+        n, _, state = ln.strip().rpartition("|")
+        if n in res and state and state != "MISSING":
+            res[n] = state != "Disabled"
+    return res
+
+
 def task_enabled(name: str):
-    """True / False / None (задачі немає). Стан із PowerShell не перекладається, на відміну від schtasks."""
-    path, _, leaf = name.rpartition("\\")
-    q = (f"$t = Get-ScheduledTask -TaskPath '{path}\\' -TaskName '{leaf}' -ErrorAction SilentlyContinue; "
-         "if ($t) { [string]$t.State } else { 'MISSING' }")
-    _, out = E.ps(q, 40, ro=True)
-    state = (out.strip().splitlines() or [""])[-1].strip()
-    if not state or state == "MISSING":
-        return None
-    return state != "Disabled"
+    return task_states([name]).get(name)
 
 
 def pw_now(rec_or_op, scheme=None):
@@ -150,13 +164,38 @@ def key_of(tg) -> str:
     return f"pw:{sub}:{setting}:{mode}"
 
 
+def service_starts() -> dict:
+    """Тип запуску кожної служби І драйвера прямо з реєстру (за частку секунди замість ~10 с через CIM).
+    Драйвери теж: побічна зміна запуску драйвера (клавіатура, диск, USB) — найгірше, що може зробити твік."""
+    import winreg
+    out = {}
+    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services") as root:
+        i = 0
+        while True:
+            try:
+                name = winreg.EnumKey(root, i)
+            except OSError:
+                break
+            i += 1
+            try:
+                with winreg.OpenKey(root, name) as k:
+                    start = winreg.QueryValueEx(k, "Start")[0]
+                    try:
+                        delayed = winreg.QueryValueEx(k, "DelayedAutostart")[0]
+                    except OSError:
+                        delayed = 0
+            except OSError:
+                continue
+            out[name] = f"{start}{' delayed' if delayed else ''}"
+    return out
+
+
 def invariants() -> dict:
-    """Загальний стан, який твіки можуть зачепити побічно: схема живлення, BCD, TCP, типи запуску служб."""
+    """Загальний стан, який твіки можуть зачепити побічно: схема живлення, BCD, TCP, запуск служб і драйверів."""
     inv = {"scheme": E.active_scheme()}
     inv["bcd"] = E.run("bcdedit /enum {current} /v", 20, ro=True)[1]
     inv["tcp"] = E.run("netsh int tcp show global", 20, ro=True)[1]
-    rc, out = E.ps("Get-CimInstance Win32_Service | ForEach-Object { $_.Name + '=' + $_.StartMode }", 60, ro=True)
-    inv["services"] = dict(ln.strip().split("=", 1) for ln in out.splitlines() if "=" in ln)
+    inv["services"] = service_starts()
     return inv
 
 
@@ -183,8 +222,8 @@ def record_key(rec) -> str:
     return f"{t}:{rec.get('c') or rec.get('k')}"
 
 
-def restored(rec):
-    """-> (перевірено, гаразд, опис) для одного запису журналу відкату."""
+def restored(rec, tasks=None):
+    """-> (перевірено, гаразд, опис) для одного запису журналу відкату. tasks — готові task_states()."""
     t = rec["t"]
     if t == "reg":
         cur = reg_now(rec["p"], rec["n"])
@@ -193,7 +232,7 @@ def restored(rec):
         cur = E.svc_get_start(rec["n"])
         return True, cur == rec["old"], f"service {rec['n']}: now {cur}, expected {rec['old']}"
     if t == "task":
-        en = task_enabled(rec["n"])
+        en = tasks[rec["n"]] if tasks is not None and rec["n"] in tasks else task_enabled(rec["n"])
         return True, en is not False, f"task {rec['n']}: still disabled"
     if t == "pw":
         if rec.get("old") is None:
@@ -256,9 +295,10 @@ def roundtrip(t, hw) -> dict:
             r["problems"].append(f"service {tg[1]}: {cur}, wanted {tg[2]}")
         elif k == "pw" and cur is not None and cur != int(tg[3]):
             r["problems"].append(f"power {tg[1][2]}: {cur}, wanted {tg[3]}")
-    for rec in undo:
-        if rec["t"] == "task" and task_enabled(rec["n"]):
-            r["problems"].append(f"task still enabled: {rec['n']}")
+    states = task_states(rec["n"] for rec in undo if rec["t"] == "task")
+    for n, en in states.items():
+        if en:
+            r["problems"].append(f"task still enabled: {n}")
     if any(op[0] == "reg" and not callable(op[3]) for op in t.ops) and not E.probe(t):
         r["problems"].append("probe() says not applied right after applying")
     if t.reversible and not undo and any(op[0] != "live" for op in t.ops) and pre and \
@@ -277,8 +317,9 @@ def roundtrip(t, hw) -> dict:
     first = {}  # один ключ можна змінити двічі (вимкнути, потім «вручну») — початковий стан у першому записі
     for rec in undo:
         first.setdefault(record_key(rec), rec)
+    tasks = task_states(rec["n"] for rec in first.values() if rec["t"] == "task")
     for rec in first.values():
-        checked, ok, what = restored(rec)
+        checked, ok, what = restored(rec, tasks)
         if not checked:
             r["unchecked"] += 1
         elif not ok:
@@ -344,8 +385,9 @@ def batch(items, hw, how: str) -> dict:
     if E.JOURNAL.count():  # прибрати за собою, щоб наступний етап почався з чистої системи
         E.undo_ids(E.JOURNAL.newest_first(), lambda *_: None)
     unchecked = 0
+    tasks = task_states(rec["n"] for rec in first.values() if rec["t"] == "task")
     for k, rec in first.items():
-        checked, ok, what = restored(rec)
+        checked, ok, what = restored(rec, tasks)
         unchecked += not checked
         if checked and not ok:
             r["problems"].append("NOT RESTORED: " + what)
@@ -394,6 +436,7 @@ def write_report(rep: dict) -> None:
           f"{'passed' if rep['ok'] else 'FAILED'}", "",
           f"{s['pass']} passed · {s['fail']} failed · {s['allowed']} allowed failures · {s['skip']} not applicable · "
           f"{s['excluded']} excluded · {rep['seconds']:.0f} s", ""]
+    md += [f"- **{p}**" for p in rep.get("problems", [])] + ([""] if rep.get("problems") else [])
     bad = [r for r in rep["tweaks"] if r["status"] in ("fail", "allowed")]
     if bad:
         md += ["| tweak | result | problems |", "|---|---|---|"]
@@ -420,25 +463,37 @@ def main() -> int:
     hw = H.detect_hw()
     items, skipped = eligible(hw)
     print(f"{hw.get('os')} build {E.win_build()} · {len(items)} tweaks to check, {len(skipped)} excluded", flush=True)
-    results = []
+    budget = ARGS.budget_min * 60
+    over = lambda: budget and time.time() - t_start > budget  # noqa: E731
+    results, problems = [], []
     for i, t in enumerate(items, 1):
+        if over():
+            problems.append(f"time budget of {ARGS.budget_min:.0f} min ran out: {len(items) - i + 1} of {len(items)} "
+                            f"tweaks not checked, starting with {t.id}")
+            break
         r = roundtrip(t, hw)
         results.append(r)
-        print(f"[{i}/{len(items)}] {r['status']:7} {t.id}" + (f" — {r['problems'][0][:150]}" if r["problems"] else ""),
-              flush=True)
+        print(f"[{i}/{len(items)}] {r['status']:7} {t.id} · {time.time() - t_start:.0f} s" +
+              (f" — {r['problems'][0][:150]}" if r["problems"] else ""), flush=True)
+        if r.get("apply_s", 0) > 120 and os.environ.get("GITHUB_ACTIONS"):
+            print(f"::warning title=slow tweak {t.id}::applying took {r['apply_s']:.0f} s", flush=True)
     batches = []
     if not ARGS.no_batch:
         ok_ids = {r["id"] for r in results if r["status"] == "pass"}
         plan = [t for t in items if t.id in ok_ids]
         for how in (() if ARGS.no_rescue else ("rescue",)) + ("journal",):
+            if over():
+                problems.append(f"time budget ran out before the batch via {how}")
+                continue
             b = batch(plan, hw, how)
             batches.append(b)
-            print(f"batch via {how}: {len(b['problems'])} problems", flush=True)
+            print(f"batch via {how}: {len(b['problems'])} problems · {time.time() - t_start:.0f} s", flush=True)
     summary = {k: sum(r["status"] == k for r in results) for k in ("pass", "fail", "allowed", "skip")}
     summary["excluded"] = len(skipped)
-    ok = summary["fail"] == 0 and all(not b["problems"] for b in batches)
+    ok = summary["fail"] == 0 and all(not b["problems"] for b in batches) and not problems
     rep = {"ok": ok, "os": hw.get("os"), "build": E.win_build(), "cpu": hw.get("cpu"), "summary": summary,
-           "seconds": time.time() - t_start, "tweaks": results, "batches": batches, "excluded": skipped}
+           "seconds": time.time() - t_start, "problems": problems, "tweaks": results, "batches": batches,
+           "excluded": skipped}
     write_report(rep)
     print(open(os.path.join(ARGS.out, "roundtrip.md"), encoding="utf-8").read())
     return 0 if ok else 1

@@ -115,7 +115,7 @@ jobs:
     name: Windows ${{ matrix.os }} · tweak round-trip (real system)
     if: ${{ !inputs.quick }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -126,7 +126,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Apply → verify → undo → verify every tweak, then batches via OptimaX-Rescue.cmd and the journal
-        run: python tests/windows/tweak_roundtrip.py --out "${{ runner.temp }}\roundtrip"
+        run: python tests/windows/tweak_roundtrip.py --out "${{ runner.temp }}\roundtrip" --budget-min 150
       - name: Why it failed
         if: failure()
         run: python tests/ci_annotate.py roundtrip "${{ runner.temp }}\roundtrip\roundtrip.json"
