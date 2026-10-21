@@ -31,7 +31,10 @@ def test_old_windows10_builds_hide_missing_settings():
 def test_services_tweak_touches_only_its_list_and_repairs_63():
     rc, out, r = run_script("services_repair.py")
     assert rc == 0 and r, tail(out)
-    assert r["applied"] == r["force_off"] and "SharedAccess" not in r["applied"], r["applied"]
+    # на справжній Windows частини служб немає або вони вже вимкнені — тоді твік їх пропускає
+    assert r["applied"] and set(r["applied"]) <= set(r["force_off"]), r["applied"]
+    assert IS_WIN or r["applied"] == r["force_off"], r["applied"]
+    assert "SharedAccess" not in r["force_off"], r["force_off"]
     assert r["before"] == ["ETDService", "LenovoFnAndFunctionKeys", "SharedAccess"] and r["n1"] == 3, r
     assert r["left"] == ["DiagTrack"] and r["again"] == 0, r
     assert r["n2"] == 1 and r["popped"], r
