@@ -1,7 +1,9 @@
-# OptimaX — реліз за тегом:  git tag v6.3 && git push origin v6.3
-# Тег має збігатися з VERSION у engine.py. Спершу проходить увесь CI (зокрема твіки на справжній Windows),
-# і лише тоді на GitHub з'являється реліз з інсталятором, портативною версією, Rescue-запускачем,
-# SHA256SUMS.txt і маніфестами winget. Саме звідси вбудоване оновлення OptimaX бере нові версії.
+# OptimaX — реліз. Два способи запуску:
+#   1) кнопка Actions → Release → Run workflow: реліз версії з VERSION у engine.py, тег v<версія> створить сам workflow;
+#   2) тег:  git tag v6.3 && git push origin v6.3  (тег має збігатися з VERSION у engine.py).
+# Спершу проходить увесь CI (зокрема твіки на справжній Windows), і лише тоді на GitHub з'являється реліз
+# з інсталятором, портативною версією, Rescue-запускачем, SHA256SUMS.txt і маніфестами winget.
+# Саме звідси вбудоване оновлення OptimaX бере нові версії.
 # Якщо реліз уже створено з власної збірки (tools/publish_github.ps1 -Release), CI лише перевіряє код
 # і файли релізу не чіпає.
 # Підпис коду (необов'язково): секрети OPTIMAX_PFX_BASE64 (сертифікат .pfx у base64) і OPTIMAX_PFX_PASS.
@@ -10,22 +12,28 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   version:
-    name: Tag matches engine.py
+    name: Version from engine.py
     runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
-      - run: |
+      - id: v
+        run: |
           v="$(python3 packaging/release.py version)"
-          if [ "v$v" != "$GITHUB_REF_NAME" ]; then
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "v$v" != "$GITHUB_REF_NAME" ]; then
             echo "::error::Tag $GITHUB_REF_NAME does not match VERSION = \"$v\" in engine.py"
             exit 1
           fi
+          echo "tag=v$v" >> "$GITHUB_OUTPUT"
+          echo "Release v$v from $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
 
   ci:
     needs: version
@@ -34,7 +42,7 @@ jobs:
 
   publish:
     name: GitHub release
-    needs: ci
+    needs: [version, ci]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -45,18 +53,21 @@ jobs:
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            echo "::notice::Release $GITHUB_REF_NAME already exists (published from a local build with tools/publish_github.ps1): its files stay as they are."
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "::notice::Release $TAG already exists (published earlier or from a local build): its files stay as they are."
             exit 0
           fi
-          v="${GITHUB_REF_NAME#v}"
+          v="${TAG#v}"
           (cd dist && zip -qr "../OptimaX-$v-winget-manifests.zip" winget)
           # нотатки — розділ цієї версії з CHANGELOG.md, далі список файлів
           awk -v v="$v" '/^## /{ if (p) exit; if (index($0, "## [" v "]") == 1 || index($0, "## " v) == 1) { p = 1; next } }
                          /^\[[0-9]/{ if (p) exit } p' CHANGELOG.md > notes.md
           [ -s notes.md ] || echo "OptimaX $v" > notes.md
           printf '\n---\n\n**Файли · Files:** `OptimaX-Setup-%s.exe` — інсталятор · installer, `OptimaX-%s-portable.exe` — без встановлення · portable, `OptimaX-Rescue.cmd` — аварійний відкат · emergency rollback. Контрольні суми · checksums: `SHA256SUMS.txt`.\n' "$v" "$v" >> notes.md
-          gh release create "$GITHUB_REF_NAME" --verify-tag --title "OptimaX $v" --notes-file notes.md \
+          # з тегу — реліз саме з нього; з кнопки — тег створюється тут, на перевіреному коміті
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then where=(--verify-tag); else where=(--target "$GITHUB_SHA"); fi
+          gh release create "$TAG" "${where[@]}" --title "OptimaX $v" --notes-file notes.md \
             "dist/OptimaX-Setup-$v.exe" "dist/OptimaX-$v-portable.exe" dist/OptimaX-Rescue.cmd \
             dist/SHA256SUMS.txt "OptimaX-$v-winget-manifests.zip"

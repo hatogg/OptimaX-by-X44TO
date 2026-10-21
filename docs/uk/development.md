@@ -48,7 +48,7 @@ build_installer.bat
 
 **Своя збірка:** запустіть `build_installer.bat` і `build.bat`, потім `tools\publish_github.ps1 -Release`. Скрипт створить реліз `v<версія>` з файлами з `Output\` і їхніми `SHA256SUMS.txt`; workflow релізу в CI побачить, що реліз уже є, і ваші файли не чіпатиме.
 
-**Збірка в GitHub Actions:**
+**Збірка в GitHub Actions:** вкладка Actions → **Release** → **Run workflow** — реліз версії з `VERSION` в `engine.py`, тег `v<версія>` workflow створить сам. Або тегом:
 
 1. Підніміть `VERSION` в `engine.py`, виконайте `python packaging/release.py version-info` і закомітьте.
 2. `git tag v6.3 && git push origin v6.3` — або одним кроком разом із кодом: `tools\publish_github.ps1 -Tag`.

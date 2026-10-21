@@ -48,7 +48,7 @@ The script signs `OptimaX.exe`, the installer and the uninstaller (`signtool` fr
 
 **Your own build:** run `build_installer.bat` and `build.bat`, then `tools\publish_github.ps1 -Release`. The script creates the `v<version>` release with the files from `Output\` and their `SHA256SUMS.txt`; the CI release workflow sees that the release already exists and leaves your files as they are.
 
-**Built by GitHub Actions:**
+**Built by GitHub Actions:** the Actions tab → **Release** → **Run workflow** releases the version from `VERSION` in `engine.py`, and the workflow creates the `v<version>` tag itself. Or with a tag:
 
 1. Bump `VERSION` in `engine.py`, run `python packaging/release.py version-info` and commit.
 2. `git tag v6.3 && git push origin v6.3`, or in one step together with the code: `tools\publish_github.ps1 -Tag`.
