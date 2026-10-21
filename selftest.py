@@ -303,6 +303,15 @@ def check_ui(factory, out_dir, store):
     QFileDialog.getExistingDirectory = staticmethod(lambda *a, **k: "")
     toasts = []
     try:
+        # голе вікно Qt без коду OptimaX: якщо падіння тут — винна збірка/середовище, а не програма
+        from PyQt6.QtWidgets import QWidget
+        mark("ui: native probe")
+        probe = QWidget()
+        int(probe.winId())
+        probe.show()
+        app.processEvents()
+        probe.close()
+        probe.deleteLater()
         mark("ui: Main()")
         w = Main()
         mark("ui: show")

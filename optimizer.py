@@ -29,7 +29,7 @@ if __name__ == "__main__":
         import selftest  # самоперевірка збірки (CI): тимчасові налаштування й режим перегляду — до імпорту engine
         selftest.prepare(sys.argv)
 
-from PyQt6.QtCore import Qt, QTimer, QRectF, QSize
+from PyQt6.QtCore import Qt, QTimer, QRectF, QSize, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPalette
 from PyQt6.QtWidgets import (QApplication, QWidget, QFrame, QLabel, QPushButton, QStackedWidget, QButtonGroup,
                              QSystemTrayIcon, QMenu, QFileDialog, QScrollArea)
@@ -93,6 +93,8 @@ def relaunch(admin: bool = True, extra=()) -> bool:
 
 
 class Main(QWidget):
+    hotkey_pressed = pyqtSignal(str)  # з потоку гарячих клавіш у головний потік
+
     def __init__(self, start_hidden: bool = False):
         super().__init__()
         styled(self, "root")
@@ -114,6 +116,8 @@ class Main(QWidget):
         self.cores = M.GameCores()
         self.rfp = PW.RefreshByPower()
         self.hk_busy = []
+        self.hk = HK.Listener(self.hotkey_pressed.emit)
+        self.hotkey_pressed.connect(self._hotkey)
         self.update_info = None
         self.crash = None  # збій після останніх змін (аварійний відкат)
         self.crash_prompt = "--check-crash" in sys.argv
@@ -738,28 +742,20 @@ class Main(QWidget):
     # ── гарячі клавіші ──
     def set_hotkeys(self, on: bool, quiet: bool = False):
         F.CFG["hotkeys"] = on
-        hwnd = int(self.winId())
         if on:
-            self.hk_busy = HK.register(hwnd)
+            self.hk_busy = self.hk.start()
         else:
-            HK.unregister(hwnd)
+            self.hk.stop()
             self.hk_busy = []
         self.pages["settings"].set_hk_state(self.hk_busy)
         if not quiet:
             self.toast(tr("hk.on") if on else tr("hk.off"))
 
-    def nativeEvent(self, event_type, message):
-        try:
-            action = HK.action_from_message(message)
-        except Exception:
-            action = None
+    def _hotkey(self, action: str):
         if action == "boost":
             self.toggle_booster()
-            return True, 0
-        if action == "clean":
+        elif action == "clean":
             self.run_action(E.ACTION_BY_ID["fu_memory"], None)
-            return True, 0
-        return super().nativeEvent(event_type, message)
 
     def create_restore_point(self, btn):
         def done(res):
@@ -833,7 +829,7 @@ class Main(QWidget):
         if F.BOOSTER.active:
             F.BOOSTER.stop(LOG.write)
         self.balancer.restore_all(LOG.write)
-        HK.unregister(int(self.winId()))
+        self.hk.stop()
         self.tray.hide()
         e.accept()
         QApplication.instance().quit()
