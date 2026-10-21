@@ -50,7 +50,10 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
           OPTIMAX_TEST_SHOTS: ${{ runner.temp }}/shots
-        run: python -m pytest tests -v -rs --junitxml="${{ runner.temp }}/junit-linux.xml"
+        run: python -m pytest tests -v -rs --tb=short --junitxml="${{ runner.temp }}/junit-linux.xml"
+      - name: Why it failed
+        if: failure()
+        run: python tests/ci_annotate.py junit "${{ runner.temp }}/junit-linux.xml"
       - name: Summary
         if: always()
         run: |
@@ -84,7 +87,10 @@ jobs:
       - name: Tests (preview mode only — nothing on this machine is changed here)
         env:
           OPTIMAX_TEST_SHOTS: ${{ runner.temp }}\shots
-        run: python -m pytest tests -v -rs --junitxml="${{ runner.temp }}\junit-${{ matrix.os }}.xml"
+        run: python -m pytest tests -v -rs --tb=short --junitxml="${{ runner.temp }}\junit-${{ matrix.os }}.xml"
+      - name: Why it failed
+        if: failure()
+        run: python tests/ci_annotate.py junit "${{ runner.temp }}\junit-${{ matrix.os }}.xml"
       - name: Summary
         if: always()
         shell: pwsh
@@ -113,6 +119,9 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Apply → verify → undo → verify every tweak, then batches via OptimaX-Rescue.cmd and the journal
         run: python tests/windows/tweak_roundtrip.py --out "${{ runner.temp }}\roundtrip"
+      - name: Why it failed
+        if: failure()
+        run: python tests/ci_annotate.py roundtrip "${{ runner.temp }}\roundtrip\roundtrip.json"
       - name: Summary
         if: always()
         shell: pwsh
@@ -168,20 +177,27 @@ jobs:
           $v = python packaging/release.py version
           "v=$v" | Add-Content $env:GITHUB_OUTPUT
       - name: Self-test of the portable exe
+        id: portable
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force reports | Out-Null
           $rep = Join-Path $PWD "reports\selftest-portable.json"
           $p = Start-Process "Output\OptimaX-${{ steps.ver.outputs.v }}-portable.exe" -ArgumentList "--selftest=`"$rep`"", "--selftest-ui" -Wait -PassThru
           Get-Content reports\selftest-portable.md -ErrorAction SilentlyContinue | Add-Content $env:GITHUB_STEP_SUMMARY
+          if ($p.ExitCode -ne 0) { python tests/ci_annotate.py selftest reports\selftest-portable.json $p.ExitCode }
           exit $p.ExitCode
       - name: Install → self-test → rescue launcher → uninstall
+        if: ${{ !cancelled() && steps.ver.outcome == 'success' }}
         shell: pwsh
         run: |
           pwsh -NoProfile -File tests/windows/smoke_install.ps1 -Setup "Output\OptimaX-Setup-${{ steps.ver.outputs.v }}.exe" -Out reports -Version "${{ steps.ver.outputs.v }}"
           $code = $LASTEXITCODE
           Get-Content reports\smoke.md -ErrorAction SilentlyContinue | Add-Content $env:GITHUB_STEP_SUMMARY
           Get-Content reports\selftest-installed.md -ErrorAction SilentlyContinue | Add-Content $env:GITHUB_STEP_SUMMARY
+          if ($code -ne 0) {
+            python tests/ci_annotate.py smoke reports\smoke.json
+            python tests/ci_annotate.py selftest reports\selftest-installed.json
+          }
           exit $code
       - name: Checksums
         run: python packaging/release.py checksums "Output/OptimaX-Setup-${{ steps.ver.outputs.v }}.exe" "Output/OptimaX-${{ steps.ver.outputs.v }}-portable.exe"
