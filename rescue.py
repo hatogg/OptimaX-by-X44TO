@@ -156,6 +156,16 @@ def _echo(s: str) -> str:
     return s.replace("\r", " ").replace("\n", " ")
 
 
+def _echo_block(s: str) -> str:
+    """Підпис кроку для echo всередині ( … ). Лапки прибираємо (у лапках ^ не екранує, а дужки й & тоді треба
+    було б лишати як є), а все інше екрануємо — разом із дужками, інакше «Program Files (x86)» закриє блок.
+    % не подвоюємо: команда вже записана з %% там, де відсоток буквальний."""
+    s = str(s).replace('"', "").replace("\r", " ").replace("\n", " ")
+    for a, b in (("^", "^^"), ("&", "^&"), ("|", "^|"), ("<", "^<"), (">", "^>"), ("(", "^("), (")", "^)")):
+        s = s.replace(a, b)
+    return s
+
+
 def _reg_lines(rec: dict) -> list:
     path, name, old = rec["p"], rec["n"], rec.get("old")
     vflag = "/ve" if name == "" else f'/v "{_q(name)}"'
@@ -262,8 +272,9 @@ def build_script(journal: E.Journal = None) -> str:
                     L.append(cmd)
                 elif cmd.lower().startswith(GONE_OK):  # уже видалено (наприклад, іншим твіком) — мети досягнуто
                     L.append(f"{cmd} >nul 2>&1")
-                else:
-                    L.append(f"{cmd} >nul 2>&1 || set /a FAIL+=1")
+                else:  # невдалий крок — у failed.txt поруч зі скриптом: видно, що саме не повернулося
+                    L.append(f'{cmd} >nul 2>&1 || (set /a FAIL+=1 & >>"%~dp0failed.txt" echo '
+                             f'{_echo_block(tid)}: {_echo_block(cmd[:150])})')
         L += [f'>>"%~dp0done.txt" echo {tid}', "exit /b 0"]
     return "\r\n".join(L) + "\r\n"
 

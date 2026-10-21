@@ -399,15 +399,21 @@ def run_rescue(path, mode):
                 ln = lines[j]
                 if ln.startswith(">>\"%~dp0done.txt\" echo "):
                     done.append(ln.split(" echo ", 1)[1])
-                elif ln.endswith(" >nul 2>&1 || set /a FAIL+=1") or ln.endswith(" >nul 2>&1"):
-                    counts = ln.endswith("|| set /a FAIL+=1")
-                    c = ln[:ln.rindex(" >nul 2>&1")].replace("%%", "%")
+                elif " >nul 2>&1 || (set /a FAIL+=1 & >>\"%~dp0failed.txt\" echo " in ln or ln.endswith(" >nul 2>&1"):
+                    counts = " || (set /a FAIL+=1" in ln
+                    c = ln[:ln.index(" >nul 2>&1")].replace("%%", "%")
                     if BUG == "rescue" and c.startswith("sc config"):
                         c = "rem skipped"
                     rc, out = run_argv(argv_split(c))
                     fail += counts and rc != 0
                     if rc and counts:
                         print("  rescue step failed:", rc, c[:160], "|", out[:80], flush=True)
+                        note = ln.split(' echo ', 1)[1][:-1]
+                        for a, b in (("^(", "("), ("^)", ")"), ("^&", "&"), ("^|", "|"), ("^<", "<"), ("^>", ">"),
+                                     ("%%", "%"), ("^^", "^")):  # як надрукує echo у cmd
+                            note = note.replace(a, b)
+                        with open(os.path.join(os.path.dirname(path), "failed.txt"), "a") as f:
+                            f.write(note + "\n")
                 j += 1
         i += 1
     with open(os.path.join(os.path.dirname(path), "done.txt"), "a") as f:

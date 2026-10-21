@@ -252,8 +252,9 @@ def record_key(rec) -> str:
     return f"{t}:{rec.get('c') or rec.get('k')}"
 
 
-def restored(rec, tasks=None):
-    """-> (перевірено, гаразд, опис) для одного запису журналу відкату. tasks — готові task_states()."""
+def restored(rec, tasks=None, schemes=None):
+    """-> (перевірено, гаразд, опис) для одного запису журналу відкату. tasks — готові task_states(),
+    schemes — GUID схем живлення, що існують зараз."""
     t = rec["t"]
     if t == "reg":
         cur = reg_now(rec["p"], rec["n"])
@@ -267,6 +268,8 @@ def restored(rec, tasks=None):
     if t == "pw":
         if rec.get("old") is None:
             return False, True, ""
+        if schemes is not None and rec["g"].lower() not in schemes:
+            return False, True, ""  # схему видалив відкат (створена OptimaX Ultimate Performance) — нічого повертати
         cur = pw_now(rec)
         return True, cur == int(rec["old"]), f"power {rec['st']} ({rec.get('m')}): now {cur}, expected {rec['old']}"
     return False, True, ""  # cmd / ps / live — команду відкату виконано, прямо не перевіряється
@@ -418,10 +421,16 @@ def batch(items, hw, how: str) -> dict:
         r["rescue_rc"] = rc
         with open(out_path, "rb") as f:
             r["rescue_out"] = f.read().decode("utf-8", "replace")[-3000:]
+        failed_txt = os.path.join(RS.rescue_dir(), "failed.txt")
+        if os.path.exists(failed_txt):
+            with open(failed_txt, encoding="utf-8", errors="replace") as f:
+                r["rescue_failed"] = [ln.strip() for ln in f if ln.strip()]
+            os.remove(failed_txt)
         gone = RS.sync()
         r["synced"] = len(gone)
         if rc != 0:
             r["problems"].append(f"OptimaX-Rescue.cmd /all: {rc} failed steps")
+            r["problems"] += [f"rescue step failed: {x}" for x in r.get("rescue_failed", [])[:10]]
         if E.JOURNAL.count():
             r["problems"].append(f"{E.JOURNAL.count()} entries were not marked done by the rescue script")
     else:
@@ -435,8 +444,9 @@ def batch(items, hw, how: str) -> dict:
         E.undo_ids(E.JOURNAL.newest_first(), lambda *_: None)
     unchecked = 0
     tasks = task_states(rec["n"] for rec in first.values() if rec["t"] == "task")
+    schemes = {g for g, _ in E.list_schemes()}
     for k, rec in first.items():
-        checked, ok, what = restored(rec, tasks)
+        checked, ok, what = restored(rec, tasks, schemes)
         unchecked += not checked
         if checked and not ok:
             r["problems"].append("NOT RESTORED: " + what)
