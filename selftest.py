@@ -26,6 +26,21 @@ MODULES = ("engine", "features", "guard", "hardware", "hotkeys", "lifecycle", "m
            "gpubench", "ui_kit", "pages_optimize", "pages_tools", "pages_extra", "pages_lab", "smart_ui",
            "sharecard")
 UI_TIMEOUT = 120  # секунд на визначення заліза у вікні
+_PROGRESS = None  # <звіт>-progress.txt: що робилося перед аварійним завершенням
+_CRASH = None     # <звіт>-crash.txt: стек Python у момент нативного збою (faulthandler)
+
+
+def mark(text: str) -> None:
+    """Рядок у журнал ходу перевірки — одразу на диск, щоб пережити аварійне завершення процесу."""
+    if not _PROGRESS:
+        return
+    try:
+        with open(_PROGRESS, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%H:%M:%S')} {text}\n")
+            f.flush()
+            os.fsync(f.fileno())
+    except OSError:
+        pass
 
 
 def wanted(argv) -> bool:
@@ -55,6 +70,7 @@ class Result:
 
     def run(self, name, fn, *a):
         t0 = time.perf_counter()
+        mark(f"start {name}")
         item = {"name": name, "ok": False}
         try:
             info = fn(*a)
@@ -67,6 +83,7 @@ class Result:
             item["error"] = f"{type(e).__name__}: {e}"
             item["trace"] = traceback.format_exc()[-3000:]
         item["ms"] = round((time.perf_counter() - t0) * 1000)
+        mark(f"end {name}: {'ok' if item['ok'] else 'FAIL ' + str(item.get('error'))[:300]}")
         self.checks.append(item)
         _say(("  ok   " if item["ok"] else "  FAIL ") + name + (f" — {item.get('error')}" if not item["ok"] else ""))
         return item["ok"]
@@ -253,6 +270,10 @@ def check_ui(factory, out_dir, store):
     import engine as E
     import lifecycle as L
     import updater as U
+    for a in sys.argv:
+        if a.startswith("--selftest-platform="):  # напр. offscreen — щоб відокремити збої вікон Windows
+            os.environ["QT_QPA_PLATFORM"] = a.split("=", 1)[1]
+    mark(f"ui: platform {os.environ.get('QT_QPA_PLATFORM') or 'default'}")
     Main, apply_theme = factory()
     errors = []
     old_hook = sys.excepthook
@@ -261,7 +282,9 @@ def check_ui(factory, out_dir, store):
     U.UPDATE_REPO = ""
     app = QApplication.instance()
     if not isinstance(app, QApplication):
+        mark("ui: QApplication")
         app = QApplication(sys.argv)
+    mark(f"ui: theme ({app.platformName()})")
     apply_theme(app)
     shown = []
 
@@ -280,7 +303,9 @@ def check_ui(factory, out_dir, store):
     QFileDialog.getExistingDirectory = staticmethod(lambda *a, **k: "")
     toasts = []
     try:
+        mark("ui: Main()")
         w = Main()
+        mark("ui: show")
         w._toast.show_msg = lambda text, kind="ok", area=None: toasts.append([kind, text])
         w.show()
         deadline = time.time() + UI_TIMEOUT
@@ -291,6 +316,7 @@ def check_ui(factory, out_dir, store):
             raise AssertionError(f"hardware detection did not finish in {UI_TIMEOUT}s")
         pages = []
         for key in list(w.nav_keys):
+            mark(f"ui: page {key}")
             w.go(key)
             for _ in range(15):
                 app.processEvents()
@@ -298,11 +324,14 @@ def check_ui(factory, out_dir, store):
             _grab(w, os.path.join(out_dir, f"page-{len(pages):02d}-{key}.png"))
             pages.append(key)
         import sharecard as SC
+        mark("ui: share card")
         card = SC.render(SC.collect(w), 1.0)
         card.save(os.path.join(out_dir, "share-card.png"))
+        mark("ui: share dialog")
         w.share_result()
         bad = [t for k, t in toasts if k == "bad"]
         raw = [t for _, t in toasts if re.fullmatch(r"[a-z0-9_]+(\.[a-z0-9_]+)+", t or "")]
+        mark("ui: quit")
         w.quit_app()
         for _ in range(20):
             app.processEvents()
@@ -325,9 +354,24 @@ def _grab(widget, path) -> None:
 
 # ───────────────────────── звіт ─────────────────────────
 def main(argv, ui_factory=None) -> int:
+    global _PROGRESS, _CRASH
     path = _report_path(argv)
     out_dir = os.path.splitext(path)[0] + "-shots"
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    base = os.path.splitext(path)[0]
+    _PROGRESS = base + "-progress.txt"
+    for f in (_PROGRESS, base + "-crash.txt", path):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+    try:  # нативний збій (access violation тощо) — стек Python у файл; файл має лишатися відкритим
+        import faulthandler
+        _CRASH = open(base + "-crash.txt", "w", encoding="utf-8")
+        faulthandler.enable(file=_CRASH, all_threads=True)
+    except Exception:
+        _CRASH = None
+    mark(f"selftest {' '.join(a for a in argv[1:] if a.startswith('--'))}")
     t0 = time.time()
     res = Result()
     store = {}

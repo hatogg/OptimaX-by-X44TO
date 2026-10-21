@@ -184,16 +184,22 @@ jobs:
         run: |
           $v = python packaging/release.py version
           "v=$v" | Add-Content $env:GITHUB_OUTPUT
-      - name: Self-test of the portable exe
+      - name: Self-test of the portable exe (without a window, off-screen window, real window)
         id: portable
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force reports | Out-Null
-          $rep = Join-Path $PWD "reports\selftest-portable.json"
-          $p = Start-Process "Output\OptimaX-${{ steps.ver.outputs.v }}-portable.exe" -ArgumentList "--selftest=`"$rep`"", "--selftest-ui" -Wait -PassThru
-          Get-Content reports\selftest-portable.md -ErrorAction SilentlyContinue | Add-Content $env:GITHUB_STEP_SUMMARY
-          if ($p.ExitCode -ne 0) { python tests/ci_annotate.py selftest reports\selftest-portable.json $p.ExitCode }
-          exit $p.ExitCode
+          $exe = "Output\OptimaX-${{ steps.ver.outputs.v }}-portable.exe"
+          $modes = [ordered]@{ "core" = @(); "ui-offscreen" = @("--selftest-ui", "--selftest-platform=offscreen"); "ui-windows" = @("--selftest-ui") }
+          $fail = 0
+          foreach ($m in $modes.Keys) {
+            $rep = Join-Path $PWD "reports\selftest-portable-$m.json"
+            $p = Start-Process $exe -ArgumentList (@("--selftest=`"$rep`"") + $modes[$m]) -Wait -PassThru
+            "**portable $m**: exit code $($p.ExitCode)" | Add-Content $env:GITHUB_STEP_SUMMARY
+            Get-Content ($rep -replace '\.json$', '.md') -ErrorAction SilentlyContinue | Add-Content $env:GITHUB_STEP_SUMMARY
+            if ($p.ExitCode -ne 0) { $fail = 1; python tests/ci_annotate.py selftest $rep $p.ExitCode "portable $m" }
+          }
+          exit $fail
       - name: Install → self-test → rescue launcher → uninstall
         if: ${{ !cancelled() && steps.ver.outcome == 'success' }}
         shell: pwsh

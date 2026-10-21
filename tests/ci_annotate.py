@@ -49,14 +49,29 @@ def junit(path):
     return out
 
 
-def selftest(path, rc=None):
+def _tail(path, n=2500):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read()[-n:].strip()
+    except OSError:
+        return ""
+
+
+def selftest(path, rc=None, label="selftest"):
+    base = os.path.splitext(path)[0]
     if not os.path.exists(path):
-        return [("selftest", f"no report at {path} (exit code {rc}): the program did not start or crashed before writing it")]
+        crash = _tail(base + "-crash.txt")
+        progress = _tail(base + "-progress.txt", 1500)
+        out = [(label, f"no report at {path} (exit code {rc}): the program crashed before writing it."
+                       f"\n--- last steps:\n{progress or '(none: it crashed before the self-test started)'}")]
+        if crash:
+            out.append((f"{label}: native crash stack", crash))
+        return out
     rep = json.load(open(path, encoding="utf-8"))
     out = []
     for c in rep.get("checks", []):
         if not c.get("ok"):
-            out.append((f"selftest {c['name']}", f"{c.get('error')}\n{c.get('trace', '')}"))
+            out.append((f"{label} {c['name']}", f"{c.get('error')}\n{c.get('trace', '')}"))
     if not out and rc not in (None, "0", 0):
         out.append(("selftest", f"exit code {rc}, but every check in the report passed"))
     return out
@@ -88,7 +103,9 @@ def main():
         return 0
     kind, path = sys.argv[1], sys.argv[2]
     try:
-        items = {"junit": junit, "roundtrip": roundtrip, "smoke": smoke}.get(kind, lambda p: selftest(p, sys.argv[3] if len(sys.argv) > 3 else None))(path)
+        items = {"junit": junit, "roundtrip": roundtrip, "smoke": smoke}.get(
+            kind, lambda p: selftest(p, sys.argv[3] if len(sys.argv) > 3 else None,
+                                     sys.argv[4] if len(sys.argv) > 4 else "selftest"))(path)
     except Exception as e:  # пояснення не повинно саме падати
         items = [(f"{kind} report", f"could not read {path}: {type(e).__name__}: {e}")]
     emit(items)
