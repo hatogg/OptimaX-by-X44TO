@@ -42,3 +42,10 @@ def test_services_tweak_touches_only_its_list_and_older_harm_is_repaired():
     assert r["left"]["disable_services"] == ["DiagTrack"] and r["left"]["optimize_pagefile"] == ["# pagefile"], r
     assert r["spy_popped"], r
     assert len(r["undo_lines"]) == 5, r["undo_lines"]
+
+
+def test_guard_after_system_restore_offers_to_forget():
+    rc, out, r = run_script("guard_restore.py")
+    assert rc == 0 and r, tail(out)
+    assert r["many"] and not r["few"], r
+    assert r["forgot"] == 5 and r["left"] == ["delivery_p2p"] and not r["touched"], r

@@ -573,6 +573,15 @@ class Main(QWidget):
         RunDialog(self, tr("guard.reapply"), lambda log, prog: G.reapply(ids, log, prog)).exec()
         self.refresh_all()
 
+    def guard_forget(self):
+        ids = [i for i in ((F.CFG["guard_state"] or {}).get("reverted") or []) if E.JOURNAL.has(i)]
+        if not ids or not Ask.ask(self, tr("guard.forget_q", n=len(ids)), tr("guard.forget_d"), tr("guard.forget")):
+            return
+        n = G.forget(ids, LOG.write)
+        self.toast(tr("guard.forgotten", n=n))
+        self.guard_refresh()
+        self.refresh_all()
+
     def guard_refresh(self):
         home = self.pages["home"]
         st = G.trial_state()
@@ -588,6 +597,9 @@ class Main(QWidget):
             home.set_banner("trial", tr("trial.title"), tr(f"trial.{st[0]}", n=n),
                             (tr("trial.keep"), lambda: self.end_trial(True)),
                             (tr("trial.revert"), lambda: self.end_trial(False)))
+        elif rev and G.looks_like_restore(rev):  # відновлення системи: спершу пропонуємо забути, а не застосувати
+            home.set_banner("guard", tr("guard.restore_t", n=len(rev)), tr("guard.restore_d"),
+                            (tr("guard.forget"), self.guard_forget), (tr("guard.reapply"), self.guard_reapply))
         elif rev:
             home.set_banner("guard", tr("guard.banner_t", n=len(rev)), tr("guard.banner_d"),
                             (tr("guard.reapply"), self.guard_reapply), (tr("guard.details"), lambda: self.go("backup")))

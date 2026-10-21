@@ -187,6 +187,21 @@ STRINGS = {
                        "Например, рекламу или Copilot. Можно применить их снова одним кликом.",
                        "Such as ads or Copilot. You can re-apply them in one click."),
     "guard.details": ("Що саме", "Что именно", "Details"),
+    "guard.restore_t": ("Більшість змін OptimaX уже не діють ({n})", "Большинство изменений OptimaX уже не действуют ({n})",
+                        "Most OptimaX changes are no longer in effect ({n})"),
+    "guard.restore_d": ("Так буває після відновлення системи. Якщо ви відновлювали систему через проблему, не "
+                        "застосовуйте їх знову — краще забути ці записи.",
+                        "Так бывает после восстановления системы. Если вы восстанавливали систему из-за проблемы, не "
+                        "применяйте их снова — лучше забыть эти записи.",
+                        "This happens after a System Restore. If you restored the system because of a problem, don't "
+                        "re-apply them; forget these records instead."),
+    "guard.forget": ("Забути ці зміни", "Забыть эти изменения", "Forget these changes"),
+    "guard.forget_q": ("Забути змін: {n}?", "Забыть изменений: {n}?", "Forget {n} change(s)?"),
+    "guard.forget_d": ("Записи зникнуть із журналу змін. Систему це не змінює: ці налаштування вже такі, як до OptimaX.",
+                       "Записи исчезнут из журнала изменений. Систему это не меняет: эти настройки уже такие, как до "
+                       "OptimaX.", "The records leave the change log. The system isn't touched: these settings are "
+                       "already as they were before OptimaX."),
+    "guard.forgotten": ("Забуто змін: {n}", "Забыто изменений: {n}", "Forgot {n} change(s)"),
 
     # ── обслуговування за розкладом ──
     "sched.title": ("Обслуговування за розкладом", "Обслуживание по расписанию", "Scheduled maintenance"),

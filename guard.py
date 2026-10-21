@@ -43,6 +43,33 @@ def _demo_reverted() -> list:
     return [i for i in ("ads_tips", "ai_copilot", "disable_telemetry") if E.JOURNAL.has(i) and i not in fixed][:2]
 
 
+def guarded(tid: str) -> bool:
+    """Чи стежить сторож за цим записом журналу."""
+    t = E.BY_ID.get(tid)
+    return bool(t) and t.group not in SKIP_GROUPS and t.reversible and not t.custom
+
+
+def looks_like_restore(reverted: list) -> bool:
+    """Не діє більшість змін — так буває після відновлення системи (або переустановки), а не після оновлення.
+    Тоді не варто пропонувати першим застосувати їх знову: якщо систему відновлювали через проблему, вона повернеться."""
+    total = sum(1 for tid in E.JOURNAL.newest_first() if guarded(tid))
+    return len(reverted) >= 5 and len(reverted) >= 0.6 * max(total, 1)
+
+
+def forget(ids, log=lambda *_: None) -> int:
+    """Прибирає записи з журналу, не чіпаючи систему: значення вже такі, як були до OptimaX."""
+    n = 0
+    for tid in ids:
+        if E.JOURNAL.has(tid):
+            E.JOURNAL.pop(tid)
+            log(f"  · {tid}")
+            n += 1
+    st = dict(F.CFG["guard_state"] or {})
+    st["reverted"] = [i for i in st.get("reverted") or [] if i not in set(ids)]
+    F.CFG["guard_state"] = st
+    return n
+
+
 def check_reverted() -> list:
     """Застосовані через OptimaX твіки, які зараз уже не діють."""
     if not E.IS_WIN:
@@ -50,7 +77,7 @@ def check_reverted() -> list:
     out = []
     for tid in E.JOURNAL.newest_first():
         t = E.BY_ID.get(tid)
-        if not t or t.group in SKIP_GROUPS or not t.reversible or t.custom:
+        if not guarded(tid):
             continue
         regs = [op for op in t.ops if op[0] == "reg" and not callable(op[3])]
         if regs and not E.probe(t):
