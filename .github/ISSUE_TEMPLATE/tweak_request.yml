@@ -1,0 +1,39 @@
+name: "⚙️ Нова оптимізація · New optimization"
+description: "Запропонувати твік для каталогу · Suggest a tweak for the catalogue"
+labels: ["tweak"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: "Що вона дає · What it gives"
+      description: "Для кого й навіщо: ігри, ноутбук, старий ПК, приватність… · Who it's for and why"
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: "Що саме змінюється · What exactly changes"
+      description: "Ключ реєстру й значення, служба, задача планувальника чи команда · Registry key and value, service, task or command"
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: undo
+    attributes:
+      label: "Як повернути · How to roll it back"
+      description: "Значення за замовчуванням або команда відкату · The default value or a rollback command"
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: "Звідки відомо, що це працює · How we know it works"
+      description: "Документація Microsoft, заміри, посилання · Microsoft docs, measurements, links"
+  - type: dropdown
+    id: risk
+    attributes:
+      label: "Вплив · Impact"
+      options:
+        - "Безпечно · Safe"
+        - "Помірно · Moderate"
+        - "Змінює звичні речі · Affects everyday habits"

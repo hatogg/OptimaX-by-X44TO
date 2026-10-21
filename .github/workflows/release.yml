@@ -1,0 +1,62 @@
+# OptimaX — реліз за тегом:  git tag v6.3 && git push origin v6.3
+# Тег має збігатися з VERSION у engine.py. Спершу проходить увесь CI (зокрема твіки на справжній Windows),
+# і лише тоді на GitHub з'являється реліз з інсталятором, портативною версією, Rescue-запускачем,
+# SHA256SUMS.txt і маніфестами winget. Саме звідси вбудоване оновлення OptimaX бере нові версії.
+# Якщо реліз уже створено з власної збірки (tools/publish_github.ps1 -Release), CI лише перевіряє код
+# і файли релізу не чіпає.
+# Підпис коду (необов'язково): секрети OPTIMAX_PFX_BASE64 (сертифікат .pfx у base64) і OPTIMAX_PFX_PASS.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    name: Tag matches engine.py
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: |
+          v="$(python3 packaging/release.py version)"
+          if [ "v$v" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match VERSION = \"$v\" in engine.py"
+            exit 1
+          fi
+
+  ci:
+    needs: version
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  publish:
+    name: GitHub release
+    needs: ci
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: optimax-build
+          path: dist
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "::notice::Release $GITHUB_REF_NAME already exists (published from a local build with tools/publish_github.ps1): its files stay as they are."
+            exit 0
+          fi
+          v="${GITHUB_REF_NAME#v}"
+          (cd dist && zip -qr "../OptimaX-$v-winget-manifests.zip" winget)
+          # нотатки — розділ цієї версії з CHANGELOG.md, далі список файлів
+          awk -v v="$v" '/^## /{ if (p) exit; if (index($0, "## [" v "]") == 1 || index($0, "## " v) == 1) { p = 1; next } }
+                         /^\[[0-9]/{ if (p) exit } p' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "OptimaX $v" > notes.md
+          printf '\n---\n\n**Файли · Files:** `OptimaX-Setup-%s.exe` — інсталятор · installer, `OptimaX-%s-portable.exe` — без встановлення · portable, `OptimaX-Rescue.cmd` — аварійний відкат · emergency rollback. Контрольні суми · checksums: `SHA256SUMS.txt`.\n' "$v" "$v" >> notes.md
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "OptimaX $v" --notes-file notes.md \
+            "dist/OptimaX-Setup-$v.exe" "dist/OptimaX-$v-portable.exe" dist/OptimaX-Rescue.cmd \
+            dist/SHA256SUMS.txt "OptimaX-$v-winget-manifests.zip"

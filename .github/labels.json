@@ -1,0 +1,10 @@
+[
+  {"name": "bug", "color": "FF5D6C", "description": "Щось працює не так · Something doesn't work"},
+  {"name": "tweak", "color": "5B8CFF", "description": "Нова чи змінена оптимізація · New or changed optimization"},
+  {"name": "enhancement", "color": "9B6BFF", "description": "Нова функція · New feature"},
+  {"name": "translation", "color": "3DD68C", "description": "Переклад uk / ru / en · Translation"},
+  {"name": "ci", "color": "646D80", "description": "Тести, збірка, GitHub Actions · Tests, build, GitHub Actions"},
+  {"name": "dependencies", "color": "2A3242", "description": "Оновлення залежностей · Dependency updates"},
+  {"name": "good first issue", "color": "7AA2FF", "description": "Добре для першого внеску · Good for a first contribution"},
+  {"name": "skip-changelog", "color": "202734", "description": "Не потрапляє в нотатки релізу · Not in release notes"}
+]

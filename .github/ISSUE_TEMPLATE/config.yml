@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "❓ Часті питання · FAQ"
+    url: https://github.com/hatogg/OptimaX-by-X44TO/blob/main/docs/uk/faq.md
+    about: "Права адміністратора, антивірус, SmartScreen, відкат · Administrator rights, antivirus, SmartScreen, rollback"
+  - name: "🔒 Вразливість · Security vulnerability"
+    url: https://github.com/hatogg/OptimaX-by-X44TO/security/advisories/new
+    about: "Приватно, не в issue · Privately, not in an issue"

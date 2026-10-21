@@ -1,0 +1,60 @@
+name: "🐞 Помилка · Bug report"
+description: "Щось працює не так, як має · Something doesn't work as it should"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Дякуємо за звіт! Якщо після змін Windows не завантажується, спершу скористайтеся [аварійним відкатом](https://github.com/hatogg/OptimaX-by-X44TO/blob/main/docs/uk/guide.md#аварійний-відкат).
+        Thanks for the report! If Windows doesn't start after the changes, use the [emergency rollback](https://github.com/hatogg/OptimaX-by-X44TO/blob/main/docs/en/guide.md#emergency-rollback) first.
+  - type: input
+    id: version
+    attributes:
+      label: "Версія OptimaX · OptimaX version"
+      description: "Видно в заголовку вікна й унизу бічного меню · Shown in the window title and at the bottom of the sidebar"
+      placeholder: "6.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: windows
+    attributes:
+      label: "Windows"
+      options:
+        - "Windows 11 25H2"
+        - "Windows 11 24H2"
+        - "Windows 11 23H2 або старіша · or older"
+        - "Windows 10 22H2"
+        - "Windows 10, старіша · older"
+        - "Інша · Other"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: "Що сталося · What happened"
+      description: "І що ви очікували натомість · And what you expected instead"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: "Як відтворити · Steps to reproduce"
+      placeholder: |
+        1. Оптимізація → Експертне меню → …
+        2. …
+  - type: textarea
+    id: report
+    attributes:
+      label: "Звіт із програми · Report from the program"
+      description: |
+        Діагностика → «Звіт для форуму чи майстра» → «Скопіювати як текст». Особистих даних там немає.
+        Diagnostics → “Report for a forum or technician” → “Copy as text”. It has no personal data.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: "Перевірки · Checks"
+      options:
+        - label: "Я перевірив(ла) на останній версії · I checked on the latest version"
+        - label: "У звіті немає паролів, ключів чи інших особистих даних · The report has no passwords, keys or other personal data"
+          required: true

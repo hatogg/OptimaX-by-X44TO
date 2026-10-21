@@ -1,1 +1,152 @@
-# OptimaX-by-X44TO
+<p align="center">
+  <img src="docs/assets/banner-uk.png" alt="OptimaX — оптимізація Windows, яку видно в замірах" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/hatogg/OptimaX-by-X44TO/releases/latest"><img alt="Остання версія" src="https://img.shields.io/github/v/release/hatogg/OptimaX-by-X44TO?style=flat-square&label=%D0%B2%D0%B5%D1%80%D1%81%D1%96%D1%8F&color=5B8CFF"></a>
+  <a href="https://github.com/hatogg/OptimaX-by-X44TO/actions/workflows/ci.yml"><img alt="Перевірка CI" src="https://img.shields.io/github/actions/workflow/status/hatogg/OptimaX-by-X44TO/ci.yml?branch=main&style=flat-square&label=CI"></a>
+  <a href="https://github.com/hatogg/OptimaX-by-X44TO/releases"><img alt="Завантаження" src="https://img.shields.io/github/downloads/hatogg/OptimaX-by-X44TO/total?style=flat-square&label=%D0%B7%D0%B0%D0%B2%D0%B0%D0%BD%D1%82%D0%B0%D0%B6%D0%B5%D0%BD%D1%8C&color=9B6BFF"></a>
+  <img alt="Windows 10 і 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square&logo=windows&logoColor=white">
+  <a href="LICENSE"><img alt="Ліцензія MIT" src="https://img.shields.io/badge/%D0%BB%D1%96%D1%86%D0%B5%D0%BD%D0%B7%D1%96%D1%8F-MIT-3DD68C?style=flat-square"></a>
+</p>
+
+<p align="center"><b>Українська</b> &nbsp;|&nbsp; <a href="README.en.md">English</a></p>
+
+**OptimaX** — безкоштовна програма для Windows 10 і 11, яка спершу розбирається, що за залізо у вашому ПК, а потім пропонує план оптимізації. Кожну зміну видно до застосування, результат перевіряється замірами FPS, і будь-що повертається до *вашого* початкового значення. Для ігрових ПК, ноутбуків, старих комп'ютерів і серверних Xeon на платах X99.
+
+<p align="center">
+  <a href="https://github.com/hatogg/OptimaX-by-X44TO/releases/latest"><img alt="Завантажити інсталятор" src="https://img.shields.io/badge/%D0%97%D0%B0%D0%B2%D0%B0%D0%BD%D1%82%D0%B0%D0%B6%D0%B8%D1%82%D0%B8-%D1%96%D0%BD%D1%81%D1%82%D0%B0%D0%BB%D1%8F%D1%82%D0%BE%D1%80-5B8CFF?style=for-the-badge&logo=windows&logoColor=white"></a>
+  &nbsp;
+  <a href="https://github.com/hatogg/OptimaX-by-X44TO/releases/latest"><img alt="Портативна версія" src="https://img.shields.io/badge/%D0%9F%D0%BE%D1%80%D1%82%D0%B0%D1%82%D0%B8%D0%B2%D0%BD%D0%B0-%D0%B2%D0%B5%D1%80%D1%81%D1%96%D1%8F-181D27?style=for-the-badge"></a>
+  &nbsp;
+  <a href="https://hatogg.github.io/OptimaX-by-X44TO/"><img alt="Сайт програми" src="https://img.shields.io/badge/%D0%A1%D0%B0%D0%B9%D1%82-%D0%BF%D1%80%D0%BE%D0%B3%D1%80%D0%B0%D0%BC%D0%B8-181D27?style=for-the-badge"></a>
+</p>
+
+<p align="center">
+  <img src="docs/assets/screens/uk/analysis.png" alt="Головний екран OptimaX: аналіз системи" width="88%">
+</p>
+
+## Що вміє
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### Розумна оптимізація
+
+Заміряє FPS до і після, залишає лише те, що допомогло. Якщо стало гірше, сама знаходить винну зміну половинним поділом і прибирає її.
+
+<img src="docs/assets/screens/uk/smart.png" alt="Розумна оптимізація прибрала шкідливу зміну">
+</td>
+<td width="50%" valign="top">
+
+### Тест FPS «до і після»
+
+Середній FPS, 1% і 0.1% low, фризи й графік часу кадру через PresentMon. Стало гірше — одна кнопка відкочує зміни між замірами.
+
+<img src="docs/assets/screens/uk/fps-test.png" alt="Тест FPS до і після з графіком часу кадру">
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### Видно кожну зміну
+
+Перед застосуванням план ділиться за кольором: червоне впливає на звичні речі, жовте — помірні зміни, синє — безпечне. Для кожного пункту видно, що саме зміниться.
+
+<img src="docs/assets/screens/uk/review.png" alt="Перегляд змін перед застосуванням">
+</td>
+<td valign="top">
+
+### Аварійний відкат
+
+Після змін OptimaX три дні стежить за синіми екранами й аварійними перезавантаженнями і пропонує відкотити саме цей пакет. А `OptimaX-Rescue.cmd` повертає все навіть із безпечного режиму.
+
+<img src="docs/assets/screens/uk/crash-banner.png" alt="Банер після аварійного перезавантаження">
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### Власний GPU-тест і стрес-тест
+
+Важка 3D-сцена з балами й 1% low. Стрес-тест раз на 10 секунд звіряє контрольний кадр до біта, тож видно нестабільний розгін чи андервольт, а не лише перегрів.
+
+<img src="docs/assets/screens/uk/gpu-test.png" alt="GPU-тест OptimaX">
+</td>
+<td valign="top">
+
+### Блок реклами як Pi-hole
+
+DNS-фільтр прямо на ПК: статистика, журнал запитів, списки StevenBlack і HaGeZi, шифрований DNS, захист усієї домашньої мережі. Без Raspberry Pi.
+
+<img src="docs/assets/screens/uk/ad-blocker.png" alt="Панель блоку реклами">
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### «Чому лагає?»
+
+Поки ви граєте, стежить за процесором, відеокартою, пам'яттю, диском і температурами, а потім пояснює простими словами: перегрів, упор у процесор, бракує пам'яті, фонова програма.
+
+<img src="docs/assets/screens/uk/diagnose.png" alt="Діагностика лагів">
+</td>
+<td valign="top">
+
+### Картка результату
+
+Картинка для Telegram, Discord чи форуму: FPS до і після, завантаження Windows, процеси, пам'ять. Лише реально заміряні цифри.
+
+<img src="docs/assets/screens/uk/share-card.png" alt="Картка результату для соцмереж">
+</td>
+</tr>
+</table>
+
+А ще: майстер і експертне меню на 136 оптимізацій у 16 розділах, 6 профілів (ігровий ПК, ноутбук, старий ПК, Xeon / X99…), режим гри, ядра для кожної гри на Ryzen X3D і Intel з P/E-ядрами, сторож налаштувань після оновлень Windows, пробний режим, найшвидший DNS і пінг до ігрових серверів, очищення й аналізатор диска, оновлення програм через winget. Повний опис — у [посібнику](docs/uk/guide.md).
+
+<sub>Скриншоти зроблено в режимі перегляду на демо-конфігурації; цифри на них ілюструють інтерфейс, а не обіцяють приріст на вашому ПК.</sub>
+
+## Як це працює
+
+1. **Аналіз.** OptimaX визначає процесор (P/E-ядра, AMD X3D, Xeon), відеокарти, пам'ять, диски, монітор і батарею, показує найслабше місце збірки.
+2. **План.** Майстер ставить кілька простих запитань і складає план сам, а експертне меню дає повний контроль над кожним пунктом.
+3. **Перегляд.** Перед застосуванням видно кожну зміну. Те, що шкодить саме вашому залізу (наприклад, вимкнення Game Bar на Ryzen X3D), заблоковано з поясненням.
+4. **Застосування.** Спершу точка відновлення Windows, потім зміни з консоллю й кнопкою «Зупинити». За бажанням — пробний режим до перезавантаження.
+5. **Заміри.** Тест FPS або розумна оптимізація показують, чи справді стало краще.
+
+## Безпечно за задумом
+
+- Кожна зміна записується в журнал і повертається до вашого початкового значення, а не до «стандартного».
+- `OptimaX-Rescue.cmd` дублює журнал командами Windows: працює без програми, з безпечного режиму.
+- Перед кожним релізом GitHub Actions на чистих Windows Server 2022 і 2025 застосовує **кожен** твік, перевіряє, що він подіяв, відкочує й перевіряє, що все повернулося.
+- Режим перегляду `--dry-run` показує всі команди, нічого не змінюючи.
+- Увесь код відкритий, ліцензія MIT.
+
+## Встановлення
+
+1. Завантажте `OptimaX-Setup-<версія>.exe` з [останнього релізу](https://github.com/hatogg/OptimaX-by-X44TO/releases/latest) і запустіть.
+2. Виберіть мову (українська, русский, English) — вона ж стане мовою програми.
+3. На головному екрані натисніть «Почати майстер» або відкрийте експертне меню.
+
+Портативна версія `OptimaX-<версія>-portable.exe` працює без встановлення. Потрібні Windows 10 1903+ або Windows 11 (64-bit) і права адміністратора — програма попросить їх сама.
+
+> Windows SmartScreen може показати «Невідомий видавець», бо файл не підписаний платним сертифікатом. Натисніть «Докладніше» → «Виконати в будь-якому разі». Перевірити, що файл не підмінено, можна за `SHA256SUMS.txt` у релізі.
+
+## Документація
+
+| Розділ | Що там |
+| --- | --- |
+| [Посібник](docs/uk/guide.md) | Усі можливості: розумна оптимізація, аварійний відкат, бенчмарки, блок реклами, встановлення й видалення |
+| [Усі оптимізації](docs/uk/tweaks.md) | 136 змін із поясненням, профілями й позначкою відкату — створено з коду програми |
+| [Часті питання](docs/uk/faq.md) | Права адміністратора, антивірус, SmartScreen, що робити, якщо Windows не завантажується |
+| [Для розробників](docs/uk/development.md) | Запуск із коду, збірка інсталятора, тести, CI, публікація релізу |
+| [Історія змін](CHANGELOG.md) | Що нового в кожній версії |
+
+## Участь
+
+Знайшли помилку чи маєте ідею нової оптимізації — [відкрийте issue](https://github.com/hatogg/OptimaX-by-X44TO/issues/new/choose). Pull request вітаються: як додати оптимізацію за два рядки й прогнати тести, написано в [CONTRIBUTING.md](CONTRIBUTING.md). Про вразливості — приватно, за [SECURITY.md](SECURITY.md).
+
+## Ліцензія
+
+[MIT](LICENSE) © X44TO

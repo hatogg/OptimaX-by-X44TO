@@ -1,0 +1,40 @@
+"""OptimaX — переклади для встановлення, видалення та оновлень."""
+
+STRINGS = {
+    "lc.cleanup": ("підготовка до видалення", "подготовка к удалению", "preparing to uninstall"),
+    "lc.cleanup_done": ("Готово: відкочено змін — {n}, задачі планувальника прибрано.",
+                        "Готово: откачено изменений — {n}, задачи планировщика удалены.",
+                        "Done: changes rolled back — {n}, scheduled tasks removed."),
+    "lc.installed": ("встановлена версія", "установленная версия", "installed"),
+    "lc.portable": ("портативна версія", "портативная версия", "portable"),
+    "upd.title": ("Оновлення", "Обновления", "Updates"),
+    "upd.sub": ("OptimaX перевіряє нові версії раз на день і оновлюється за кілька секунд — налаштування, ігри "
+                "й журнал змін зберігаються.",
+                "OptimaX проверяет новые версии раз в день и обновляется за несколько секунд — настройки, игры и "
+                "журнал изменений сохраняются.",
+                "OptimaX checks for new versions once a day and updates in seconds — settings, games and the change "
+                "journal are kept."),
+    "upd.auto": ("Перевіряти оновлення автоматично", "Проверять обновления автоматически", "Check for updates automatically"),
+    "upd.checking": ("  · перевіряю оновлення…", "  · проверяю обновления…", "  · checking for updates…"),
+    "upd.latest": ("  · остання версія: {v}", "  · последняя версия: {v}", "  · latest version: {v}"),
+    "upd.downloading": ("Завантажую оновлення… {mb} МБ", "Скачиваю обновление… {mb} МБ", "Downloading the update… {mb} MB"),
+    "upd.downloaded": ("  ✓ оновлення завантажено", "  ✓ обновление скачано", "  ✓ update downloaded"),
+    "upd.banner_t": ("Доступна нова версія OptimaX {v}", "Доступна новая версия OptimaX {v}", "OptimaX {v} is available"),
+    "upd.banner_d": ("Оновлення займе кілька секунд. Налаштування, ігри й журнал змін залишаться.",
+                     "Обновление займёт несколько секунд. Настройки, игры и журнал изменений останутся.",
+                     "Updating takes a few seconds. Your settings, games and change journal are kept."),
+    "upd.install": ("Оновити", "Обновить", "Update"),
+    "upd.later": ("Пропустити", "Пропустить", "Skip"),
+    "upd.found": ("Доступна версія {v}", "Доступна версия {v}", "Version {v} is available"),
+    "upd.none": ("У вас найновіша версія", "У вас самая новая версия", "You have the latest version"),
+    "upd.ask_t": ("Оновити до версії {v}?", "Обновить до версии {v}?", "Update to version {v}?"),
+    "upd.ask_d": ("Зараз встановлено {cur}. OptimaX завантажить нову версію, закриється й сам запуститься знову.",
+                  "Сейчас установлена {cur}. OptimaX скачает новую версию, закроется и сам запустится снова.",
+                  "You have {cur}. OptimaX will download the new version, close and start again by itself."),
+    "upd.state_new": ("Доступна версія {v} (зараз {cur}).", "Доступна версия {v} (сейчас {cur}).",
+                      "Version {v} is available (you have {cur})."),
+    "upd.state_ok": ("Версія {v} — найновіша. Перевірено: {when}.", "Версия {v} — самая новая. Проверено: {when}.",
+                     "Version {v} is the latest. Checked: {when}."),
+    "upd.state_never": ("Версія {v}. Оновлення ще не перевірялися.", "Версия {v}. Обновления ещё не проверялись.",
+                        "Version {v}. Updates haven't been checked yet."),
+}

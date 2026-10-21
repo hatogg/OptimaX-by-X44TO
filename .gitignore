@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+build/
+dist/
+Output/
+*.spec
+# створюється під час збірки (packaging/release.py buildinfo)
+buildinfo.py
+# не для публічного репозиторію: сертифікати підпису, зібрані файли, сторонні програми
+*.pfx
+*.p12
+*.exe
+*.zip
+MSI/
+_site/

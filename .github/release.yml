@@ -1,0 +1,17 @@
+# Категорії автоматичних нотаток до релізу (gh release create --generate-notes) за мітками pull request.
+changelog:
+  exclude:
+    labels: ["skip-changelog"]
+  categories:
+    - title: "⚙️ Оптимізації · Optimizations"
+      labels: ["tweak"]
+    - title: "✨ Нове · New"
+      labels: ["enhancement"]
+    - title: "🐞 Виправлено · Fixed"
+      labels: ["bug"]
+    - title: "🌍 Переклади · Translations"
+      labels: ["translation"]
+    - title: "🧪 Тести й збірка · Tests and build"
+      labels: ["ci", "dependencies"]
+    - title: "Інше · Other"
+      labels: ["*"]

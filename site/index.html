@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OptimaX by X44TO</title>
+<meta name="description" content="OptimaX — безкоштовна оптимізація Windows 10 і 11: план під ваше залізо, перегляд кожної зміни, заміри FPS і повний відкат.">
+<meta property="og:title" content="OptimaX by X44TO">
+<meta property="og:description" content="Оптимізація Windows, яку видно в замірах: перегляд кожної зміни, тест FPS до і після, повний відкат.">
+<meta property="og:image" content="https://hatogg.github.io/OptimaX-by-X44TO/assets/social-preview-uk.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#0A0C11">
+<link rel="icon" type="image/png" href="assets/logo.png">
+<style>
+@font-face {
+  font-family: "Geologica";
+  src: url("fonts/Geologica.woff") format("woff");
+  font-weight: 100 900;
+  font-display: swap;
+}
+:root {
+  --night: #0A0C11; --panel: #12161E; --panel2: #181D27; --line: #202734; --line2: #2A3242;
+  --text: #ECEFF4; --sub: #9AA3B5; --mute: #646D80;
+  --blue: #5B8CFF; --blue-h: #7AA2FF; --violet: #9B6BFF; --green: #3DD68C; --red: #FF5D6C;
+  --radius-s: 8px; --radius-l: 18px;
+  --gutter: clamp(16px, 4vw, 48px);
+  --max: 1200px;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--night); color: var(--text);
+  font-family: "Geologica", "Segoe UI", system-ui, sans-serif; font-size: 17px; line-height: 1.55;
+  font-variation-settings: "SHRP" 0; -webkit-font-smoothing: antialiased;
+}
+a { color: var(--blue-h); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:hover { color: var(--text); }
+:focus-visible { outline: 2px solid var(--blue-h); outline-offset: 3px; border-radius: 4px; }
+img { max-width: 100%; display: block; }
+.wrap { max-width: var(--max); margin: 0 auto; padding: 0 var(--gutter); }
+
+/* шапка */
+header { position: sticky; top: 0; z-index: 10; background: rgba(10, 12, 17, .86); backdrop-filter: blur(10px);
+         border-bottom: 1px solid var(--line); }
+.bar { display: flex; align-items: center; gap: 28px; height: 64px; }
+.brand { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; margin-right: auto; }
+.brand img { width: 30px; height: 30px; }
+.brand b { font-size: 20px; font-weight: 720; letter-spacing: -0.02em; font-variation-settings: "SHRP" 100; }
+nav.links { display: flex; gap: 22px; font-size: 15px; }
+nav.links a { color: var(--sub); text-decoration: none; }
+nav.links a:hover { color: var(--text); }
+.lang { display: flex; border: 1px solid var(--line2); border-radius: 999px; padding: 2px; }
+.lang button { font: inherit; font-size: 13px; color: var(--sub); background: none; border: 0; padding: 4px 10px;
+               border-radius: 999px; cursor: pointer; }
+.lang button[aria-pressed="true"] { background: var(--panel2); color: var(--text); }
+.gh { color: var(--sub); display: flex; }
+.gh:hover { color: var(--text); }
+
+/* перший екран */
+.hero { padding: clamp(48px, 9vw, 112px) 0 clamp(40px, 6vw, 72px); }
+.hero .wrap { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 6fr); gap: clamp(24px, 4vw, 56px);
+              align-items: center; }
+h1 { margin: 0; font-size: clamp(36px, 4.7vw, 62px); line-height: 1.02; letter-spacing: -0.035em; font-weight: 700;
+     font-variation-settings: "SHRP" 100; text-wrap: balance; }
+.lead { margin: 22px 0 0; font-size: clamp(17px, 1.5vw, 19px); color: var(--sub); max-width: 34em; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+.btn { display: inline-flex; flex-direction: column; justify-content: center; min-height: 54px; padding: 8px 22px;
+       border-radius: var(--radius-s); text-decoration: none; font-weight: 600; line-height: 1.2; }
+.btn small { font-weight: 400; font-size: 13px; opacity: .8; margin-top: 3px; }
+.btn.primary { background: linear-gradient(100deg, var(--blue), var(--violet)); color: #fff; }
+.btn.primary:hover { filter: brightness(1.08); color: #fff; }
+.btn.quiet { border: 1px solid var(--line2); color: var(--text); }
+.btn.quiet:hover { background: var(--panel); }
+.req { margin-top: 18px; font-size: 14px; color: var(--mute); }
+.trace { width: 100%; height: auto; overflow: visible; }
+.trace .t-axis { font-size: 12px; fill: var(--mute); }
+.trace .t-tag { font-size: 14px; fill: var(--mute); }
+.trace .t-tag.after { fill: var(--sub); }
+.trace .after-line { stroke-dasharray: var(--len); stroke-dashoffset: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .trace.play .after-line { animation: draw 1.6s cubic-bezier(.5, 0, .2, 1) .5s both; }
+  .trace.play .after-fill { animation: fade 1s ease .9s both; }
+}
+@keyframes draw { from { stroke-dashoffset: var(--len); } to { stroke-dashoffset: 0; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* розділи */
+section { padding: clamp(56px, 8vw, 104px) 0; border-top: 1px solid var(--line); }
+h2 { margin: 0 0 14px; font-size: clamp(28px, 3.4vw, 42px); line-height: 1.1; letter-spacing: -0.025em;
+     font-weight: 680; font-variation-settings: "SHRP" 80; text-wrap: balance; }
+.intro { color: var(--sub); max-width: 40em; margin: 0 0 36px; }
+
+/* інтерфейс */
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
+.tabs button { font: inherit; font-size: 15px; color: var(--sub); background: none; border: 1px solid var(--line2);
+               padding: 8px 14px; border-radius: 999px; cursor: pointer; }
+.tabs button:hover { color: var(--text); }
+.tabs button[aria-selected="true"] { color: var(--text); background: var(--panel2); border-color: var(--blue); }
+.shot { border-radius: var(--radius-l); overflow: hidden; border: 1px solid var(--line2); background: var(--panel); }
+.shot img { width: 100%; height: auto; aspect-ratio: 1920 / 1260; object-fit: cover; object-position: top; }
+.caption { color: var(--sub); margin: 14px 0 0; font-size: 15px; min-height: 2.6em; }
+
+/* кроки */
+ol.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+           gap: 0; counter-reset: s; }
+ol.steps li { counter-increment: s; padding: 0 22px 0 0; position: relative; }
+ol.steps li::before { content: counter(s); display: grid; place-items: center; width: 34px; height: 34px;
+                      border-radius: 50%; border: 1px solid var(--green); color: var(--green); font-size: 15px;
+                      margin-bottom: 16px; background: var(--night); position: relative; z-index: 1; }
+ol.steps li::after { content: ""; position: absolute; left: 34px; right: 0; top: 17px; height: 1px; background: var(--line2); }
+ol.steps li:last-child::after { display: none; }
+ol.steps b { display: block; font-size: 18px; margin-bottom: 6px; }
+ol.steps span { color: var(--sub); font-size: 15px; }
+
+/* безпека */
+.safe { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(24px, 5vw, 72px); }
+.safe ul { list-style: none; margin: 0; padding: 0; }
+.safe li { padding: 16px 0 16px 34px; border-bottom: 1px solid var(--line); position: relative; }
+.safe li:first-child { padding-top: 0; }
+.safe li:first-child::before { top: 4px; }
+.safe li::before { content: ""; position: absolute; left: 2px; top: 20px; width: 14px; height: 8px;
+                   border-left: 2px solid var(--green); border-bottom: 2px solid var(--green); transform: rotate(-45deg); }
+.safe li b { display: block; }
+.safe li span { color: var(--sub); font-size: 15px; }
+.cmd { display: inline-block; margin-top: 20px; font-family: Consolas, "Cascadia Mono", monospace; font-size: 14px;
+       background: var(--panel); border: 1px solid var(--line2); border-radius: var(--radius-s); padding: 10px 14px;
+       color: var(--sub); }
+
+/* можливості */
+.groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(24px, 4vw, 56px); }
+.groups h3 { margin: 0 0 14px; font-size: 20px; font-weight: 650; }
+.groups dl { margin: 0; }
+.groups dt { font-weight: 600; margin-top: 16px; }
+.groups dd { margin: 4px 0 0; color: var(--sub); font-size: 15px; }
+
+/* питання */
+#faq-list { max-width: 820px; }
+details { border-bottom: 1px solid var(--line); }
+summary { cursor: pointer; padding: 18px 0; font-weight: 600; list-style: none; display: flex; gap: 16px;
+          justify-content: space-between; }
+summary::-webkit-details-marker { display: none; }
+summary::after { content: "+"; color: var(--mute); font-weight: 400; font-size: 22px; line-height: 1; }
+details[open] summary::after { content: "−"; }
+details p { margin: 0 0 18px; color: var(--sub); }
+
+footer { border-top: 1px solid var(--line); padding: 36px 0 48px; color: var(--mute); font-size: 14px; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: center; }
+footer nav { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-left: auto; }
+footer a { color: var(--sub); text-decoration: none; }
+footer a:hover { color: var(--text); }
+
+@media (max-width: 600px) {
+  .trace .t-axis { font-size: 21px; }
+  .trace .t-tag { font-size: 24px; }
+}
+@media (max-width: 960px) {
+  .hero .wrap, .safe { grid-template-columns: 1fr; }
+  ol.steps { grid-template-columns: 1fr; gap: 22px; }
+  ol.steps li { padding: 0 0 0 52px; }
+  ol.steps li::before { position: absolute; left: 0; top: 0; margin: 0; }
+  ol.steps li::after { display: none; }
+  .groups { grid-template-columns: 1fr; }
+  nav.links { display: none; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap bar">
+    <a class="brand" href="#top" aria-label="OptimaX"><img src="assets/logo.png" alt=""><b>OptimaX</b></a>
+    <nav class="links" aria-label="Розділи">
+      <a href="#screens" data-t="nav_screens"></a>
+      <a href="#how" data-t="nav_how"></a>
+      <a href="#safe" data-t="nav_safe"></a>
+      <a href="#faq" data-t="nav_faq"></a>
+    </nav>
+    <div class="lang" role="group" aria-label="Мова / Language">
+      <button type="button" data-lang="uk" aria-pressed="true">UA</button>
+      <button type="button" data-lang="en" aria-pressed="false">EN</button>
+    </div>
+    <a class="gh" href="https://github.com/hatogg/OptimaX-by-X44TO" aria-label="GitHub">
+      <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+    </a>
+  </div>
+</header>
+
+<main id="top">
+  <div class="hero">
+    <div class="wrap">
+      <div>
+        <h1 data-t="h1"></h1>
+        <p class="lead" data-t="lead"></p>
+        <div class="cta">
+          <a class="btn primary" id="dl-setup" href="https://github.com/hatogg/OptimaX-by-X44TO/releases/latest">
+            <span data-t="dl_setup"></span><small id="dl-setup-meta" data-t="dl_meta"></small>
+          </a>
+          <a class="btn quiet" id="dl-portable" href="https://github.com/hatogg/OptimaX-by-X44TO/releases/latest">
+            <span data-t="dl_portable"></span><small id="dl-portable-meta" data-t="dl_portable_meta"></small>
+          </a>
+        </div>
+        <p class="req" data-t="req"></p>
+      </div>
+      <svg class="trace" id="trace" viewBox="0 0 700 380" role="img" aria-labelledby="trace-title">
+        <title id="trace-title" data-t="trace_title"></title>
+      </svg>
+    </div>
+  </div>
+
+  <section id="screens">
+    <div class="wrap">
+      <h2 data-t="screens_h"></h2>
+      <p class="intro" data-t="screens_intro"></p>
+      <div class="tabs" role="tablist" id="tabs"></div>
+      <div class="shot" role="tabpanel" id="shot-panel"><img id="shot" src="assets/screens/uk/analysis.png" alt="" width="1920" height="1260"></div>
+      <p class="caption" id="caption" aria-live="polite"></p>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="wrap">
+      <h2 data-t="how_h"></h2>
+      <p class="intro" data-t="how_intro"></p>
+      <ol class="steps">
+        <li><b data-t="s1"></b><span data-t="s1d"></span></li>
+        <li><b data-t="s2"></b><span data-t="s2d"></span></li>
+        <li><b data-t="s3"></b><span data-t="s3d"></span></li>
+        <li><b data-t="s4"></b><span data-t="s4d"></span></li>
+        <li><b data-t="s5"></b><span data-t="s5d"></span></li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="safe">
+    <div class="wrap safe">
+      <div>
+        <h2 data-t="safe_h"></h2>
+        <p class="intro" data-t="safe_intro"></p>
+        <span class="cmd">OptimaX-Rescue.cmd /all</span>
+      </div>
+      <ul>
+        <li><b data-t="g1"></b><span data-t="g1d"></span></li>
+        <li><b data-t="g2"></b><span data-t="g2d"></span></li>
+        <li><b data-t="g3"></b><span data-t="g3d"></span></li>
+        <li><b data-t="g4"></b><span data-t="g4d"></span></li>
+        <li><b data-t="g5"></b><span data-t="g5d"></span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="wrap">
+      <h2 data-t="feat_h"></h2>
+      <p class="intro" data-t="feat_intro"></p>
+      <div class="groups">
+        <div><h3 data-t="fg1"></h3><dl id="fg1"></dl></div>
+        <div><h3 data-t="fg2"></h3><dl id="fg2"></dl></div>
+        <div><h3 data-t="fg3"></h3><dl id="fg3"></dl></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap">
+      <h2 data-t="faq_h"></h2>
+      <div id="faq-list"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span data-t="foot"></span>
+    <nav aria-label="GitHub">
+      <a href="https://github.com/hatogg/OptimaX-by-X44TO" data-t="f_code"></a>
+      <a href="https://github.com/hatogg/OptimaX-by-X44TO/releases" data-t="f_rel"></a>
+      <a id="f-docs" href="https://github.com/hatogg/OptimaX-by-X44TO/blob/main/docs/uk/guide.md" data-t="f_docs"></a>
+      <a href="https://github.com/hatogg/OptimaX-by-X44TO/blob/main/CHANGELOG.md" data-t="f_changes"></a>
+      <a href="https://github.com/hatogg/OptimaX-by-X44TO/issues/new/choose" data-t="f_issue"></a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+(() => {
+const REPO = "hatogg/OptimaX-by-X44TO";
+const T = {
+  uk: {
+    nav_screens: "Інтерфейс", nav_how: "Як це працює", nav_safe: "Безпека", nav_faq: "Питання",
+    h1: "Оптимізація Windows, яку видно в замірах",
+    lead: "OptimaX розбирається, що за залізо у вашому ПК, показує кожну зміну до застосування, перевіряє результат FPS-тестом і повертає будь-що до вашого значення.",
+    dl_setup: "Завантажити для Windows", dl_meta: "інсталятор", dl_portable: "Портативна версія", dl_portable_meta: "без встановлення",
+    req: "Windows 10 (1903+) і Windows 11, 64-bit. Безкоштовно, з відкритим кодом.",
+    trace_title: "Графік часу кадру: до оптимізації — нерівний із фризами, після — нижчий і рівний",
+    before: "до", after: "після OptimaX", ms60: "16,7 мс (60 FPS)", ms120: "8,3 мс (120 FPS)",
+    screens_h: "Інтерфейс", screens_intro: "Темний, спокійний і з поясненням до кожного пункту. Скриншоти з режиму перегляду на демо-конфігурації.",
+    how_h: "Як це працює", how_intro: "П'ять кроків від першого запуску до перевіреного результату.",
+    s1: "Аналіз", s1d: "Процесор з P/E-ядрами чи X3D, відеокарти, пам'ять, диски, монітор і батарея. І найслабше місце збірки.",
+    s2: "План", s2d: "Майстер складає план за кількома запитаннями, експертне меню дає 136 оптимізацій під повний контроль.",
+    s3: "Перегляд", s3d: "Кожна зміна видна заздалегідь. Те, що шкодить саме вашому залізу, заблоковано з поясненням.",
+    s4: "Застосування", s4d: "Спершу точка відновлення, потім консоль і кнопка «Зупинити». За бажанням — пробний режим.",
+    s5: "Заміри", s5d: "Тест FPS до і після або розумна оптимізація, яка сама прибирає те, що зашкодило.",
+    safe_h: "Будь-що можна повернути", safe_intro: "Кожна зміна записується в журнал разом із вашим початковим значенням. А якщо Windows навіть не завантажується, є файл, що відкочує все з безпечного режиму.",
+    g1: "Ваше значення, а не «стандартне»", g1d: "Відкат повертає саме те, що було у вас до OptimaX, строго від новішої зміни до старішої.",
+    g2: "Аварійний відкат", g2d: "Три дні після змін програма стежить за синіми екранами й аварійними перезавантаженнями і пропонує відкотити останній пакет.",
+    g3: "Без запуску програми", g3d: "OptimaX-Rescue.cmd дублює журнал командами Windows і працює в безпечному режимі.",
+    g4: "Перевірено на справжній Windows", g4d: "Перед кожним релізом кожен твік застосовується, перевіряється й відкочується на Windows Server 2022 і 2025.",
+    g5: "Відкритий код", g5d: "Увесь код на GitHub під ліцензією MIT, релізи збирає GitHub Actions, контрольні суми — у SHA256SUMS.txt.",
+    feat_h: "Що всередині", feat_intro: "Повний список — у посібнику й переліку всіх оптимізацій на GitHub.",
+    fg1: "Для ігор", fg2: "Для системи", fg3: "Інструменти",
+    f: [
+      ["fg1", "Розумна оптимізація", "Заміри до і після, шкідлива зміна знаходиться половинним поділом і прибирається."],
+      ["fg1", "Тест FPS «до і після»", "Середній FPS, 1% і 0.1% low, фризи й графік часу кадру через PresentMon."],
+      ["fg1", "«Чому лагає?»", "Перегрів, упор у процесор, брак пам'яті чи фонова програма — простими словами."],
+      ["fg1", "Режим гри й ядра", "Служби, фонові програми, таймер 0,5 мс; гра на кристалі V-Cache чи P-ядрах."],
+      ["fg2", "136 оптимізацій", "Процесор, пам'ять, мережа, приватність, AI і реклама Windows 11, служби, Провідник."],
+      ["fg2", "Сторож налаштувань", "Помічає, коли оновлення Windows повертає рекламу чи телеметрію."],
+      ["fg2", "Ноутбук", "Знос батареї, ліміт заряду, частота екрана від живлення, холодний режим."],
+      ["fg2", "Блок реклами як Pi-hole", "DNS-фільтр на ПК для всіх програм і всієї домашньої мережі."],
+      ["fg3", "GPU-тест і стрес-тест", "Власна 3D-сцена з балами й покадровою перевіркою стабільності."],
+      ["fg3", "Мережа", "Найшвидший DNS, пінг до ігрових регіонів, тест bufferbloat."],
+      ["fg3", "Очищення й диск", "Сміття, кеш шейдерів, аналізатор місця, старі драйвери."],
+      ["fg3", "Картка результату", "Картинка з реально заміряними цифрами для Telegram, Discord чи форуму."],
+    ],
+    faq_h: "Питання",
+    q: [
+      ["Це безкоштовно?", "Так. OptimaX — відкрите ПЗ під ліцензією MIT."],
+      ["Чи можна все повернути?", "Так: кожну зміну окремо в «Резервних копіях», усе разом — однією кнопкою або через OptimaX-Rescue.cmd, усю систему — через точку відновлення."],
+      ["Windows SmartScreen пише «Невідомий видавець». Що робити?", "Натисніть «Докладніше» → «Виконати в будь-якому разі». Файл не підписаний платним сертифікатом; перевірити, що його не підмінено, можна за SHA256SUMS.txt у релізі."],
+      ["Після оптимізації Windows не завантажується.", "Завантажтеся в безпечний режим і відкрийте C:\\ProgramData\\OptimaX\\rescue\\OptimaX-Rescue.cmd. Покрокова інструкція — у посібнику."],
+      ["Чи дасть це більше FPS?", "Залежить від ПК. Тому OptimaX і міряє: тест FPS чи розумна оптимізація покажуть реальну різницю, а те, що не допомогло, можна відкотити."],
+    ],
+    foot: "OptimaX by X44TO. Ліцензія MIT.",
+    f_code: "Код", f_rel: "Релізи", f_docs: "Посібник", f_changes: "Історія змін", f_issue: "Повідомити про помилку",
+    docs: "docs/uk/guide.md", version: "версія {v}, {mb} МБ", portable_meta: "без встановлення, {mb} МБ",
+    tabs: [
+      ["analysis", "Аналіз", "Рівень оптимізації й приватності, потенціал прискорення, найслабше місце і перевірка збірки."],
+      ["smart", "Розумна оптимізація", "Після замірів до і після програма знайшла зміну, з якою FPS падав, і прибрала її."],
+      ["fps-test", "Тест FPS", "Середній FPS, 1% low і графік часу кадру до і після змін у вашій грі."],
+      ["gpu-test", "GPU-тест", "Власна 3D-сцена OptimaX: бенчмарк на хвилину або стрес-тест до години."],
+      ["ad-blocker", "Блок реклами", "Статистика запитів за добу, топ заблокованих доменів, пристрої мережі."],
+      ["crash-banner", "Аварійний відкат", "Після аварійного перезавантаження програма пропонує відкотити саме останні зміни."],
+    ],
+  },
+  en: {
+    nav_screens: "Interface", nav_how: "How it works", nav_safe: "Safety", nav_faq: "Questions",
+    h1: "Windows optimization you can measure",
+    lead: "OptimaX figures out what hardware your PC has, shows every change before it's applied, checks the result with an FPS test and rolls anything back to your own value.",
+    dl_setup: "Download for Windows", dl_meta: "installer", dl_portable: "Portable version", dl_portable_meta: "no installation",
+    req: "Windows 10 (1903+) and Windows 11, 64-bit. Free and open source.",
+    trace_title: "Frame-time graph: before optimization it is uneven with stutters, after it is lower and flat",
+    before: "before", after: "after OptimaX", ms60: "16.7 ms (60 FPS)", ms120: "8.3 ms (120 FPS)",
+    screens_h: "Interface", screens_intro: "Dark, calm and with an explanation for every item. Screenshots from preview mode on a demo configuration.",
+    how_h: "How it works", how_intro: "Five steps from the first start to a checked result.",
+    s1: "Analysis", s1d: "CPU with P/E cores or X3D, graphics cards, memory, drives, monitor and battery. And the weakest spot of the build.",
+    s2: "Plan", s2d: "The wizard builds a plan from a few questions; the expert menu puts 136 optimizations under full control.",
+    s3: "Review", s3d: "Every change is visible in advance. Anything harmful to your particular hardware is blocked with an explanation.",
+    s4: "Apply", s4d: "A restore point first, then a console and a Stop button. Optionally, trial mode.",
+    s5: "Measure", s5d: "A before/after FPS test, or smart optimization that removes whatever hurt on its own.",
+    safe_h: "Anything can be rolled back", safe_intro: "Every change goes to a journal together with your original value. And if Windows won't even start, there is a file that rolls everything back from Safe Mode.",
+    g1: "Your value, not a “default”", g1d: "Rollback restores exactly what you had before OptimaX, strictly from the newest change to the oldest.",
+    g2: "Emergency rollback", g2d: "For three days after changes the program watches for blue screens and crash restarts and offers to roll back the latest batch.",
+    g3: "Without starting the program", g3d: "OptimaX-Rescue.cmd duplicates the journal as Windows commands and works in Safe Mode.",
+    g4: "Tested on real Windows", g4d: "Before every release, every tweak is applied, checked and rolled back on Windows Server 2022 and 2025.",
+    g5: "Open source", g5d: "All the code is on GitHub under the MIT license, releases are built by GitHub Actions, checksums are in SHA256SUMS.txt.",
+    feat_h: "What's inside", feat_intro: "The full list is in the guide and in the list of all optimizations on GitHub.",
+    fg1: "For games", fg2: "For the system", fg3: "Tools",
+    f: [
+      ["fg1", "Smart optimization", "Before and after measurements; a harmful change is found by halving and removed."],
+      ["fg1", "Before/after FPS test", "Average FPS, 1% and 0.1% lows, stutters and a frame-time graph through PresentMon."],
+      ["fg1", "Why is it lagging?", "Overheating, a CPU bottleneck, too little memory or a background app, in plain words."],
+      ["fg1", "Game mode and cores", "Services, background apps, a 0.5 ms timer; the game on the V-Cache die or the P-cores."],
+      ["fg2", "136 optimizations", "CPU, memory, network, privacy, Windows 11 AI and ads, services, File Explorer."],
+      ["fg2", "Settings guard", "Notices when a Windows update brings back ads or telemetry."],
+      ["fg2", "Laptop", "Battery wear, charge limit, refresh rate by power source, cool mode."],
+      ["fg2", "Ad blocker like Pi-hole", "A DNS filter on the PC for every app and the whole home network."],
+      ["fg3", "GPU test and stress test", "Its own 3D scene with a score and a frame-exact stability check."],
+      ["fg3", "Network", "The fastest DNS, ping to game regions, a bufferbloat test."],
+      ["fg3", "Cleanup and disk", "Junk, shader cache, a disk space analyzer, old drivers."],
+      ["fg3", "Result card", "An image with actually measured numbers for Telegram, Discord or a forum."],
+    ],
+    faq_h: "Questions",
+    q: [
+      ["Is it free?", "Yes. OptimaX is open-source software under the MIT license."],
+      ["Can I undo everything?", "Yes: any single change in Backups, everything at once with one button or through OptimaX-Rescue.cmd, the whole system through a restore point."],
+      ["Windows SmartScreen says “Unknown publisher”. What do I do?", "Click More info → Run anyway. The file isn't signed with a paid certificate; you can check it wasn't tampered with using SHA256SUMS.txt in the release."],
+      ["Windows doesn't start after the optimization.", "Start in Safe Mode and open C:\\ProgramData\\OptimaX\\rescue\\OptimaX-Rescue.cmd. Step-by-step instructions are in the guide."],
+      ["Will it give me more FPS?", "It depends on the PC. That's exactly why OptimaX measures: the FPS test or smart optimization shows the real difference, and what didn't help can be rolled back."],
+    ],
+    foot: "OptimaX by X44TO. MIT license.",
+    f_code: "Code", f_rel: "Releases", f_docs: "Guide", f_changes: "Changelog", f_issue: "Report a bug",
+    docs: "docs/en/guide.md", version: "version {v}, {mb} MB", portable_meta: "no installation, {mb} MB",
+    tabs: [
+      ["analysis", "Analysis", "Optimization and privacy levels, speed-up potential, the weakest spot and the build check."],
+      ["smart", "Smart optimization", "After measuring before and after, the program found the change that dropped FPS and removed it."],
+      ["fps-test", "FPS test", "Average FPS, 1% low and a frame-time graph before and after the changes in your game."],
+      ["gpu-test", "GPU test", "The OptimaX 3D scene: a one-minute benchmark or a stress test of up to an hour."],
+      ["ad-blocker", "Ad blocker", "Query statistics for the day, top blocked domains, network devices."],
+      ["crash-banner", "Emergency rollback", "After a crash restart the program offers to roll back exactly the latest changes."],
+    ],
+  },
+};
+
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* немає сховища — не страшно */ } },
+};
+let lang = store.get("optimax-lang") || ((navigator.language || "").toLowerCase().startsWith("uk") ? "uk" : "en");
+let tab = 0;
+let release = null;
+
+function fmt(s, kw) { return s.replace(/\{(\w+)\}/g, (_, k) => kw[k]); }
+
+function drawTrace() {
+  const t = T[lang], svg = document.getElementById("trace");
+  const W = 700, H = 380, x0 = 8, x1 = 692, split = x0 + (x1 - x0) * 0.44, top = 46, bot = 352;
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const y = ms => bot - (ms / 26) * (bot - top);
+  const pts = [];
+  for (let i = 0; i <= 120; i++) {
+    const x = x0 + (x1 - x0) * i / 120;
+    let ms;
+    if (x < split) {
+      ms = 13.2 + (rnd() - 0.5) * 3.4;
+      if (rnd() < 0.09 && x < split - 30) ms += 6 + rnd() * 7.5;
+    } else {
+      const k = Math.min(1, (x - split) / 26), a = 13.2 + (rnd() - 0.5) * 3.4, b = 7.4 + (rnd() - 0.5) * 0.9;
+      ms = a * (1 - k) + b * k;
+    }
+    pts.push([x, y(ms)]);
+  }
+  const P = arr => arr.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+  const iS = pts.findIndex(p => p[0] >= split), after = pts.slice(iS - 1), before = pts.slice(0, iS);
+  let s = `<title id="trace-title">${t.trace_title}</title><defs>
+    <linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#5B8CFF"/><stop offset="1" stop-color="#9B6BFF"/></linearGradient>
+    <linearGradient id="fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#5B8CFF" stop-opacity=".18"/><stop offset="1" stop-color="#5B8CFF" stop-opacity="0"/></linearGradient></defs>`;
+  for (const [ms, label] of [[16.7, t.ms60], [8.33, t.ms120]]) {
+    s += `<line x1="${x0}" x2="${x1}" y1="${y(ms)}" y2="${y(ms)}" stroke="#202734" stroke-dasharray="2 6"/>`;
+    s += `<text class="t-axis" x="${x1}" y="${y(ms) - 8}" text-anchor="end">${label}</text>`;
+  }
+  s += `<path class="after-fill" d="${P(after)} L${x1} ${bot} L${after[0][0]} ${bot} Z" fill="url(#fill)"/>`;
+  s += `<path d="${P(before)}" fill="none" stroke="#646D80" stroke-width="2" stroke-linejoin="round"/>`;
+  for (let i = 1; i < before.length; i++) {
+    if (bot - before[i][1] > (bot - top) * 0.62) {
+      const n = before[i + 1] || pts[iS];
+      s += `<path d="M${before[i - 1][0].toFixed(1)} ${before[i - 1][1].toFixed(1)} L${before[i][0].toFixed(1)} ${before[i][1].toFixed(1)} L${n[0].toFixed(1)} ${n[1].toFixed(1)}" fill="none" stroke="#FF5D6C" stroke-width="2.4" stroke-linejoin="round"/>`;
+    }
+  }
+  s += `<path class="after-line" d="${P(after)}" fill="none" stroke="url(#g)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>`;
+  s += `<line x1="${split}" x2="${split}" y1="${top - 22}" y2="${bot}" stroke="#2A3242" stroke-width="1.5"/>`;
+  s += `<text class="t-tag" x="${split - 12}" y="${top - 8}" text-anchor="end">${t.before}</text>`;
+  s += `<text class="t-tag after" x="${split + 12}" y="${top - 8}">${t.after}</text>`;
+  svg.innerHTML = s;
+  const line = svg.querySelector(".after-line");
+  line.style.setProperty("--len", Math.ceil(line.getTotalLength()));
+}
+
+function renderTabs() {
+  const t = T[lang], box = document.getElementById("tabs");
+  box.innerHTML = "";
+  t.tabs.forEach(([id, name], i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.setAttribute("role", "tab");
+    b.id = "tab-" + id;
+    b.textContent = name;
+    b.setAttribute("aria-selected", i === tab ? "true" : "false");
+    b.setAttribute("aria-controls", "shot-panel");
+    b.tabIndex = i === tab ? 0 : -1;
+    b.addEventListener("click", () => { tab = i; renderTabs(); showShot(); });
+    b.addEventListener("keydown", e => {
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+      tab = (tab + (e.key === "ArrowRight" ? 1 : t.tabs.length - 1)) % t.tabs.length;
+      renderTabs(); showShot(); document.getElementById("tab-" + t.tabs[tab][0]).focus();
+    });
+    box.appendChild(b);
+  });
+}
+
+function showShot() {
+  const [id, name, cap] = T[lang].tabs[tab];
+  const img = document.getElementById("shot");
+  img.src = `assets/screens/${lang}/${id}.png`;
+  img.alt = `${name}: ${cap}`;
+  document.getElementById("shot-panel").setAttribute("aria-labelledby", "tab-" + id);
+  document.getElementById("caption").textContent = cap;
+}
+
+function renderLists() {
+  const t = T[lang];
+  for (const g of ["fg1", "fg2", "fg3"]) document.getElementById(g).innerHTML = "";
+  for (const [g, title, d] of t.f) {
+    const dt = document.createElement("dt"), dd = document.createElement("dd");
+    dt.textContent = title; dd.textContent = d;
+    document.getElementById(g).append(dt, dd);
+  }
+  const faq = document.getElementById("faq-list");
+  faq.innerHTML = "";
+  for (const [q, a] of t.q) {
+    const d = document.createElement("details"), s = document.createElement("summary"), p = document.createElement("p");
+    s.textContent = q; p.textContent = a;
+    d.append(s, p); faq.appendChild(d);
+  }
+}
+
+function renderRelease() {
+  if (!release) return;
+  const t = T[lang], mb = a => Math.round(a.size / 1048576);
+  const setup = release.assets.find(a => /^OptimaX-Setup-[\d.]+\.exe$/i.test(a.name));
+  const port = release.assets.find(a => /^OptimaX-[\d.]+-portable\.exe$/i.test(a.name));
+  const v = (release.tag_name || "").replace(/^v/i, "");
+  if (setup) {
+    document.getElementById("dl-setup").href = setup.browser_download_url;
+    document.getElementById("dl-setup-meta").textContent = fmt(t.version, { v, mb: mb(setup) });
+  }
+  if (port) {
+    document.getElementById("dl-portable").href = port.browser_download_url;
+    document.getElementById("dl-portable-meta").textContent = fmt(t.portable_meta, { mb: mb(port) });
+  }
+}
+
+function apply(l) {
+  lang = l;
+  document.documentElement.lang = l;
+  const t = T[l];
+  document.querySelectorAll("[data-t]").forEach(el => { if (typeof t[el.dataset.t] === "string") el.textContent = t[el.dataset.t]; });
+  document.querySelectorAll(".lang button").forEach(b => b.setAttribute("aria-pressed", b.dataset.lang === l ? "true" : "false"));
+  document.getElementById("f-docs").href = `https://github.com/${REPO}/blob/main/${t.docs}`;
+  drawTrace(); renderTabs(); showShot(); renderLists(); renderRelease();
+}
+
+document.querySelectorAll(".lang button").forEach(b => b.addEventListener("click", () => { store.set("optimax-lang", b.dataset.lang); apply(b.dataset.lang); }));
+apply(lang);
+requestAnimationFrame(() => document.getElementById("trace").classList.add("play"));
+
+fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { Accept: "application/vnd.github+json" } })
+  .then(r => (r.ok ? r.json() : null))
+  .then(rel => { if (rel && Array.isArray(rel.assets)) { release = rel; renderRelease(); } })
+  .catch(() => { /* без мережі кнопки ведуть на сторінку релізів */ });
+})();
+</script>
+</body>
+</html>
