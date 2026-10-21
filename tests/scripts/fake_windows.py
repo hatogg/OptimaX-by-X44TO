@@ -425,6 +425,34 @@ def sub_run(args, *a, **k):
     return _orig_run(args, *a, **k)
 
 
+_orig_popen = subprocess.Popen
+
+
+class _RescueProc:
+    """cmd /c OptimaX-Rescue.cmd, запущений через Popen із виводом у файл (як у перевірці на справжній Windows)."""
+    pid = 0
+
+    def __init__(self, args, stdout=None, **_k):
+        self.returncode = run_rescue(args[2], args[3])
+        if stdout is not None and hasattr(stdout, "write"):
+            stdout.write(b"done")
+
+    def wait(self, timeout=None):
+        return self.returncode
+
+    def poll(self):
+        return self.returncode
+
+    def kill(self):
+        pass
+
+
+def sub_popen(args, *a, **k):
+    if isinstance(args, list) and args[:2] == ["cmd", "/c"]:
+        return _RescueProc(args, **k)
+    return _orig_popen(args, *a, **k)
+
+
 class _DLL:
     def __getattr__(self, n):
         return lambda *a, **k: 437 if n == "GetOEMCP" else 1
@@ -450,6 +478,7 @@ for _m in ("tempfile", "shutil", "json", "threading", "socket", "ssl", "urllib.r
 import tempfile  # noqa: E402
 ctypes.windll = _Win()
 subprocess.run = sub_run
+subprocess.Popen = sub_popen
 sys.platform = "win32"
 os.environ["CI"] = "true"
 os.environ["APPDATA"] = tempfile.mkdtemp(prefix="fakewin_app_")

@@ -18,6 +18,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import traceback
 
@@ -71,6 +72,35 @@ if not E.is_admin():
     sys.exit("Run as administrator")
 assert not E.DRY_RUN
 ERR_PREFIX = tr("e.err", err="").strip()
+
+
+# ───────────────────────── сторож зависань ─────────────────────────
+# Журнали CI звідси не завантажити, а зависання до тайм-ауту завдання не лишає жодного звіту. Тож перевірка сама
+# стежить за собою: що зараз робить і скільки; довго на одному кроці — попередження на сторінці запуску,
+# дуже довго — звіт із тим, що встигли, і вихід із помилкою.
+NOW = {"what": "start", "since": time.time()}
+STATE = {"results": [], "batches": [], "skipped": [], "problems": [], "hw": {}, "t0": time.time()}
+WARN_MIN, ABORT_MIN = 8, 20
+
+
+def step(what: str) -> None:
+    NOW.update(what=what, since=time.time())
+
+
+def _watchdog() -> None:
+    warned = None
+    while True:
+        time.sleep(20)
+        what, mins = NOW["what"], (time.time() - NOW["since"]) / 60
+        if mins > WARN_MIN and warned != (what, NOW["since"]):
+            warned = (what, NOW["since"])
+            print(f"::warning title=round-trip stuck::{what}: {mins:.0f} min on this step", flush=True)
+        if mins > ABORT_MIN:
+            STATE["problems"].append(f"stuck for {mins:.0f} min at: {what} — the check stopped here")
+            try:
+                write_report(build_report(ok=False))
+            finally:
+                os._exit(1)
 
 
 # ───────────────────────── читання стану ─────────────────────────
@@ -267,6 +297,7 @@ def roundtrip(t, hw) -> dict:
     probe0 = E.probe(t)
     log = []
     t0 = time.time()
+    step(f"applying {t.id}")
     try:
         res = E.apply_tweaks([t], log.append, header=False, hw=hw)
     except Exception:
@@ -283,6 +314,7 @@ def roundtrip(t, hw) -> dict:
     r["warnings"] = warnings_in(log)
 
     # 1) застосовано?
+    step(f"checking {t.id} was applied")
     scheme1 = E.active_scheme()
     for tg in targets:
         cur = read_target(tg, scheme1)
@@ -306,6 +338,7 @@ def roundtrip(t, hw) -> dict:
         r["problems"].append("changed the system but wrote nothing to the rollback journal")
 
     # 2) відкат
+    step(f"rolling back {t.id}")
     log2 = []
     try:
         E.undo_ids([t.id], log2.append)
@@ -314,6 +347,7 @@ def roundtrip(t, hw) -> dict:
     r["problems"] += [f"undo log: {x}" for x in bad_log(log2)]
     if E.JOURNAL.has(t.id):
         r["problems"].append("still in the journal after undo")
+    step(f"checking {t.id} was restored")
     first = {}  # один ключ можна змінити двічі (вимкнути, потім «вручну») — початковий стан у першому записі
     for rec in undo:
         first.setdefault(record_key(rec), rec)
@@ -355,6 +389,7 @@ def batch(items, hw, how: str) -> dict:
     inv0 = invariants()
     log = []
     t0 = time.time()
+    step(f"batch via {how}: applying {len(items)} tweaks")
     res = E.apply_tweaks(items, log.append, header=False, hw=hw)
     r["apply"] = res
     r["apply_s"] = round(time.time() - t0, 1)
@@ -366,22 +401,36 @@ def batch(items, hw, how: str) -> dict:
     r["journal"] = E.JOURNAL.count()
     t0 = time.time()
     if how == "rescue":
+        step("batch via rescue: running OptimaX-Rescue.cmd /all")
         path = RS.write_rescue()
         r["script"] = path
-        p = subprocess.run(["cmd", "/c", path, "/all"], capture_output=True, timeout=1800)
-        r["rescue_rc"] = p.returncode
-        r["rescue_out"] = (p.stdout or b"").decode("utf-8", "replace")[-3000:]
+        # Вивід — у файл, а не в канал: наприкінці скрипт перезапускає Провідник (start explorer.exe), і той успадкував
+        # би канал і тримав його відкритим вічно — subprocess.run чекав би на нього навіть після тайм-ауту.
+        out_path = os.path.join(tempfile.gettempdir(), "oxrt-rescue.log")
+        with open(out_path, "wb") as out:
+            p = subprocess.Popen(["cmd", "/c", path, "/all"], stdout=out, stderr=subprocess.STDOUT,
+                                 stdin=subprocess.DEVNULL)
+            try:
+                rc = p.wait(1800)
+            except subprocess.TimeoutExpired:
+                E.kill_tree(p)
+                rc = "timeout"
+        r["rescue_rc"] = rc
+        with open(out_path, "rb") as f:
+            r["rescue_out"] = f.read().decode("utf-8", "replace")[-3000:]
         gone = RS.sync()
         r["synced"] = len(gone)
-        if p.returncode != 0:
-            r["problems"].append(f"OptimaX-Rescue.cmd /all: {p.returncode} failed steps")
+        if rc != 0:
+            r["problems"].append(f"OptimaX-Rescue.cmd /all: {rc} failed steps")
         if E.JOURNAL.count():
             r["problems"].append(f"{E.JOURNAL.count()} entries were not marked done by the rescue script")
     else:
+        step("batch via journal: rolling back")
         log2 = []
         E.undo_ids(E.JOURNAL.newest_first(), log2.append)
         r["problems"] += [f"undo log: {x}" for x in bad_log(log2)[:20]]
     r["undo_s"] = round(time.time() - t0, 1)
+    step(f"batch via {how}: checking everything was restored")
     if E.JOURNAL.count():  # прибрати за собою, щоб наступний етап почався з чистої системи
         E.undo_ids(E.JOURNAL.newest_first(), lambda *_: None)
     unchecked = 0
@@ -458,14 +507,29 @@ def write_report(rep: dict) -> None:
         f.write("\n".join(md) + "\n")
 
 
+def build_report(ok=None) -> dict:
+    results, batches, problems = STATE["results"], STATE["batches"], STATE["problems"]
+    summary = {k: sum(r["status"] == k for r in results) for k in ("pass", "fail", "allowed", "skip")}
+    summary["excluded"] = len(STATE["skipped"])
+    if ok is None:
+        ok = summary["fail"] == 0 and all(not b["problems"] for b in batches) and not problems
+    hw = STATE["hw"]
+    return {"ok": ok, "os": hw.get("os"), "build": E.win_build(), "cpu": hw.get("cpu"), "summary": summary,
+            "seconds": time.time() - STATE["t0"], "problems": problems, "tweaks": results, "batches": batches,
+            "excluded": STATE["skipped"]}
+
+
 def main() -> int:
-    t_start = time.time()
-    hw = H.detect_hw()
+    t_start = STATE["t0"] = time.time()
+    threading.Thread(target=_watchdog, daemon=True).start()
+    step("detecting hardware")
+    hw = STATE["hw"] = H.detect_hw()
     items, skipped = eligible(hw)
+    STATE["skipped"] = skipped
     print(f"{hw.get('os')} build {E.win_build()} · {len(items)} tweaks to check, {len(skipped)} excluded", flush=True)
     budget = ARGS.budget_min * 60
     over = lambda: budget and time.time() - t_start > budget  # noqa: E731
-    results, problems = [], []
+    results, problems = STATE["results"], STATE["problems"]
     for i, t in enumerate(items, 1):
         if over():
             problems.append(f"time budget of {ARGS.budget_min:.0f} min ran out: {len(items) - i + 1} of {len(items)} "
@@ -477,7 +541,7 @@ def main() -> int:
               (f" — {r['problems'][0][:150]}" if r["problems"] else ""), flush=True)
         if r.get("apply_s", 0) > 120 and os.environ.get("GITHUB_ACTIONS"):
             print(f"::warning title=slow tweak {t.id}::applying took {r['apply_s']:.0f} s", flush=True)
-    batches = []
+    batches = STATE["batches"]
     if not ARGS.no_batch:
         ok_ids = {r["id"] for r in results if r["status"] == "pass"}
         plan = [t for t in items if t.id in ok_ids]
@@ -488,12 +552,9 @@ def main() -> int:
             b = batch(plan, hw, how)
             batches.append(b)
             print(f"batch via {how}: {len(b['problems'])} problems · {time.time() - t_start:.0f} s", flush=True)
-    summary = {k: sum(r["status"] == k for r in results) for k in ("pass", "fail", "allowed", "skip")}
-    summary["excluded"] = len(skipped)
-    ok = summary["fail"] == 0 and all(not b["problems"] for b in batches) and not problems
-    rep = {"ok": ok, "os": hw.get("os"), "build": E.win_build(), "cpu": hw.get("cpu"), "summary": summary,
-           "seconds": time.time() - t_start, "problems": problems, "tweaks": results, "batches": batches,
-           "excluded": skipped}
+    step("writing the report")
+    rep = build_report()
+    ok = rep["ok"]
     write_report(rep)
     print(open(os.path.join(ARGS.out, "roundtrip.md"), encoding="utf-8").read())
     return 0 if ok else 1
