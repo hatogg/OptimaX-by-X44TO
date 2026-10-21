@@ -30,7 +30,7 @@ from i18n import tr, tweak_text
 APP_NAME = "OptimaX"
 AUTHOR = "X44TO"
 APP_TITLE = f"{APP_NAME} by {AUTHOR}"
-VERSION = "6.3.2"
+VERSION = "6.3.3"
 IS_WIN = sys.platform == "win32"
 DRY_RUN = (not IS_WIN) or ("--dry-run" in sys.argv)
 DEMO = os.environ.get("OPTIMAX_DEMO", "gaming")  # демо-залізо поза Windows: gaming/laptop/old/x3d/xeon
@@ -108,14 +108,57 @@ def run(cmd, timeout: int = 30, log: Optional[Callable] = None, input_text: Opti
             log(f"  [dry-run] {shown[:110]}")
         return 0, ""
     try:
-        p = subprocess.run(cmd, shell=isinstance(cmd, str), capture_output=True, timeout=timeout,
-                           input=input_text.encode(OEM, "replace") if input_text else None,
-                           creationflags=CREATE_NO_WINDOW)
-        return p.returncode, _decode((p.stdout or b"") + (p.stderr or b""), enc).strip()
-    except subprocess.TimeoutExpired:
-        return TIMEOUT_RC, "[TIMEOUT]"
+        p = subprocess.Popen(cmd, shell=isinstance(cmd, str), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             stdin=subprocess.PIPE if input_text else subprocess.DEVNULL,
+                             creationflags=CREATE_NO_WINDOW)
     except Exception as e:
         return 1, str(e)
+    chunks = []
+    reader = threading.Thread(target=_drain, args=(p.stdout, chunks.append), daemon=True)
+    reader.start()
+    if input_text:
+        try:
+            p.stdin.write(input_text.encode(OEM, "replace"))
+            p.stdin.close()
+        except OSError:
+            pass
+    # subprocess.run(timeout=…) на Windows після тайм-ауту вбиває лише cmd.exe і далі чекає, поки дочірні процеси
+    # (dism → DismHost, wsreset → Store) закриють канал виводу, — тобто тайм-аут не спрацьовував узагалі,
+    # а кнопка «Зупинити» не могла перервати довгу команду. Тепер зупиняємо все дерево процесів.
+    stoppable = not ro and timeout >= 60
+    deadline = time.time() + timeout
+    while True:
+        try:
+            p.wait(0.2)
+            break
+        except subprocess.TimeoutExpired:
+            if time.time() > deadline or (stoppable and CANCEL.is_set()):
+                kill_tree(p)
+                reader.join(5)
+                return TIMEOUT_RC, "[TIMEOUT]" if time.time() > deadline else "[CANCELLED]"
+    reader.join(5)  # нащадок, що пережив процес, може тримати канал — довше його не чекаємо
+    return p.returncode, _decode(b"".join(chunks), enc).strip()
+
+
+def _drain(pipe, put) -> None:
+    try:
+        for block in iter(lambda: pipe.read1(4096), b""):  # read1 — не чекати повних 4 КБ, віддавати що є
+            put(block)
+    except (OSError, ValueError):
+        pass
+
+
+def kill_tree(p) -> None:
+    """Зупиняє процес разом з усіма дочірніми (taskkill /T), а не лише оболонку cmd.exe."""
+    try:
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(p.pid)], capture_output=True, timeout=20,
+                       creationflags=CREATE_NO_WINDOW)
+    except Exception:
+        pass
+    try:
+        p.kill()
+    except Exception:
+        pass
 
 
 PS_PREFIX = "$ProgressPreference='SilentlyContinue';[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
@@ -158,19 +201,40 @@ def stream(cmd: str, log: Callable, parse: Callable, timeout: int = 1800, enc: O
     except Exception as e:
         log(tr("e.stream_fail", err=e))
         return False
+    import queue
+    lines = queue.Queue()
+
+    def read():
+        try:
+            for raw in p.stdout:
+                lines.put(raw)
+        except (OSError, ValueError):
+            pass
+        lines.put(None)
+    threading.Thread(target=read, daemon=True).start()
     t0 = time.time()
-    for raw in p.stdout:
+    while True:
+        # перевіряємо «Зупинити» й тайм-аут і тоді, коли команда довго мовчить (DISM може мовчати хвилинами)
         if CANCEL.is_set() or time.time() - t0 > timeout:
-            p.kill()
+            kill_tree(p)
             log(tr("e.stream_stop"))
             return False
+        try:
+            raw = lines.get(timeout=0.3)
+        except queue.Empty:
+            continue
+        if raw is None:
+            break
         line = raw.replace("\x00", "").strip()
         if not line:
             continue
         out = parse(line)
         if out:
             log(out)
-    p.wait()
+    try:
+        p.wait(10)
+    except subprocess.TimeoutExpired:
+        kill_tree(p)
     return p.returncode == 0
 
 
@@ -1325,13 +1389,16 @@ def f_clean_registry(ctx: Ctx) -> None:
         run(f'reg delete "{key}" /f', 10, ctx.log)
 
 
-@cmd_doc("TEMP, Prefetch, SoftwareDistribution\\Download, Edge cache, wsreset, DISM /StartComponentCleanup")
+@cmd_doc("TEMP, Windows\\Temp, SoftwareDistribution\\Download, Edge cache")
 def f_clean_junk(ctx: Ctx) -> None:
+    # Без Prefetch: Windows за ним швидше запускає програми, після видалення все стартує повільніше, доки не
+    # збере його знову. Без wsreset (відкриває вікно Store) і DISM (на ноутбуці з HDD — до години): прибирання
+    # WinSxS тепер окрема дія «Прибрати старі копії оновлень» у розділі «Очищення».
     log, freed = ctx.log, 0
     if DRY_RUN:
-        log("  [dry-run] TEMP, Windows\\Temp, Prefetch, SoftwareDistribution\\Download, Edge, wsreset, DISM")
+        log("  [dry-run] TEMP, Windows\\Temp, SoftwareDistribution\\Download, Edge")
         return
-    for p in (os.environ.get("TEMP"), _env(r"%SystemRoot%\Temp"), _env(r"%SystemRoot%\Prefetch")):
+    for p in (os.environ.get("TEMP"), _env(r"%SystemRoot%\Temp")):
         freed += clean_dir(p)
     run("ie4uinit.exe -ClearIconCache", 15, log)
     log(tr("e.wu_cache"))
@@ -1344,12 +1411,14 @@ def f_clean_junk(ctx: Ctx) -> None:
     for sub in ("Cache", "Code Cache", "GPUCache"):
         freed += clean_dir(os.path.join(os.environ.get("LOCALAPPDATA", ""),
                                         "Microsoft", "Edge", "User Data", "Default", sub))
-    log(tr("e.store_cache"))
-    run("wsreset.exe", 90, log)
-    run("taskkill /f /im WinStore.App.exe", 8, log)
-    log(tr("e.winsxs"))
-    run("dism /online /cleanup-image /startcomponentcleanup", 600, log)
     log(tr("e.freed_mb", mb=f"{freed / 2**20:.0f}"))
+
+
+def a_clean_winsxs(ctx: Ctx) -> None:
+    """Старі копії оновлень Windows (WinSxS). Довго, але можна зупинити будь-коли: Windows сама обриває це
+    прибирання за розкладом через годину і потім продовжує."""
+    ctx.log(tr("e.winsxs"))
+    stream("dism /online /cleanup-image /startcomponentcleanup", ctx.log, _pct_parser("DISM"), 3600)
 
 
 @cmd_doc("ipconfig /flushdns; netsh winsock reset catalog; netsh int ip reset")
@@ -1774,7 +1843,7 @@ tw("fix_errors", "maint", [F(f_chkdsk)], reversible=False, reboot=True)
 tw("clean_invalid", "maint", [F(f_clean_invalid)], reversible=False)
 tw("fix_drivers", "maint", [F(f_fix_drivers)], reversible=False)
 tw("clean_registry", "maint", [F(f_clean_registry)], p="FMLTOX", reversible=False)
-tw("clean_junk", "maint", [F(f_clean_junk)], p="FMLTOX", reversible=False, long=True)
+tw("clean_junk", "maint", [F(f_clean_junk)], p="FMLTOX", reversible=False)
 
 # ── Metro-додатки ──
 METRO = [
@@ -2107,6 +2176,7 @@ ACTIONS = [
     Action("fu_memory", f_memory_clean), Action("fu_temp", a_clean_temp), Action("fu_icons", a_reset_icons),
     Action("fu_thumbs", a_clear_thumbs), Action("fu_clip", a_clear_clipboard), Action("fu_bloat", a_kill_bloat),
     Action("fu_shaders", a_clear_shaders), Action("disk_optimize", a_optimize_disk), Action("junk_full", f_clean_junk),
+    Action("clean_winsxs", a_clean_winsxs),
     Action("fu_dns", a_flush_dns, "fix"), Action("fu_net", a_net_reset, "fix"),
     Action("fu_explorer", a_restart_explorer, "fix"), Action("fix_audio", a_fix_audio, "fix"),
     Action("fix_search", a_fix_search, "fix"), Action("fix_store", a_reset_store, "fix"),

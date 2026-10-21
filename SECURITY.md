@@ -13,7 +13,7 @@ OptimaX працює з правами адміністратора й змін�
 **Перевірка файлів:** контрольні суми кожного релізу — у `SHA256SUMS.txt`:
 
 ```powershell
-Get-FileHash .\OptimaX-Setup-6.3.2.exe -Algorithm SHA256
+Get-FileHash .\OptimaX-Setup-6.3.3.exe -Algorithm SHA256
 ```
 
 ## English
@@ -29,5 +29,5 @@ OptimaX runs with administrator rights and changes the system, so vulnerabilitie
 **Verifying files:** checksums of every release are in `SHA256SUMS.txt`:
 
 ```powershell
-Get-FileHash .\OptimaX-Setup-6.3.2.exe -Algorithm SHA256
+Get-FileHash .\OptimaX-Setup-6.3.3.exe -Algorithm SHA256
 ```

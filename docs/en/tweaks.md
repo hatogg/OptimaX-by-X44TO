@@ -2,7 +2,7 @@
 
 [← Back to the main page](../../README.en.md) · [Українська](../uk/tweaks.md)
 
-Generated from the program code (136 optimizations in 16 sections, version 6.3.2). Marks: 🔴 affects everyday habits, 🟡 moderate impact, 🔵 safe. “Rollback” tells whether OptimaX restores the change to your own original value.
+Generated from the program code (136 optimizations in 16 sections, version 6.3.3). Marks: 🔴 affects everyday habits, 🟡 moderate impact, 🔵 safe. “Rollback” tells whether OptimaX restores the change to your own original value.
 
 Before applying, OptimaX checks compatibility with your hardware and Windows version: irrelevant items are disabled, items harmful to your PC (for example, turning off Game Bar on AMD X3D) are blocked, and the reason is shown under the item.
 
@@ -215,7 +215,7 @@ One-time actions: cleanup, disk and driver checks.
 | 🔵 | Clean device data | Resets UserAssist and rescans devices. | — | no |
 | 🔵 | Check drivers | Lists devices with errors in the log. | — | no |
 | 🔵 | Clear registry history | Recent documents, Run, typed paths, UserAssist, ShellBags. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | no |
-| 🔵 | Deep junk cleanup <sub>(takes time)</sub> | Update, Edge and Store caches, TEMP, Prefetch and WinSxS compression. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | no |
+| 🔵 | Deep junk cleanup | Windows Update and Edge caches and temporary files, up to a minute. Old update copies (WinSxS) are a separate action under Cleanup because they take long on laptops. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | no |
 
 ## Built-in apps
 

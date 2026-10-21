@@ -494,11 +494,14 @@ TEXTS = {
         "Recent documents, Run, typed paths, UserAssist, ShellBags."),
     "clean_junk": (
         "Глибоке очищення сміття",
-        "Кеш оновлень, Edge, Store, TEMP, Prefetch і стиснення WinSxS.",
+        "Кеш оновлень Windows, Edge і тимчасові файли — до хвилини. Старі копії оновлень (WinSxS) — окрема дія в "
+        "«Очищенні», бо на ноутбуках триває довго.",
         "Глубокая очистка мусора",
-        "Кэш обновлений, Edge, Store, TEMP, Prefetch и сжатие WinSxS.",
+        "Кэш обновлений Windows, Edge и временные файлы — до минуты. Старые копии обновлений (WinSxS) — отдельное "
+        "действие в «Очистке», потому что на ноутбуках идёт долго.",
         "Deep junk cleanup",
-        "Update, Edge and Store caches, TEMP, Prefetch and WinSxS compression."),
+        "Windows Update and Edge caches and temporary files, up to a minute. Old update copies (WinSxS) are a separate "
+        "action under Cleanup because they take long on laptops."),
 
     # ── Вбудовані додатки ──
     "remove_3dbuilder": ("Видалити 3D Builder", "", "Удалить 3D Builder", "", "Remove 3D Builder", ""),

@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(6, 3, 2, 0),
-    prodvers=(6, 3, 2, 0),
+    filevers=(6, 3, 3, 0),
+    prodvers=(6, 3, 3, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -14,12 +14,12 @@ VSVersionInfo(
       StringTable('042204B0', [
         StringStruct('CompanyName', 'X44TO'),
         StringStruct('FileDescription', 'OptimaX by X44TO - Windows 10/11 optimizer'),
-        StringStruct('FileVersion', '6.3.2.0'),
+        StringStruct('FileVersion', '6.3.3.0'),
         StringStruct('InternalName', 'OptimaX'),
         StringStruct('LegalCopyright', 'MIT License, X44TO'),
         StringStruct('OriginalFilename', 'OptimaX.exe'),
         StringStruct('ProductName', 'OptimaX'),
-        StringStruct('ProductVersion', '6.3.2.0')
+        StringStruct('ProductVersion', '6.3.3.0')
       ])
     ]),
     VarFileInfo([VarStruct('Translation', [1058, 1200])])
