@@ -28,14 +28,17 @@ def test_old_windows10_builds_hide_missing_settings():
     assert not r["bad_min_build"], r["bad_min_build"]
 
 
-def test_services_tweak_touches_only_its_list_and_repairs_63():
+def test_services_tweak_touches_only_its_list_and_older_harm_is_repaired():
     rc, out, r = run_script("services_repair.py")
     assert rc == 0 and r, tail(out)
     # на справжній Windows частини служб немає або вони вже вимкнені — тоді твік їх пропускає
     assert r["applied"] and set(r["applied"]) <= set(r["force_off"]), r["applied"]
     assert IS_WIN or r["applied"] == r["force_off"], r["applied"]
     assert "SharedAccess" not in r["force_off"], r["force_off"]
-    assert r["before"] == ["ETDService", "LenovoFnAndFunctionKeys", "SharedAccess"] and r["n1"] == 3, r
-    assert r["left"] == ["DiagTrack"] and r["again"] == 0, r
-    assert r["n2"] == 1 and r["popped"], r
-    assert len(r["undo_lines"]) == 4, r["undo_lines"]
+    assert r["before"] == ["disable_services:ETDService", "disable_services:LenovoFnAndFunctionKeys",
+                           "disable_services:SharedAccess", "disable_spy_tasks:\\Microsoft\\Windows\\Management"
+                           "\\Provisioning\\Cellular", "optimize_pagefile:ClearPageFileAtShutdown"], r["before"]
+    assert r["n1"] == 5 and r["again"] == 0, r
+    assert r["left"]["disable_services"] == ["DiagTrack"] and r["left"]["optimize_pagefile"] == ["# pagefile"], r
+    assert r["spy_popped"], r
+    assert len(r["undo_lines"]) == 5, r["undo_lines"]

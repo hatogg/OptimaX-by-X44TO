@@ -631,7 +631,9 @@ def trim_disabled() -> bool:
 
 
 # ───────────────────────── MSI Mode ─────────────────────────
-MSI_CLASSES = ("Display", "Net", "USB", "SCSIAdapter", "HDC", "MEDIA")
+# Лише відеокарти, мережа і звук. Контролери дисків (HDC, SCSIAdapter: SATA, NVMe) і USB прибрано: змінений
+# режим переривань на них може зробити Windows такою, що не завантажується, або вимкнути USB-клавіатуру й мишу.
+MSI_CLASSES = ("Display", "Net", "MEDIA")
 
 
 def msi_devices() -> list:

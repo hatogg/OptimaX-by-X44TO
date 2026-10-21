@@ -156,9 +156,9 @@ class Main(QWidget):
             self.run_quick("charge", lambda log, p: PW.set_charge_limit(lim["method"], lim["pct"], log), silent=True)
         if F.CFG["hotkeys"]:
             self.set_hotkeys(True, quiet=True)
-        broken = len(E.services_to_repair())
-        if broken:  # 6.3 помилково переводив у ручний режим службові програми ноутбука — повертаємо з журналу
-            self.run_quick(tr("svc.repair_t"), lambda log, p: E.repair_services(log),
+        broken = len(E.legacy_to_repair())
+        if broken:  # зміни старіших версій, які виявилися шкідливими (служби ноутбука тощо), — повертаємо з журналу
+            self.run_quick(tr("svc.repair_t"), lambda log, p: E.repair_legacy(log),
                            ok_msg=tr("svc.repaired", n=broken))
         self.detect()
         self.guard_refresh()

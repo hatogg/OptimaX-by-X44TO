@@ -60,7 +60,7 @@ OptimaX won't let you turn on something that harms your particular hardware. For
 | **Games** | Game mode (services, background apps, memory, power, timer, Do Not Disturb, background balancer, auto mode); per game: priority, discrete GPU, no Fullscreen Optimizations, cores; an ISLC-style memory cleaner; 0.5 ms timer |
 | **Diagnostics** | Why is it lagging?, before/after FPS test with a graph, forum report |
 | **Benchmarks** | Smart optimization (an A/B test of changes on the GPU test or your game), OptimaX GPU test (1080p, 1440p, 4K), 5–60 minute stress test with a stability check and sensors, result history; FurMark 2 with an automatic result, Superposition, Cinebench, OCCT, CrystalDiskMark, 3DMark |
-| **Hardware** | Specifications, build check with fix buttons, MSI Mode for every PCI device, GPU overclocking (a prompt for DeepSeek, MSI Afterburner) |
+| **Hardware** | Specifications, build check with fix buttons, MSI Mode for graphics, network and audio devices, GPU overclocking (a prompt for DeepSeek, MSI Afterburner) |
 | **Laptop** | Battery wear, power on AC and battery, cool mode, sleep without drain, classic S3 sleep, refresh rate by power source, charge limit (ASUS and Dell right from the program, for other makers where to find it in their utility) |
 | **Network** | Fastest DNS (Cloudflare, Google, Quad9, AdGuard, OpenDNS against yours) with DNS-over-HTTPS, ping and jitter to 12 data-centre regions and to your own server, bufferbloat test graded A+…F |
 | **Ad blocker** | A Pi-hole-style DNS filter: 24-hour statistics, query log, top blocked domains, devices, 13 lists, custom rules, pause, whole-network mode; light mode with AdGuard DNS or Control D in one click |
@@ -75,7 +75,7 @@ OptimaX won't let you turn on something that harms your particular hardware. For
 
 | Profile | For whom |
 | --- | --- |
-| **Full** | A gaming PC, maximum FPS. Turns off Defender and OneDrive |
+| **Full** | A gaming PC, maximum FPS: CPU, GPU, network, timers. Leaves Defender and OneDrive alone |
 | **Medium** | Most people: a balance of speed and stability |
 | **Light** | A first try: only safe cleanup and privacy |
 | **Laptop** | Laptops: full speed on the charger, saving on battery, no aggressive CPU tweaks |

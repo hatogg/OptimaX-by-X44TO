@@ -30,7 +30,7 @@ from i18n import tr, tweak_text
 APP_NAME = "OptimaX"
 AUTHOR = "X44TO"
 APP_TITLE = f"{APP_NAME} by {AUTHOR}"
-VERSION = "6.3.1"
+VERSION = "6.3.2"
 IS_WIN = sys.platform == "win32"
 DRY_RUN = (not IS_WIN) or ("--dry-run" in sys.argv)
 DEMO = os.environ.get("OPTIMAX_DEMO", "gaming")  # демо-залізо поза Windows: gaming/laptop/old/x3d/xeon
@@ -938,27 +938,43 @@ def f_services(ctx: Ctx) -> None:
         exec_op(S(name, "disabled"), ctx)
 
 
-def services_to_repair() -> list:
-    """Записи журналу «Вимкнути зайві служби» для служб, яких 6.3 не мав чіпати (поза FORCE_OFF)."""
-    rec = JOURNAL.get("disable_services") or {}
-    return [u for u in rec.get("undo", []) if u.get("t") == "svc" and u.get("n") not in FORCE_OFF]
+# Зміни, які робили старіші версії і які тепер вважаються шкідливими: (твік, чи цей запис журналу треба відкотити).
+LEGACY_FIXES = [
+    # 6.3: службові програми виробника ноутбука (клавіатура, Fn, тачпад), SharedAccess (мобільна точка доступу)
+    ("disable_services", lambda u: u.get("t") == "svc" and u.get("n") not in FORCE_OFF),
+    # до 6.3.2: очищення файлу підкачки під час кожного вимкнення — вимкнення й перезавантаження ставали повільними
+    ("optimize_pagefile", lambda u: u.get("t") == "reg" and u.get("n") == "ClearPageFileAtShutdown"),
+    # до 6.3.2: завдання, яке налаштовує мобільний інтернет (LTE) на ноутбуках
+    ("disable_spy_tasks", lambda u: u.get("t") == "task" and str(u.get("n", "")).endswith("\\Provisioning\\Cellular")),
+]
 
 
-def repair_services(log: Callable) -> dict:
-    """Повертає цим службам початковий тип запуску з журналу і прибирає їх із запису — решта змін лишається."""
-    bad = services_to_repair()
-    for u in bad:
-        log(f"  · {u['n']} → {u.get('old')}")
+def legacy_to_repair() -> list:
+    """-> [(id твіку, запис журналу)], які треба повернути до початкового стану."""
+    out = []
+    for tid, bad in LEGACY_FIXES:
+        rec = JOURNAL.get(tid) or {}
+        out += [(tid, u) for u in rec.get("undo", []) if bad(u)]
+    return out
+
+
+def repair_legacy(log: Callable) -> dict:
+    """Повертає ці записи до початкового стану з журналу і прибирає їх із нього — решта змін користувача лишається."""
+    todo = legacy_to_repair()
+    for tid, u in todo:
+        log(f"  · {tid}: {u.get('n') or u.get('p')} → {u.get('old', '')}")
         _undo_record(u, log)
     with JOURNAL.lock:
-        rec = JOURNAL.get("disable_services")
-        if rec is not None:
-            rec["undo"] = [u for u in rec.get("undo", []) if u not in bad]
+        for tid in {t for t, _ in todo}:
+            rec = JOURNAL.get(tid)
+            if rec is None:
+                continue
+            rec["undo"] = [u for u in rec.get("undo", []) if all(u is not b for t, b in todo if t == tid)]
             if rec["undo"]:
                 JOURNAL._save()
             else:
-                JOURNAL.pop("disable_services")
-    return {"ok": True, "n": len(bad)}
+                JOURNAL.pop(tid)
+    return {"ok": True, "n": len(todo)}
 
 
 TCP_IFACES = r"HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces"
@@ -1443,7 +1459,7 @@ tw("power_throttling", "perf", [R(r"HKLM\SYSTEM\CurrentControlSet\Control\Power\
 tw("turbo_aggressive", "perf", [P("PERFBOOSTMODE", 2)], p="FX", warn_on=LAP, conflicts=("cool_mode",))
 tw("min_cpu_state", "perf", [P("PROCTHROTTLEMIN", 100)], p="X", impact="medium", warn_on=LAP)
 tw("lock_power", "perf", [R(r"HKLM\SOFTWARE\Policies\Microsoft\Power\PowerSettings", "ActivePowerScheme",
-                            active_scheme, "sz")], p="FMX")
+                            active_scheme, "sz")], p="FMX", block_on=LAP)
 tw("cpu_scheduling", "perf", [R(PRIO, "Win32PrioritySeparation", 38),
                               R(SP + r"\Tasks\Games", "Scheduling Category", "High", "sz")], p="FM", win11=True)
 tw("rt_boost", "perf", [R(SP, "SystemResponsiveness", 0), R(PRIO, "Win32PrioritySeparation", 0x26)], p="FMX")
@@ -1453,7 +1469,7 @@ tw("system_responsiveness", "perf", [R(SP, "SystemResponsiveness", 0), R(SP + r"
                                      R(SP + r"\Tasks\Games", "SFIO Priority", "High", "sz")], p="FMX")
 tw("registry_boost", "perf", [R(MM, "IoPageLockLimit", 0xFFFFFFFF), R(MM, "DisablePagingExecutive", 1)],
    p="FMX", reboot=True)
-tw("optimize_pagefile", "perf", [F(f_pagefile), R(MM, "ClearPageFileAtShutdown", 1)], p="FMX", reboot=True)
+tw("optimize_pagefile", "perf", [F(f_pagefile)], p="FMX", reboot=True)
 tw("memory_compression", "perf", [F(f_memory_compression)], p="FMTOX", reboot=True)
 tw("spectre_off", "perf", [R(MM, "FeatureSettingsOverride", 3), R(MM, "FeatureSettingsOverrideMask", 3)],
    reboot=True, impact="habits", risky="security")
@@ -1481,12 +1497,12 @@ tw("dynamic_tick", "gaming", [C("bcdedit /set disabledynamictick yes", "bcdedit 
    p="FMX", reboot=True)
 tw("hpet_tsc", "gaming", [C("bcdedit /set useplatformclock true", "bcdedit /deletevalue useplatformclock"),
                           C("bcdedit /set tscsyncpolicy Enhanced", "bcdedit /deletevalue tscsyncpolicy")],
-   p="F", reboot=True, impact="medium", risky="fps")
+   reboot=True, impact="medium", risky="fps")
 tw("disable_mouse_accel", "gaming", [R(r"HKCU\Control Panel\Mouse", "MouseSpeed", "0", "sz"),
                                      R(r"HKCU\Control Panel\Mouse", "MouseThreshold1", "0", "sz"),
                                      R(r"HKCU\Control Panel\Mouse", "MouseThreshold2", "0", "sz"),
                                      R(r"HKCU\Control Panel\Mouse", "MouseSensitivity", "10", "sz"), X("mouse")],
-   p="FMLTOX", impact="medium")
+   p="FMLOX", impact="medium")
 tw("vrr_windowed", "gaming", [D(_dx_merge("VRROptimizeEnable", "1"))], p="FMX", win11=True)
 tw("auto_hdr", "gaming", [D(_dx_merge("AutoHDREnable", "1"))], win11=True, impact="medium")
 KBD = r"HKCU\Control Panel\Keyboard"
@@ -1520,7 +1536,6 @@ tw("optimize_network", "net", [R(TCPIP, "TCPNoDelay", 1), R(TCPIP, "TcpAckFreque
                                C("netsh int tcp set global autotuninglevel=normal",
                                  "netsh int tcp set global autotuninglevel=normal"),
                                C("netsh int tcp set global dca=enabled", "netsh int tcp set global dca=default"),
-                               C("netsh int tcp set global netdma=enabled", "netsh int tcp set global netdma=default"),
                                C("netsh int tcp set global ecncapability=disabled",
                                  "netsh int tcp set global ecncapability=default"),
                                C("netsh int tcp set global rss=enabled", "netsh int tcp set global rss=enabled"),
@@ -1529,9 +1544,7 @@ tw("disable_nagle", "net", [D(dyn_nagle)], p="FMX")
 tw("network_stack_boost", "net", [
     C("netsh int tcp set global autotuninglevel=normal", "netsh int tcp set global autotuninglevel=normal"),
     C("netsh int tcp set global rss=enabled", "netsh int tcp set global rss=enabled"),
-    C("netsh int tcp set global chimney=enabled", "netsh int tcp set global chimney=default"),
     C("netsh int tcp set global dca=enabled", "netsh int tcp set global dca=default"),
-    C("netsh int tcp set global netdma=enabled", "netsh int tcp set global netdma=default"),
     C("netsh int tcp set heuristics disabled", "netsh int tcp set heuristics enabled")], p="FMX")
 tw("network_throttling", "net", [R(SP, "NetworkThrottlingIndex", 0xFFFFFFFF)], p="FMTX")
 tw("network_packet_opt", "net", [
@@ -1540,7 +1553,7 @@ tw("network_packet_opt", "net", [
     C("netsh int tcp set global ecncapability=disabled", "netsh int tcp set global ecncapability=default")], p="FMX")
 tw("nic_power", "net", [F(f_nic_power), P(WIFI_SET, 0, WIFI_SUB)], p="FMTOX", reboot=True)
 tw("delivery_p2p", "net", [R(POL + r"\DeliveryOptimization", "DODownloadMode", 0)], p="FMLTOX")
-tw("dns_winsock", "net", [F(f_dns_winsock)], p="FMLTOX", reversible=False, reboot=True, impact="medium")
+tw("dns_winsock", "net", [F(f_dns_winsock)], reversible=False, reboot=True, impact="habits")
 tw("wifi_gaming", "net", [F(f_wifi_gaming)], p="FM", needs="wifi", warn_on=LAP, reboot=True)
 tw("ethernet_latency", "net", [F(f_eth_latency)], p="F", needs="ethernet", reboot=True, impact="medium")
 
@@ -1671,7 +1684,7 @@ SPY_TASKS = [
     r"\Microsoft\Windows\Maps\MapsToastTask", r"\Microsoft\Windows\Maps\MapsUpdateTask",
     r"\Microsoft\Windows\Shell\FamilySafetyMonitor", r"\Microsoft\Windows\Shell\FamilySafetyRefreshTask",
     r"\Microsoft\Windows\Location\Notifications", r"\Microsoft\Windows\Location\WindowsActionDialog",
-    r"\Microsoft\Windows\BrokerInfrastructure\BrokerTask", r"\Microsoft\Windows\Management\Provisioning\Cellular",
+    r"\Microsoft\Windows\BrokerInfrastructure\BrokerTask",
 ]
 tw("disable_telemetry_tasks", "privacy", [TK(*TELEMETRY_TASKS)], p="FMLTOX")
 tw("disable_spy_tasks", "privacy", [TK(*SPY_TASKS)], p="FMTOX", impact="medium")
@@ -1725,12 +1738,12 @@ tw("disable_defender", "system", [R(DEF, "DisableAntiSpyware", 1),
                                   R(DEF + r"\Real-Time Protection", "DisableBehaviorMonitoring", 1),
                                   R(DEF + r"\Real-Time Protection", "DisableOnAccessProtection", 1),
                                   R(DEF + r"\Real-Time Protection", "DisableIOAVProtection", 1), F(f_defender)],
-   p="F", reboot=True, risky="danger", impact="habits", conflicts=("defender_limit",))
+   reboot=True, risky="danger", impact="habits", conflicts=("defender_limit",))
 tw("remove_onedrive", "system", [F(f_onedrive), R(POL + r"\OneDrive", "DisableFileSyncNGSC", 1),
                                  R(POL + r"\OneDrive", "DisableLibrariesDefaultSaveToOneDrive", 1),
                                  RD(r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run", "OneDrive"),
                                  R(r"HKCU\Software\Classes\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}",
-                                   "System.IsPinnedToNameSpaceTree", 0)], p="F", risky="removes", impact="habits")
+                                   "System.IsPinnedToNameSpaceTree", 0)], risky="removes", impact="habits")
 tw("fast_startup_off", "system", [R(r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Power",
                                     "HiberbootEnabled", 0)],
    off=[R(r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Power", "HiberbootEnabled", 1)], p="FMX")

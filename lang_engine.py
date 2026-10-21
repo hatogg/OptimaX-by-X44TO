@@ -158,12 +158,12 @@ STRINGS = {
     # ── профілі ──
     "prof.F.name": ("Full", "Full", "Full"),
     "prof.F.sub": ("Максимум FPS", "Максимум FPS", "Max FPS"),
-    "prof.F.desc": ("Усе для максимальної продуктивності ігрового ПК: процесор, відеокарта, мережа, таймери. Вимикає "
-                    "Defender і OneDrive. Створіть точку відновлення перед запуском.",
+    "prof.F.desc": ("Усе для максимальної продуктивності ігрового ПК: процесор, відеокарта, мережа, таймери. "
+                    "Defender і OneDrive не чіпає. Створіть точку відновлення перед запуском.",
                     "Всё для максимальной производительности игрового ПК: процессор, видеокарта, сеть, таймеры. "
-                    "Отключает Defender и OneDrive. Создайте точку восстановления перед запуском.",
-                    "Everything for maximum gaming PC performance: CPU, GPU, network, timers. Turns off Defender and "
-                    "OneDrive. Create a restore point first."),
+                    "Defender и OneDrive не трогает. Создайте точку восстановления перед запуском.",
+                    "Everything for maximum gaming PC performance: CPU, GPU, network, timers. Leaves Defender and "
+                    "OneDrive alone. Create a restore point first."),
     "prof.M.name": ("Medium", "Medium", "Medium"),
     "prof.M.sub": ("Баланс", "Баланс", "Balanced"),
     "prof.M.desc": ("Баланс швидкості й стабільності: усе з Full, крім Defender, OneDrive і найагресивніших твіків. "

@@ -16,13 +16,18 @@ STRINGS = {
     "e.win10_only": ("  · лише для Windows 10 — пропуск", "  · только для Windows 10 — пропуск",
                      "  · Windows 10 only — skipped"),
     "need.win11": ("Лише для Windows 11.", "Только для Windows 11.", "Windows 11 only."),
-    "svc.repair_t": ("Відновлення служб", "Восстановление служб", "Restoring services"),
-    "svc.repaired": ("Повернуто автозапуск служб: {n}. Версія 6.3 помилково переводила їх у ручний режим — на деяких "
-                     "ноутбуках через це не працювали клавіатура, Fn чи тачпад. Перезавантажте ПК.",
-                     "Возвращён автозапуск служб: {n}. Версия 6.3 по ошибке переводила их в ручной режим — на некоторых "
-                     "ноутбуках из-за этого не работали клавиатура, Fn или тачпад. Перезагрузите ПК.",
-                     "Restored automatic start for {n} service(s). Version 6.3 wrongly switched them to manual, which "
-                     "broke the keyboard, Fn keys or touchpad on some laptops. Restart the PC."),
+    "block.laptop": ("На ноутбуках не застосовується: заважає Windows перемикати живлення від батареї та режим "
+                     "економії.", "На ноутбуках не применяется: мешает Windows переключать питание от батареи и режим "
+                     "экономии.", "Not applied on laptops: it stops Windows from switching power on battery and battery "
+                     "saver."),
+    "svc.repair_t": ("Виправлення змін старіших версій", "Исправление изменений старых версий",
+                     "Fixing changes made by older versions"),
+    "svc.repaired": ("Повернуто до ваших початкових значень: {n}. Старіші версії OptimaX змінювали служби виробника "
+                     "ноутбука, очищення файлу підкачки та мобільний інтернет — це могло заважати. Перезавантажте ПК.",
+                     "Возвращено к вашим исходным значениям: {n}. Старые версии OptimaX меняли службы производителя "
+                     "ноутбука, очистку файла подкачки и мобильный интернет — это могло мешать. Перезагрузите ПК.",
+                     "Restored to your original values: {n}. Older OptimaX versions changed laptop maker services, "
+                     "page file clearing and mobile broadband setup, which could cause problems. Restart the PC."),
     "need.build": ("Потрібна Windows 10 версії {ver} або новіша — у вашій збірці цього параметра немає.",
                    "Нужна Windows 10 версии {ver} или новее — в вашей сборке этого параметра нет.",
                    "Needs Windows 10 version {ver} or later — your build doesn't have this setting."),

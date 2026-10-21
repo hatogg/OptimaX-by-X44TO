@@ -489,17 +489,15 @@ def build_plan(ans: dict, hw: dict) -> list:
             ids.add("cool_mode")
     else:
         ids -= set(GAME_ONLY)
+    # інший антивірус сам переводить Defender у пасивний режим; вимикати його політикою не можна — якщо той
+    # антивірус колись видалять, ПК лишиться без жодного захисту
+    ids.discard("disable_defender")
     if ans.get("av") == "other":
-        ids.add("disable_defender")
         ids.discard("defender_limit")
     else:
-        ids.discard("disable_defender")
         ids.add("defender_limit")
     ms = set(ans.get("ms") or [])
-    if "onedrive" in ms:
-        ids.discard("remove_onedrive")
-    elif ans.get("device") == "old":
-        ids.add("remove_onedrive")
+    ids.discard("remove_onedrive")  # видалення OneDrive — лише вручну: файли «лише в хмарі» стають недоступні
     if "xbox" in ms:
         ids.discard("disable_xbox_gamebar")
     if "search" in ms:

@@ -2,7 +2,7 @@
 
 [← Back to the main page](../../README.en.md) · [Українська](../uk/tweaks.md)
 
-Generated from the program code (136 optimizations in 16 sections, version 6.3.1). Marks: 🔴 affects everyday habits, 🟡 moderate impact, 🔵 safe. “Rollback” tells whether OptimaX restores the change to your own original value.
+Generated from the program code (136 optimizations in 16 sections, version 6.3.2). Marks: 🔴 affects everyday habits, 🟡 moderate impact, 🔵 safe. “Rollback” tells whether OptimaX restores the change to your own original value.
 
 Before applying, OptimaX checks compatibility with your hardware and Windows version: irrelevant items are disabled, items harmful to your PC (for example, turning off Game Bar on AMD X3D) are blocked, and the reason is shown under the item.
 
@@ -40,8 +40,8 @@ Game Bar, fullscreen, timers, mouse and keyboard, VRR, Auto HDR, GPU scheduling.
 | 🔵 | Optimizations for windowed games <sub>(Windows 11)</sub> | Modern flip model for windowed and borderless games: lower latency and VRR support. | Full, Medium, Xeon / X99 | yes |
 | 🔵 | Precise 0.5 ms timer <sub>(restart)</sub> | 0.5 ms system timer instead of 15.6 ms — lower DPC latency, smoother frame times. | Full, Medium, Xeon / X99 | yes |
 | 🔵 | Disable Dynamic Tick <sub>(restart)</sub> | The timer ticks steadily instead of changing rate — less jitter. | Full, Medium, Xeon / X99 | yes |
-| 🟡 | Forced HPET + TSC sync <sub>(restart, may lower FPS)</sub> | A hardware time counter. Steadier frame times on some PCs, lower FPS on others — test in your games. | Full | yes |
-| 🟡 | Turn off mouse acceleration | Linear cursor movement: every millimeter of motion covers the same distance on screen. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
+| 🟡 | Forced HPET + TSC sync <sub>(restart, may lower FPS)</sub> | A hardware time counter. Steadier frame times on some PCs, lower FPS on others — test in your games. | — | yes |
+| 🟡 | Turn off mouse acceleration | Linear cursor movement: every millimeter of motion covers the same distance on screen. | Full, Medium, Light, Old PC, Xeon / X99 | yes |
 | 🔵 | Variable refresh rate (VRR) in windowed games <sub>(Windows 11)</sub> | G-Sync and FreeSync also work in games without their own VRR support — less tearing and judder. | Full, Medium, Xeon / X99 | yes |
 | 🟡 | Auto HDR <sub>(Windows 11)</sub> | Windows adds HDR to older DirectX 11/12 games. HDR monitors only. | — | yes |
 | 🟡 | Fast keyboard repeat | Minimum repeat delay and maximum rate — a held key reacts instantly in games and text. | Full | yes |
@@ -73,7 +73,7 @@ Ping, Nagle, buffers, adapter power saving, Wi-Fi and Ethernet for gaming.
 | 🔵 | Compound TCP | Uses bandwidth more efficiently; ECN is off for compatibility with most routers. | Full, Medium, Xeon / X99 | yes |
 | 🔵 | Turn off network adapter power saving <sub>(restart)</sub> | Energy Efficient Ethernet, Green Ethernet, Wi-Fi power saving and system power-off — lower ping, fewer drops. | Full, Medium, Laptop, Old PC, Xeon / X99 | yes |
 | 🔵 | Don't share updates with other PCs | Windows stops uploading updates to other computers online — your bandwidth and disk stay free. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
-| 🟡 | Reset DNS and Winsock <sub>(restart)</sub> | Rebuilds the network stack — fixes problems after VPNs and antiviruses. One-time action. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | no |
+| 🔴 | Reset DNS and Winsock <sub>(restart)</sub> | Rebuilds the network stack — fixes problems after VPNs and antiviruses. One-time action. | — | no |
 | 🔵 | Wi-Fi for gaming: less roaming <sub>(restart)</sub> | The adapter scans for other access points less often mid-game — fewer ping spikes. Best for a home with one router. | Full, Medium | yes |
 | 🟡 | Ethernet: minimum latency <sub>(restart)</sub> | Turns off Interrupt Moderation and Flow Control — packets are handled at once. Slightly more CPU load. | Full | yes |
 
@@ -180,8 +180,8 @@ Defender, OneDrive, classic photo viewer, fast startup.
 
 | | Optimization | What it does | Profiles | Rollback |
 | --- | --- | --- | --- | --- |
-| 🔴 | Turn off Windows Defender <sub>(restart, risky)</sub> | Only if another antivirus is installed. Otherwise the PC is left unprotected. | Full | yes |
-| 🔴 | Remove OneDrive <sub>(removes the app)</sub> | Uninstalls OneDrive, removes it from Explorer and blocks reinstallation. | Full | yes |
+| 🔴 | Turn off Windows Defender <sub>(restart, risky)</sub> | Only if another antivirus is installed. Otherwise the PC is left unprotected. | — | yes |
+| 🔴 | Remove OneDrive <sub>(removes the app)</sub> | Uninstalls OneDrive, removes it from Explorer and blocks reinstallation. | — | yes |
 | 🔵 | Turn off Fast Startup | Shut down really powers off: fewer driver glitches, proper dual boot, updates install correctly. On an SSD the boot-time difference is barely noticeable. | Full, Medium, Xeon / X99 | yes |
 | 🔵 | Classic photo viewer | Brings back the fast Windows Photo Viewer for JPG, PNG, BMP, GIF and TIFF. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
 
