@@ -207,7 +207,7 @@ Once a day OptimaX checks GitHub for a new release. If there is one, a “new ve
 
 | Item | Requirement |
 | --- | --- |
-| OS | Windows 10 (1903+) / Windows 11, 64-bit (on Arm64 through x64 emulation in Windows 11) |
+| OS | Windows 10 (1809+) / Windows 11, 64-bit (on Arm64 through x64 emulation in Windows 11) |
 | Rights | Administrator (the program asks on its own) |
 | Python | 3.10+ (only to run from source or build) |
 | Optional | PresentMon for the FPS test (OptimaX downloads it), winget for Apps |

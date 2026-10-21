@@ -30,7 +30,8 @@ DisableReadyPage=no
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-MinVersion=10.0.18362
+; будь-яка 64-бітна Windows 10 або 11; на збірках, старших за 1809, InitializeSetup попереджає (див. [Code])
+MinVersion=10.0
 OutputDir=..\Output
 OutputBaseFilename=OptimaX-Setup-{#MyAppVersion}
 SetupIconFile=..\icon.ico
@@ -85,6 +86,9 @@ en.RescueName=OptimaX — Emergency rollback
 uk.RescueComment=Повертає зміни OptimaX без запуску програми, також із безпечного режиму
 ru.RescueComment=Возвращает изменения OptimaX без запуска программы, также из безопасного режима
 en.RescueComment=Rolls back OptimaX changes without starting the program, also from Safe Mode
+uk.OldWindows=У вас Windows 10 збірки %1, вона старша за версію 1809 (17763).%n%nOptimaX перевіряють на новіших версіях Windows: на цій програма може не запуститися, а частина оптимізацій буде недоступна.%n%nВсе одно встановити?
+ru.OldWindows=У вас Windows 10 сборки %1, она старше версии 1809 (17763).%n%nOptimaX проверяют на более новых версиях Windows: на этой программа может не запуститься, а часть оптимизаций будет недоступна.%n%nВсё равно установить?
+en.OldWindows=You have Windows 10 build %1, which is older than version 1809 (17763).%n%nOptimaX is tested on newer versions of Windows: on this one the program may not start, and some optimizations won't be available.%n%nInstall anyway?
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
@@ -125,7 +129,17 @@ end;
 function InitializeSetup: Boolean;
 var
   I: Integer;
+  Win: TWindowsVersion;
 begin
+  { старі збірки Windows 10 не блокуємо, а попереджаємо: інтерфейс (Qt 6) офіційно підтримує 1809+ }
+  GetWindowsVersionEx(Win);
+  if (Win.Major = 10) and (Win.Build < 17763) and (not WizardSilent) then
+    if MsgBox(FmtMessage(CustomMessage('OldWindows'), [IntToStr(Win.Build)]), mbConfirmation,
+              MB_YESNO or MB_DEFBUTTON2) <> IDYES then
+    begin
+      Result := False;
+      Exit;
+    end;
   { під час оновлення програма сама закривається — даємо їй до 10 секунд }
   if ExpandConstant('{param:UPDATE|0}') = '1' then
     for I := 1 to 40 do

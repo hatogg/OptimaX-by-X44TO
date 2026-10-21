@@ -32,7 +32,7 @@
 
 **How do I protect my phone and TV?** Turn on “Protect the whole home network” and set this PC's IP as the DNS server in the router or in the device's Wi-Fi settings. It works while the PC is on, so set an ordinary DNS server as the router's second DNS.
 
-**Does it work on Windows 10?** Yes, from version 1903. Windows 11-only items are skipped on Windows 10, and the other way round.
+**Does it work on Windows 10?** Yes, from version 1809. Windows 11-only items are skipped on Windows 10, and the other way round; settings your build doesn't have yet are hidden too. On older Windows 10 builds the installer warns that they aren't tested and lets you choose whether to install.
 
 **My antivirus or SmartScreen complains about OptimaX. Is it a virus?** No. Antiviruses often flag programs built with PyInstaller “just in case”, and OptimaX also changes the registry and services, exactly what antiviruses watch. All the code is open in this repository, and releases are built by GitHub Actions straight from it; file checksums are in `SHA256SUMS.txt` next to the release (`Get-FileHash OptimaX-Setup-<version>.exe` in PowerShell).
 

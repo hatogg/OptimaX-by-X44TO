@@ -129,7 +129,7 @@ Also: a wizard and an expert menu with 136 optimizations in 16 sections, 6 profi
 2. Pick a language (Українська, Русский, English); it also becomes the program's language.
 3. On the main screen click Start the wizard or open the Expert menu.
 
-The portable `OptimaX-<version>-portable.exe` runs without installation. You need Windows 10 1903+ or Windows 11 (64-bit) and administrator rights; the program asks for them on its own.
+The portable `OptimaX-<version>-portable.exe` runs without installation. You need Windows 10 1809+ or Windows 11 (64-bit) and administrator rights; the program asks for them on its own.
 
 > Windows SmartScreen may show “Unknown publisher” because the file isn't signed with a paid certificate. Click More info → Run anyway. You can check that the file wasn't tampered with using `SHA256SUMS.txt` in the release.
 

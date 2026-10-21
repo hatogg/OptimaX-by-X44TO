@@ -1360,6 +1360,7 @@ class Tweak:
     conflicts: tuple = ()
     win11: bool = False
     win10: bool = False  # лише для Windows 10 (у Windows 11 цих елементів немає)
+    min_build: int = 0  # найстаріша збірка Windows 10, де цей параметр існує
     reversible: bool = True
     custom: bool = False
     _title: str = ""
@@ -1421,7 +1422,7 @@ LAP = ("laptop",)
 
 # ── Продуктивність процесора і пам'яті ──
 tw("ultimate_power", "perf", [F(f_ultimate)], off=[C(f"powercfg -setactive {BALANCED}")], p="FMX",
-   warn_on=LAP, block_on=X3D)
+   warn_on=LAP, block_on=X3D, min_build=17134)
 tw("processor_idle", "perf", [P("IDLEDISABLE", 1)], p="FX", impact="medium", warn_on=LAP, block_on=X3D)
 tw("core_parking", "perf", [P("CPMINCORES", 100), P("CPMAXCORES", 100)], p="FMX", warn_on=LAP + ("hybrid",),
    block_on=X3D)
@@ -1447,7 +1448,7 @@ tw("spectre_off", "perf", [R(MM, "FeatureSettingsOverride", 3), R(MM, "FeatureSe
 
 # ── Ігри ──
 tw("gpu_hw_scheduling", "gaming", [R(r"HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers", "HwSchMode", 2)],
-   p="FM", reboot=True)
+   p="FM", reboot=True, min_build=19041)
 tw("game_mode_on", "gaming", [R(r"HKCU\Software\Microsoft\GameBar", "AllowAutoGameMode", 1),
                               R(r"HKCU\Software\Microsoft\GameBar", "AutoGameModeEnabled", 1)], p="FMLTOX")
 tw("disable_xbox_gamebar", "gaming", [R(GCS, "GameDVR_Enabled", 0), R(POL + r"\GameDVR", "AllowGameDVR", 0),
@@ -1836,6 +1837,9 @@ def probe(t: Tweak) -> bool:
     return True
 
 
+WIN10_RELEASES = {17134: "1803", 17763: "1809", 18362: "1903", 19041: "2004"}
+
+
 def compat(t: Tweak, hw: dict):
     """-> (стан, пояснення). Стан: ok | warn | block | na."""
     if not hw:
@@ -1845,6 +1849,8 @@ def compat(t: Tweak, hw: dict):
         return "na", tr("need.win11")
     if t.win10 and build >= 22000:
         return "na", tr("need.win10")
+    if t.min_build and build and build < t.min_build:
+        return "na", tr("need.build", ver=WIN10_RELEASES.get(t.min_build, str(t.min_build)))
     if t.needs and not hw.get(t.needs):
         return "na", tr(f"need.{t.needs}")
     for k in t.block_on:

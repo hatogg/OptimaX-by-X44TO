@@ -97,7 +97,7 @@ InstallerType: inno
 Scope: machine
 ElevationRequirement: elevatesSelf
 UpgradeBehavior: install
-MinimumOSVersion: 10.0.18362.0
+MinimumOSVersion: 10.0.17763.0
 Installers:
 - Architecture: x64
   InstallerUrl: {url}

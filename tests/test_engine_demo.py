@@ -17,3 +17,12 @@ def test_apply_and_undo_everything(demo):
     assert not r["warnings"], r["warnings"]
     assert r["trial"] == ["active", "decide"], r["trial"]
     assert r["recommended"] >= 15 and r["report_lines"] > 20
+
+
+def test_old_windows10_builds_hide_missing_settings():
+    rc, out, r = run_script("win_builds.py")
+    assert rc == 0 and r, tail(out)
+    assert "gpu_hw_scheduling" in r["18363"] and "gpu_hw_scheduling" not in r["19045"], r
+    assert "ultimate_power" in r["14393"] and "ultimate_power" not in r["17134"], r
+    assert r["22631"] == [] and "2004" in r["reason"], r
+    assert not r["bad_min_build"], r["bad_min_build"]
