@@ -1740,7 +1740,8 @@ tw("disable_search_index", "svc", [S("WSearch")], p="FMTOX", impact="habits")
 tw("compact_os", "space", [C("compact /compactos:always", "compact /compactos:never", 3600)], p="O", long=True)
 tw("hibernation_off", "space", [C("powercfg -h off", "powercfg -h on")], p="O", warn_on=LAP, impact="habits")
 tw("reserved_storage_off", "space", [C("DISM /Online /Set-ReservedStorageState /State:Disabled",
-                                       "DISM /Online /Set-ReservedStorageState /State:Enabled", 180)], p="O")
+                                       "DISM /Online /Set-ReservedStorageState /State:Enabled", 180)], p="O",
+   min_build=19041)
 
 # ── Обслуговування (разові дії) ──
 tw("memory_clean", "maint", [F(f_memory_clean)], p="FMLTOX", reversible=False)

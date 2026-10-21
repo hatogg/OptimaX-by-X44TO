@@ -38,7 +38,8 @@ if errorlevel 1 goto :fail
 
 echo.
 echo [1] Installing PyQt6 and PyInstaller...
-%PY% -m pip install --upgrade PyQt6 pyinstaller
+rem PyQt6 is pinned in requirements.txt: Qt 6.13+ no longer runs on Windows 10
+%PY% -m pip install --upgrade -r requirements.txt pyinstaller
 if errorlevel 1 (
     echo [ERROR] pip install failed. See the messages above.
     goto :fail

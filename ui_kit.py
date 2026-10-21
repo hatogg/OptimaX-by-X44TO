@@ -166,7 +166,7 @@ def dark_titlebar(w: QWidget) -> None:
     if not E.IS_WIN:
         return
     try:
-        hwnd, on = int(w.winId()), ctypes.c_int(1)
+        hwnd, on = ctypes.c_void_p(int(w.winId())), ctypes.c_int(1)
         dwm = ctypes.windll.dwmapi
         if dwm.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(on), 4) != 0:
             dwm.DwmSetWindowAttribute(hwnd, 19, ctypes.byref(on), 4)

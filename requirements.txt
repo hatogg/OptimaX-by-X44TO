@@ -1,1 +1,3 @@
-PyQt6>=6.5
+# Qt 6.12 is the last Qt that supports Windows 10 (1809+): newer PyQt6 builds would not start there
+PyQt6>=6.5,<6.13
+PyQt6-Qt6<6.13
