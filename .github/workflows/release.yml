@@ -1,5 +1,6 @@
 # OptimaX — реліз. Два способи запуску:
-#   1) кнопка Actions → Release → Run workflow: реліз версії з VERSION у engine.py, тег v<версія> створить сам workflow;
+#   1) кнопка Actions → Release → Run workflow: реліз версії з VERSION у engine.py, тег v<версія> створить сам workflow
+#      (перемикач «full_checks»: вимкнений — реліз одразу після збірки й самоперевірки exe, без годинної перевірки твіків);
 #   2) тег:  git tag v6.3 && git push origin v6.3  (тег має збігатися з VERSION у engine.py).
 # Спершу проходить увесь CI (зокрема твіки на справжній Windows), і лише тоді на GitHub з'являється реліз
 # з інсталятором, портативною версією, Rescue-запускачем, SHA256SUMS.txt і маніфестами winget.
@@ -13,6 +14,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      full_checks:
+        description: "Усі перевірки, зокрема кожен твік на справжній Windows (~1 год). Вимкнено — реліз після збірки, самоперевірки exe та встановлення/видалення (~20 хв)"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -39,6 +45,8 @@ jobs:
     needs: version
     uses: ./.github/workflows/ci.yml
     secrets: inherit
+    with:
+      quick: ${{ github.event_name == 'workflow_dispatch' && !inputs.full_checks }}
 
   publish:
     name: GitHub release

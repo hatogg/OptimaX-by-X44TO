@@ -61,6 +61,9 @@ def tail(text: str, n: int = 60) -> str:
 
 def cases(argnames: str, values):
     """@pytest.mark.parametrize, який розуміє й tests/run_tests.py."""
+    one = len([n for n in argnames.split(",") if n.strip()]) == 1
+    values = [v[0] if one and isinstance(v, tuple) and len(v) == 1 else v for v in values]  # pytest: ("x",) → "x"
+
     def deco(fn):
         fn.cases = [v if isinstance(v, tuple) else (v,) for v in values]
         try:
