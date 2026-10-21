@@ -2,7 +2,7 @@
 
 [← Back to the main page](../../README.en.md) · [Українська](../uk/tweaks.md)
 
-Generated from the program code (136 optimizations in 16 sections, version 6.3). Marks: 🔴 affects everyday habits, 🟡 moderate impact, 🔵 safe. “Rollback” tells whether OptimaX restores the change to your own original value.
+Generated from the program code (136 optimizations in 16 sections, version 6.3.1). Marks: 🔴 affects everyday habits, 🟡 moderate impact, 🔵 safe. “Rollback” tells whether OptimaX restores the change to your own original value.
 
 Before applying, OptimaX checks compatibility with your hardware and Windows version: irrelevant items are disabled, items harmful to your PC (for example, turning off Game Bar on AMD X3D) are blocked, and the reason is shown under the item.
 
@@ -191,7 +191,7 @@ Background services and search indexing.
 
 | | Optimization | What it does | Profiles | Rollback |
 | --- | --- | --- | --- | --- |
-| 🟡 | Turn off unneeded services | Heavy services switch to manual start. NVIDIA, AMD, Intel drivers, anti-cheats and VPNs are left alone. | Full, Medium, Old PC, Xeon / X99 | yes |
+| 🟡 | Turn off unneeded services | Turns off Windows services most people don't need: telemetry, error reporting, fax, retail demo, offline maps, remote registry, location, wallet. PC and laptop maker services, drivers, anti-cheats and VPNs are left alone. | Full, Medium, Old PC, Xeon / X99 | yes |
 | 🔴 | Turn off search indexing | The drive isn't scanned in the background. Searching files from Start gets slower. | Full, Medium, Laptop, Old PC, Xeon / X99 | yes |
 
 ## Disk space

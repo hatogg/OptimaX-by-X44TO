@@ -26,3 +26,13 @@ def test_old_windows10_builds_hide_missing_settings():
     assert "ultimate_power" in r["14393"] and "ultimate_power" not in r["17134"], r
     assert r["22631"] == [] and "2004" in r["reason"], r
     assert not r["bad_min_build"], r["bad_min_build"]
+
+
+def test_services_tweak_touches_only_its_list_and_repairs_63():
+    rc, out, r = run_script("services_repair.py")
+    assert rc == 0 and r, tail(out)
+    assert r["applied"] == r["force_off"] and "SharedAccess" not in r["applied"], r["applied"]
+    assert r["before"] == ["ETDService", "LenovoFnAndFunctionKeys", "SharedAccess"] and r["n1"] == 3, r
+    assert r["left"] == ["DiagTrack"] and r["again"] == 0, r
+    assert r["n2"] == 1 and r["popped"], r
+    assert len(r["undo_lines"]) == 4, r["undo_lines"]

@@ -16,6 +16,13 @@ STRINGS = {
     "e.win10_only": ("  · лише для Windows 10 — пропуск", "  · только для Windows 10 — пропуск",
                      "  · Windows 10 only — skipped"),
     "need.win11": ("Лише для Windows 11.", "Только для Windows 11.", "Windows 11 only."),
+    "svc.repair_t": ("Відновлення служб", "Восстановление служб", "Restoring services"),
+    "svc.repaired": ("Повернуто автозапуск служб: {n}. Версія 6.3 помилково переводила їх у ручний режим — на деяких "
+                     "ноутбуках через це не працювали клавіатура, Fn чи тачпад. Перезавантажте ПК.",
+                     "Возвращён автозапуск служб: {n}. Версия 6.3 по ошибке переводила их в ручной режим — на некоторых "
+                     "ноутбуках из-за этого не работали клавиатура, Fn или тачпад. Перезагрузите ПК.",
+                     "Restored automatic start for {n} service(s). Version 6.3 wrongly switched them to manual, which "
+                     "broke the keyboard, Fn keys or touchpad on some laptops. Restart the PC."),
     "need.build": ("Потрібна Windows 10 версії {ver} або новіша — у вашій збірці цього параметра немає.",
                    "Нужна Windows 10 версии {ver} или новее — в вашей сборке этого параметра нет.",
                    "Needs Windows 10 version {ver} or later — your build doesn't have this setting."),

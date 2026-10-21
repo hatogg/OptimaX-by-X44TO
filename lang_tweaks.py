@@ -414,11 +414,17 @@ TEXTS = {
     # ── Служби ──
     "disable_services": (
         "Вимкнути зайві служби",
-        "Навантажувальні служби переходять у ручний режим. Драйвери NVIDIA, AMD, Intel, античити й VPN не чіпаємо.",
+        "Вимикає служби Windows, які більшості не потрібні: телеметрія, звіти про помилки, факс, демо-режим, "
+        "офлайн-карти, віддалений реєстр, геолокація, гаманець. Служби виробника ПК чи ноутбука, драйвери, античити "
+        "й VPN не чіпаються.",
         "Отключить лишние службы",
-        "Нагружающие службы переходят в ручной режим. Драйверы NVIDIA, AMD, Intel, античиты и VPN не трогаем.",
+        "Отключает службы Windows, которые большинству не нужны: телеметрия, отчёты об ошибках, факс, демо-режим, "
+        "офлайн-карты, удалённый реестр, геолокация, кошелёк. Службы производителя ПК или ноутбука, драйверы, "
+        "античиты и VPN не затрагиваются.",
         "Turn off unneeded services",
-        "Heavy services switch to manual start. NVIDIA, AMD, Intel drivers, anti-cheats and VPNs are left alone."),
+        "Turns off Windows services most people don't need: telemetry, error reporting, fax, retail demo, offline "
+        "maps, remote registry, location, wallet. PC and laptop maker services, drivers, anti-cheats and VPNs are "
+        "left alone."),
     "disable_search_index": (
         "Вимкнути індексування пошуку",
         "Диск не сканується у фоні. Пошук файлів через «Пуск» стане повільнішим.",

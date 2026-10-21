@@ -30,7 +30,7 @@ from i18n import tr, tweak_text
 APP_NAME = "OptimaX"
 AUTHOR = "X44TO"
 APP_TITLE = f"{APP_NAME} by {AUTHOR}"
-VERSION = "6.3"
+VERSION = "6.3.1"
 IS_WIN = sys.platform == "win32"
 DRY_RUN = (not IS_WIN) or ("--dry-run" in sys.argv)
 DEMO = os.environ.get("OPTIMAX_DEMO", "gaming")  # демо-залізо поза Windows: gaming/laptop/old/x3d/xeon
@@ -923,30 +923,42 @@ def f_onedrive(ctx: Ctx) -> None:
                                       "--accept-package-agreements --accept-source-agreements"})
 
 
+# Лише служби Windows, без яких система й залізо точно працюють. Версія 6.3 додавала сюди ще всі служби з
+# автозапуском, які не працювали в мить застосування. На ноутбуках серед них бувають службові програми виробника
+# (клавіатура, клавіші Fn, тачпад), і після перезавантаження ті переставали працювати. SharedAccess (спільний доступ
+# до інтернету) теж прибрано: без нього не працює мобільна точка доступу.
 FORCE_OFF = ["DiagTrack", "dmwappushservice", "WMPNetworkSvc", "RemoteRegistry", "Fax", "WerSvc", "PcaSvc",
              "wercplsupport", "MapsBroker", "lfsvc", "RetailDemo", "TrkWks", "WalletService", "PhoneSvc",
-             "SmsRouter", "SharedAccess"]
-SVC_KEEP = ("nvidia", "amd", "intel", "cheat", "vpn", "faceit", "realtek", "steelseries", "logitech", "corsair",
-            "razer", "asus", "msi", "eac", "easyanticheat", "battleye", "vgc", "vanguard", "optimax")
-SVC_GUARD = ("microsoft", "windows", "wlan", "lan", "audio", "rpc", "dcom", "plug", "pnp", "power", "security")
+             "SmsRouter"]
 
 
-@cmd_doc("sc config <services> start= disabled / demand")
+@cmd_doc("sc config " + " ".join(FORCE_OFF) + " start= disabled")
 def f_services(ctx: Ctx) -> None:
     for name in FORCE_OFF:
         exec_op(S(name, "disabled"), ctx)
-    if DRY_RUN:
-        return
-    rc, out = ps("Get-Service | Where-Object {$_.StartType -eq 'Automatic' -and $_.Status -ne 'Running'} | "
-                 "Select-Object -ExpandProperty Name", 40, ro=True)
-    if rc != 0:
-        ctx.log(tr("e.svc_list_fail"))
-        return
-    for name in (x.strip() for x in out.splitlines()):
-        low = name.lower()
-        if not name or any(w in low for w in SVC_KEEP) or any(w in low for w in SVC_GUARD):
-            continue
-        exec_op(S(name, "demand"), ctx)
+
+
+def services_to_repair() -> list:
+    """Записи журналу «Вимкнути зайві служби» для служб, яких 6.3 не мав чіпати (поза FORCE_OFF)."""
+    rec = JOURNAL.get("disable_services") or {}
+    return [u for u in rec.get("undo", []) if u.get("t") == "svc" and u.get("n") not in FORCE_OFF]
+
+
+def repair_services(log: Callable) -> dict:
+    """Повертає цим службам початковий тип запуску з журналу і прибирає їх із запису — решта змін лишається."""
+    bad = services_to_repair()
+    for u in bad:
+        log(f"  · {u['n']} → {u.get('old')}")
+        _undo_record(u, log)
+    with JOURNAL.lock:
+        rec = JOURNAL.get("disable_services")
+        if rec is not None:
+            rec["undo"] = [u for u in rec.get("undo", []) if u not in bad]
+            if rec["undo"]:
+                JOURNAL._save()
+            else:
+                JOURNAL.pop("disable_services")
+    return {"ok": True, "n": len(bad)}
 
 
 TCP_IFACES = r"HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces"

@@ -32,8 +32,6 @@ STRINGS = {
     "e.od_winget": ("  · видалено через winget", "  · удалено через winget", "  · removed with winget"),
     "e.od_classic": ("  · winget недоступний — класичний деінсталятор", "  · winget недоступен — классический деинсталлятор",
                      "  · winget unavailable — using the classic uninstaller"),
-    "e.svc_list_fail": ("  ⚠ не вдалося отримати список служб", "  ⚠ не удалось получить список служб",
-                        "  ⚠ could not read the list of services"),
     "e.ifaces": ("  · мережевих інтерфейсів: {n}", "  · сетевых интерфейсов: {n}", "  · network interfaces: {n}"),
     "e.nic_done": ("  · змінено налаштувань адаптерів: {n}", "  · изменено настроек адаптеров: {n}",
                    "  · adapter settings changed: {n}"),
