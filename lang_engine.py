@@ -51,6 +51,8 @@ STRINGS = {
     "e.winsxs": ("  · WinSxS: DISM /StartComponentCleanup — від кількох хвилин до години, можна зупинити будь-коли",
                  "  · WinSxS: DISM /StartComponentCleanup — от нескольких минут до часа, можно остановить в любой момент",
                  "  · WinSxS: DISM /StartComponentCleanup — a few minutes to an hour, you can stop it any time"),
+    "e.hib_off_already": ("  · гібернацію вже вимкнено — нічого не змінюю", "  · гибернация уже отключена — ничего не меняю",
+                          "  · hibernation is already off, nothing to change"),
     "e.freed_mb": ("  · звільнено ≈ {mb} МБ", "  · освобождено ≈ {mb} МБ", "  · freed ≈ {mb} MB"),
     "e.timeout_pkg": ("  ⚠ тайм-аут, {pkg} пропущено", "  ⚠ тайм-аут, {pkg} пропущен", "  ⚠ timeout, {pkg} skipped"),
     "e.win11_only": ("  · пропущено: параметр лише для Windows 11", "  · пропущено: параметр только для Windows 11",

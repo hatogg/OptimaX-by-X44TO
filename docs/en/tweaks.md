@@ -105,7 +105,7 @@ For weak and old PCs: animations, background apps, widgets, Defender, NTFS, Wind
 | 🔵 | Limit Defender to 20% CPU | Protection stays on, but scans don't slow the PC and only run when it's idle. | Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
 | 🔵 | Remove startup delay | Startup apps launch right away, without Windows' artificial pause. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
 | 🔵 | Don't record last access time (NTFS) <sub>(restart)</sub> | Opening a file no longer triggers a disk write — noticeable on HDDs. | Old PC | yes |
-| 🔵 | No 8.3 short names (NTFS) | Windows stops creating an extra DOS-style name for every new file — faster in folders with thousands of files. | Old PC | yes |
+| 🔵 | No 8.3 short names (NTFS) <sub>(restart)</sub> | Windows stops creating an extra DOS-style name for every new file — faster in folders with thousands of files. | Old PC | yes |
 | 🔵 | Remove News and interests <sub>(Windows 10)</sub> | Weather and news leave the taskbar and stop loading in the background. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
 | 🔵 | Turn off Cortana <sub>(Windows 10)</sub> | The Cortana button disappears and the assistant stops running in the background. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
 | 🔵 | Turn off Windows Ink Workspace <sub>(Windows 10)</sub> | The pen workspace no longer starts. Skip this if you draw with a pen. | Full, Medium, Old PC, Xeon / X99 | yes |

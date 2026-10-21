@@ -1414,6 +1414,27 @@ def f_clean_junk(ctx: Ctx) -> None:
     log(tr("e.freed_mb", mb=f"{freed / 2**20:.0f}"))
 
 
+POWER_KEY = r"HKLM\SYSTEM\CurrentControlSet\Control\Power"
+
+
+@cmd_doc("powercfg -h off (відкат умикає гібернацію, лише якщо вона була ввімкнена до OptimaX)")
+def f_hibernation_off(ctx: Ctx) -> None:
+    """Раніше відкат завжди робив «powercfg -h on» — навіть якщо гібернацію ви вимкнули самі: після відкату
+    з'являвся файл hiberfil.sys на кілька гігабайтів."""
+    cur = reg_get(POWER_KEY, "HibernateEnabled")
+    hiberfil = os.path.join(os.environ.get("SystemDrive", "C:") + "\\", "hiberfil.sys")
+    # гібернація справді ввімкнена лише тоді, коли є hiberfil.sys: на віртуальних машинах і ПК без підтримки S4
+    # HibernateEnabled буває 1, а «powercfg -h on» потім не спрацює
+    if (cur is not None and not cur[1]) or (IS_WIN and not os.path.exists(hiberfil)):
+        ctx.log(tr("e.hib_off_already"))
+        return
+    rc, out = run("powercfg -h off", 30, ctx.log)
+    if rc == 0:
+        ctx.undo.append({"t": "cmd", "c": "powercfg -h on"})
+    else:
+        ctx.log(tr("e.skipped", why=first_line(out, 60) or tr("e.code", rc=rc), cmd="powercfg -h off"))
+
+
 def a_clean_winsxs(ctx: Ctx) -> None:
     """Старі копії оновлень Windows (WinSxS). Довго, але можна зупинити будь-коли: Windows сама обриває це
     прибирання за розкладом через годину і потім продовжує."""
@@ -1664,9 +1685,11 @@ tw("startup_delay", "lite", [R(EXPL + r"\Serialize", "StartupDelayInMSec", 0),
                                0)],
    off=[RD(EXPL + r"\Serialize", "StartupDelayInMSec"),
         RD(r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon", "SyncForegroundPolicy")], p="FMLTOX")
-tw("ntfs_lastaccess", "lite", [C("fsutil behavior set disablelastaccess 1", "fsutil behavior set disablelastaccess 2")],
-   p="O", reboot=True)
-tw("ntfs_8dot3", "lite", [C("fsutil behavior set disable8dot3 1", "fsutil behavior set disable8dot3 2")], p="O")
+# Через реєстр, а не fsutil: fsutil пише ті самі значення, але відкат «set … 2» повертав стандартне значення,
+# а не ваше (якщо ви вже вимикали це вручну, відкат умикав назад). Тепер журнал повертає точне початкове значення.
+FS_KEY = r"HKLM\SYSTEM\CurrentControlSet\Control\FileSystem"
+tw("ntfs_lastaccess", "lite", [R(FS_KEY, "NtfsDisableLastAccessUpdate", 1)], p="O", reboot=True)
+tw("ntfs_8dot3", "lite", [R(FS_KEY, "NtfsDisable8dot3NameCreation", 1)], p="O", reboot=True)
 tw("w10_news_off", "lite", [R(r"HKCU\Software\Microsoft\Windows\CurrentVersion\Feeds", "ShellFeedsTaskbarViewMode", 2),
                             X("explorer")], p="FMLTOX", win10=True)
 tw("w10_cortana_off", "lite", [R(ADV, "ShowCortanaButton", 0), R(POL + r"\Windows Search", "AllowCortana", 0),
@@ -1832,7 +1855,7 @@ tw("disable_search_index", "svc", [S("WSearch")], p="FMTOX", impact="habits")
 
 # ── Місце на диску ──
 tw("compact_os", "space", [C("compact /compactos:always", "compact /compactos:never", 3600)], p="O", long=True)
-tw("hibernation_off", "space", [C("powercfg -h off", "powercfg -h on")], p="O", warn_on=LAP, impact="habits")
+tw("hibernation_off", "space", [F(f_hibernation_off)], p="O", warn_on=LAP, impact="habits")
 tw("reserved_storage_off", "space", [C("DISM /Online /Set-ReservedStorageState /State:Disabled",
                                        "DISM /Online /Set-ReservedStorageState /State:Enabled", 180)], p="O",
    min_build=19041)
