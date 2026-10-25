@@ -89,3 +89,6 @@ def test_update_schedule_and_snooze():
     setup, portable, old = r["release"]
     assert setup["url"] == "https://e/s.exe" and setup["kind"] == "setup"
     assert portable["url"] == "https://e/p.exe" and old is None
+    notes = r["notes"]
+    assert notes.startswith("Виправлено") and "English" not in notes and "**" not in notes and "Files" not in notes
+    assert len(notes) <= 1502

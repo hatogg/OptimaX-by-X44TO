@@ -127,6 +127,18 @@ def latest_release(log=lambda *_: None) -> dict:
     raise RuntimeError(errors[0] if errors else "no update source")
 
 
+def clean_notes(body: str, limit: int = 1500) -> str:
+    """Нотатки релізу для вікна оновлення: без англійського блоку <details>, списку файлів і розмітки Markdown."""
+    body = re.sub(r"(?s)<details>.*?</details>", "", (body or "").replace("\r\n", "\n"))
+    body = body.split("\n---\n")[0]
+    body = re.sub(r"^#+\s*", "", body, flags=re.M)
+    body = re.sub(r"\*\*|`", "", body)
+    body = re.sub(r"\n{3,}", "\n\n", body).strip()
+    if len(body) > limit:
+        body = body[:limit].rsplit("\n", 1)[0].rstrip() + "\n…"
+    return body
+
+
 def from_release(rel: dict, installed: bool):
     """Реліз GitHub -> {version, notes, page, url, size, kind} або None, якщо він не новіший за поточну версію."""
     ver = (rel.get("tag_name") or rel.get("name") or "").lstrip("vV")
@@ -134,7 +146,7 @@ def from_release(rel: dict, installed: bool):
         return None
     pattern = SETUP_RE if installed else PORTABLE_RE
     asset = next((a for a in rel.get("assets", []) if pattern.match(a.get("name", ""))), None)
-    return dict(version=ver, notes=(rel.get("body") or "").strip()[:1500], page=rel.get("html_url", ""),
+    return dict(version=ver, notes=clean_notes(rel.get("body") or ""), page=rel.get("html_url", ""),
                 url=asset["browser_download_url"] if asset else "", size=asset.get("size", 0) if asset else 0,
                 kind="setup" if installed else "portable")
 

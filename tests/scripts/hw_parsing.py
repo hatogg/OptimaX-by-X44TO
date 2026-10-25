@@ -187,5 +187,8 @@ R["snoozed"] = [U.snoozed({"snooze": {"v": "9.9", "until": now + 100}}, "9.9", n
 rel = {"tag_name": "v99.1", "html_url": "https://github.com/x/y/releases/tag/v99.1", "body": "notes",
        "assets": [{"name": "OptimaX-Setup-99.1.exe", "browser_download_url": "https://e/s.exe", "size": 5},
                   {"name": "OptimaX-99.1-portable.exe", "browser_download_url": "https://e/p.exe", "size": 6}]}
+changelog = open(_boot.os.path.join(_boot.ROOT, "CHANGELOG.md"), encoding="utf-8").read()
+section = changelog.split("## [6.3.5]")[1].split("\n## [")[0]
+R["notes"] = U.clean_notes(section.split("\n", 1)[1] + "\n---\n\n**Файли · Files:** x")
 R["release"] = [U.from_release(rel, True), U.from_release(rel, False), U.from_release(dict(rel, tag_name="v1.0"), True)]
 _boot.result(**R)
