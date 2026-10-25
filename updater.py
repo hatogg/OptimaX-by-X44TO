@@ -12,6 +12,8 @@ import re
 import subprocess
 import tempfile
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 
 import engine as E
@@ -28,6 +30,10 @@ except ImportError:
 UPDATE_REPO = os.environ.get("OPTIMAX_UPDATE_REPO", "") or _BUILT_REPO
 SETUP_RE = re.compile(r"^OptimaX-Setup-[\d.]+\.exe$", re.I)
 PORTABLE_RE = re.compile(r"^OptimaX-[\d.]+-portable\.exe$", re.I)
+CHECK_EVERY = 6 * 3600   # автоматична перевірка не частіше
+RETRY_AFTER = 30 * 60    # після невдалої спроби (немає мережі, GitHub недоступний)
+SNOOZE = 24 * 3600       # «Пізніше» ховає повідомлення про цю версію на добу
+UA = f"{E.APP_NAME}/{E.VERSION}"
 
 
 def enabled() -> bool:
@@ -39,8 +45,102 @@ def vtuple(v: str):
     return tuple(int(n) for n in nums[:4]) or (0,)
 
 
+def due(cfg: dict, now: float = None) -> bool:
+    """Чи пора автоматично перевіряти. Невдала спроба не відкладає наступну на весь інтервал."""
+    now = time.time() if now is None else now
+    cfg = cfg or {}
+    if now - (cfg.get("last_try") or 0) < RETRY_AFTER:
+        return False
+    return now - (cfg.get("last_check") or 0) >= CHECK_EVERY
+
+
+def cached(cfg: dict):
+    """Остання знайдена новіша версія — щоб банер не зникав, якщо програму перезапустили до наступної перевірки."""
+    info = (cfg or {}).get("latest")
+    if isinstance(info, dict) and info.get("version") and vtuple(info["version"]) > vtuple(E.VERSION):
+        return info
+    return None
+
+
+def snoozed(cfg: dict, version: str, now: float = None) -> bool:
+    s = (cfg or {}).get("snooze") or {}
+    now = time.time() if now is None else now
+    return bool(version) and s.get("v") == version and now < (s.get("until") or 0)
+
+
+def _open(url: str, timeout: int, accept: str = None):
+    headers = {"User-Agent": UA}
+    if accept:
+        headers["Accept"] = accept
+    return urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=timeout)
+
+
+def _api_latest() -> dict:
+    with _open(f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest", 15, "application/vnd.github+json") as r:
+        return json.load(r)
+
+
+def _page_latest() -> dict:
+    """github.com/…/releases/latest переадресовує на сторінку тегу. На відміну від API, тут немає ліміту
+    60 запитів на годину з однієї IP-адреси, який легко вичерпати за спільною адресою провайдера (CGNAT)."""
+    with _open(f"https://github.com/{UPDATE_REPO}/releases/latest", 15) as r:
+        final = r.geturl()
+    m = re.search(r"/releases/tag/([^/?#]+)", final or "")
+    if not m:
+        raise RuntimeError(f"no release tag in {final}")
+    tag = urllib.parse.unquote(m.group(1))
+    ver = tag.lstrip("vV")
+    base = f"https://github.com/{UPDATE_REPO}/releases/download/{urllib.parse.quote(tag)}/"
+    return {"tag_name": tag, "html_url": final, "body": "",
+            "assets": [{"name": n, "browser_download_url": base + n, "size": 0}
+                       for n in (f"OptimaX-Setup-{ver}.exe", f"OptimaX-{ver}-portable.exe")]}
+
+
+def _ps_quote(s: str) -> str:
+    return "'" + str(s).replace("'", "''") + "'"
+
+
+def _ps_api_latest() -> dict:
+    """Через PowerShell (Schannel): Python бачить лише вже завантажені кореневі сертифікати Windows, а на свіжій
+    системі потрібного кореня може ще не бути — тоді urllib падає з CERTIFICATE_VERIFY_FAILED."""
+    url = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
+    script = ("[Net.ServicePointManager]::SecurityProtocol=[Net.ServicePointManager]::SecurityProtocol -bor 3072;"
+              f"$r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 20 -UserAgent {_ps_quote(UA)} -Uri {_ps_quote(url)};"
+              "[Console]::Out.Write($r.Content)")
+    data = E.parse_json_out(E.ps(script, 40, ro=True)[1])
+    if not isinstance(data, dict) or not data.get("tag_name"):
+        raise RuntimeError("PowerShell: no release data")
+    return data
+
+
+def latest_release(log=lambda *_: None) -> dict:
+    """Дані останнього релізу: API → сторінка релізу → PowerShell. Помилка — лише якщо не спрацювало жодне."""
+    errors = []
+    for fn in (_api_latest, _page_latest, _ps_api_latest):
+        if fn is _ps_api_latest and not E.IS_WIN:
+            continue
+        try:
+            return fn()
+        except Exception as e:  # noqa: BLE001 — пробуємо наступний спосіб
+            errors.append(f"{type(e).__name__}: {e}")
+            log(f"  · {fn.__name__.strip('_')}: {type(e).__name__}: {str(e)[:120]}")
+    raise RuntimeError(errors[0] if errors else "no update source")
+
+
+def from_release(rel: dict, installed: bool):
+    """Реліз GitHub -> {version, notes, page, url, size, kind} або None, якщо він не новіший за поточну версію."""
+    ver = (rel.get("tag_name") or rel.get("name") or "").lstrip("vV")
+    if vtuple(ver) <= vtuple(E.VERSION):
+        return None
+    pattern = SETUP_RE if installed else PORTABLE_RE
+    asset = next((a for a in rel.get("assets", []) if pattern.match(a.get("name", ""))), None)
+    return dict(version=ver, notes=(rel.get("body") or "").strip()[:1500], page=rel.get("html_url", ""),
+                url=asset["browser_download_url"] if asset else "", size=asset.get("size", 0) if asset else 0,
+                kind="setup" if installed else "portable")
+
+
 def check(log=lambda *_: None):
-    """-> {version, notes, page, url, size, kind} якщо є новіша версія, інакше None."""
+    """-> {version, notes, page, url, size, kind} якщо є новіша версія, інакше None. Мережева помилка — виняток."""
     if not E.IS_WIN:  # демо: показати, як виглядає оновлення
         log(tr("upd.checking"))
         nxt = ".".join(map(str, vtuple(E.VERSION)[:1] + (vtuple(E.VERSION)[1:2] or (0,)))).split(".")
@@ -49,20 +149,9 @@ def check(log=lambda *_: None):
                     page="https://github.com/", url="", size=48_200_000, kind="setup")
     if not UPDATE_REPO:
         return None
-    req = urllib.request.Request(f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest",
-                                 headers={"User-Agent": f"{E.APP_NAME}/{E.VERSION}",
-                                          "Accept": "application/vnd.github+json"})
-    with urllib.request.urlopen(req, timeout=15) as r:
-        rel = json.load(r)
-    ver = (rel.get("tag_name") or rel.get("name") or "").lstrip("vV")
-    log(tr("upd.latest", v=ver or "?"))
-    if vtuple(ver) <= vtuple(E.VERSION):
-        return None
-    pattern = SETUP_RE if L.is_installed() else PORTABLE_RE
-    asset = next((a for a in rel.get("assets", []) if pattern.match(a.get("name", ""))), None)
-    return dict(version=ver, notes=(rel.get("body") or "").strip()[:1500], page=rel.get("html_url", ""),
-                url=asset["browser_download_url"] if asset else "", size=asset.get("size", 0) if asset else 0,
-                kind="setup" if L.is_installed() else "portable")
+    rel = latest_release(log)
+    log(tr("upd.latest", v=(rel.get("tag_name") or "?").lstrip("vV")))
+    return from_release(rel, L.is_installed())
 
 
 def download(info: dict, log, progress=None) -> str:
@@ -73,21 +162,42 @@ def download(info: dict, log, progress=None) -> str:
             time.sleep(0.01)
         log("  [dry-run] " + tr("upd.downloaded"))
         return ""
-    name = info["url"].rsplit("/", 1)[-1]
+    name = urllib.parse.unquote(info["url"].rsplit("/", 1)[-1])
     dest = os.path.join(tempfile.gettempdir(), name)
-    req = urllib.request.Request(info["url"], headers={"User-Agent": f"{E.APP_NAME}/{E.VERSION}"})
-    got, total = 0, info.get("size") or 0
-    with urllib.request.urlopen(req, timeout=60) as r, open(dest + ".part", "wb") as f:
-        while True:
-            if E.CANCEL.is_set():
-                raise RuntimeError(tr("e.stopped").strip())
-            chunk = r.read(1 << 17)
-            if not chunk:
-                break
-            f.write(chunk)
-            got += len(chunk)
-            if progress and total:
-                progress(got, total, tr("upd.downloading", mb=f"{got / 2**20:.0f}"))
+    total = info.get("size") or 0
+    try:
+        got = 0
+        with _open(info["url"], 60) as r, open(dest + ".part", "wb") as f:
+            total = total or int(r.headers.get("Content-Length") or 0)
+            while True:
+                if E.CANCEL.is_set():
+                    raise InterruptedError(tr("e.stopped").strip())
+                chunk = r.read(1 << 17)
+                if not chunk:
+                    break
+                f.write(chunk)
+                got += len(chunk)
+                if progress and total:
+                    progress(got, total, tr("upd.downloading", mb=f"{got / 2**20:.0f}"))
+    except InterruptedError as e:
+        raise RuntimeError(str(e)) from None
+    except (urllib.error.HTTPError, OSError) as e:
+        if isinstance(e, urllib.error.HTTPError) and e.code == 404:
+            raise
+        # сертифікат, антивірус чи проксі, що ламають з'єднання Python, — пробуємо системним завантажувачем
+        log(f"  · {type(e).__name__}: {str(e)[:120]}")
+        try:
+            os.remove(dest + ".part")
+        except OSError:
+            pass
+        if progress:
+            progress(0, 1, tr("upd.downloading", mb="…"))
+        script = ("[Net.ServicePointManager]::SecurityProtocol=[Net.ServicePointManager]::SecurityProtocol -bor 3072;"
+                  f"Invoke-WebRequest -UseBasicParsing -UserAgent {_ps_quote(UA)} -Uri {_ps_quote(info['url'])} "
+                  f"-OutFile {_ps_quote(dest + '.part')}")
+        E.ps(script, 900, ro=True)
+        if not os.path.exists(dest + ".part") or not os.path.getsize(dest + ".part"):
+            raise
     if total and os.path.getsize(dest + ".part") != total:
         raise RuntimeError(tr("fps.bad_download"))
     os.replace(dest + ".part", dest)

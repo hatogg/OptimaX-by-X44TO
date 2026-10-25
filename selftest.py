@@ -20,7 +20,7 @@ import sys
 import time
 import traceback
 
-MODULES = ("engine", "features", "guard", "hardware", "hotkeys", "lifecycle", "monitor", "power", "report",
+MODULES = ("engine", "features", "guard", "hardware", "hwnative", "hotkeys", "lifecycle", "monitor", "power", "report",
            "updater", "apps", "netlab", "fpstest", "benchtools", "adblock", "rescue", "abtest", "i18n",
            "lang_ui", "lang_engine", "lang_tweaks", "lang_extra", "lang_setup", "lang_lab", "lang_safe",
            "gpubench", "ui_kit", "pages_optimize", "pages_tools", "pages_extra", "pages_lab", "smart_ui",
@@ -175,10 +175,29 @@ def check_hardware(store):
     store["hw"] = hw
     if not hw.get("cpu"):
         raise AssertionError("CPU not detected")
-    return {"cpu": hw.get("cpu"), "gpus": [g[0] for g in hw.get("gpus") or []], "ram_gb": hw.get("ram_gb"),
-            "os": hw.get("os"), "build": hw.get("build"), "device": hw.get("device"),
-            "recommended": len(an.get("recommended") or []), "checks": len(checks),
-            "seconds": round(time.time() - t0, 1)}
+    res = {"cpu": hw.get("cpu"), "cores": hw.get("cores"), "threads": hw.get("threads"), "sockets": hw.get("sockets"),
+           "mhz": hw.get("mhz"), "gpus": [list(g) for g in hw.get("gpus") or []], "ram_gb": round(hw.get("ram_gb") or 0, 2),
+           "ram": [hw.get("ram_type"), hw.get("ram_speed"), hw.get("ram_max_speed"), hw.get("ram_modules")],
+           "disk": [hw.get("disk_type"), hw.get("disk_bus"), hw.get("disk_name")],
+           "disks": [[d.get("id"), d.get("name"), d.get("media"), d.get("bus"), d.get("size_gb"), d.get("letters")]
+                     for d in hw.get("disks") or []],
+           "os": hw.get("os"), "build": hw.get("build"), "vendor": [hw.get("vendor"), hw.get("model")],
+           "device": hw.get("device"), "sources": hw.get("sources"),
+           "recommended": len(an.get("recommended") or []), "checks": len(checks),
+           "seconds": round(time.time() - t0, 1)}
+    unknown = H.tr("hw.unknown")
+    if hw.get("sources") is not None:  # справжня Windows, не демо
+        import hwnative as HN
+        nat = HN.collect()
+        res["native"] = {k: (v if k != "gpus" else [[g.get("name"), round(g.get("vram") or 0, 2)] for g in v])
+                         for k, v in nat.items() if k != "disks"}
+        res["native_disks"] = [[d["id"], d["name"], d["media"], d["bus"], d["size_gb"], d["letters"]]
+                               for d in nat.get("disks") or []]
+        if hw["cpu"] == unknown or not hw.get("cores") or not hw.get("ram_gb"):
+            raise AssertionError(f"hardware not detected: {res}")
+        if not nat.get("cpu") or not nat.get("threads"):
+            raise AssertionError(f"native CPU detection failed: {nat.get('errors')}")
+    return res
 
 
 def check_rescue():

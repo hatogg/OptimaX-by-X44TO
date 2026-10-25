@@ -14,11 +14,11 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 
 import engine as E
+import hwnative as HN
 from i18n import tr
 
 LAPTOP_CHASSIS = {8, 9, 10, 14, 30, 31, 32}
 VIRTUAL_GPU = r"Parsec|Virtual|Remote|Indirect|Microsoft Basic|RDP|SpaceDesk|Moonlight|Sunshine|AnyDesk|TeamViewer|VNC|Citrix|Meta"
-DDR = {20: "DDR", 21: "DDR2", 24: "DDR3", 26: "DDR4", 34: "DDR5"}
 
 
 # ───────────────────────── ctypes-запити ─────────────────────────
@@ -149,31 +149,35 @@ def refresh_rates():
 
 
 # ───────────────────────── визначення заліза ─────────────────────────
-HW_SCRIPT = r"""
+# Запити розбито на незалежні частини, що виконуються одночасно: служба сховища (Get-PhysicalDisk) на частині ПК
+# відповідає хвилинами — раніше через неї спливав тайм-аут усього скрипту, і програма показувала «Не визначено» замість
+# процесора й пам'яті. Помилки окремих команд не мають ламати JSON, тому вони приглушені.
+PS_QUIET = "$ErrorActionPreference='SilentlyContinue';$WarningPreference='SilentlyContinue';"
+
+CORE_SCRIPT = PS_QUIET + r"""
 $c=@(Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors,MaxClockSpeed)
 $m=@(Get-CimInstance Win32_PhysicalMemory | Select-Object Capacity,Speed,ConfiguredClockSpeed,SMBIOSMemoryType)
 $o=Get-CimInstance Win32_OperatingSystem | Select-Object Caption,BuildNumber
-$g=@(Get-CimInstance Win32_VideoController | Select-Object Name,AdapterRAM,@{n='DriverDate';e={if($_.DriverDate){$_.DriverDate.ToString('yyyy-MM-dd')}}},DriverVersion)
+$g=@(Get-CimInstance Win32_VideoController | Select-Object Name,AdapterRAM,PNPDeviceID,@{n='DriverDate';e={if($_.DriverDate){$_.DriverDate.ToString('yyyy-MM-dd')}}},DriverVersion)
 $e=@(Get-CimInstance Win32_SystemEnclosure | ForEach-Object { $_.ChassisTypes })
-$disk=$null
-try {
-  $n=(Get-Partition -DriveLetter $env:SystemDrive[0] -ErrorAction Stop | Get-Disk -ErrorAction Stop).Number
-  $disk=Get-PhysicalDisk -ErrorAction Stop | Where-Object { $_.DeviceId -eq [string]$n } | Select-Object -First 1 MediaType,BusType,FriendlyName
-} catch {}
 $vbs=$null
 try { $dg=Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\Microsoft\Windows\DeviceGuard -ErrorAction Stop; $vbs=[int]$dg.VirtualizationBasedSecurityStatus } catch {}
 $cs=Get-CimInstance Win32_ComputerSystem | Select-Object Manufacturer,Model
-$na=@(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Select-Object InterfaceDescription,NdisPhysicalMedium)
-$pd=@(); try { foreach ($d in Get-PhysicalDisk -ErrorAction Stop) {
+$na=@(Get-NetAdapter -Physical | Select-Object InterfaceDescription,NdisPhysicalMedium)
+@{cpu=$c;ram=$m;os=$o;gpu=$g;chassis=$e;vbs=$vbs;cs=$cs;net=$na} | ConvertTo-Json -Depth 4 -Compress
+"""
+
+STORAGE_SCRIPT = PS_QUIET + r"""
+$pd=@(); foreach ($d in @(Get-PhysicalDisk)) {
   $rc=$null; try { $rc = $d | Get-StorageReliabilityCounter -ErrorAction Stop } catch {}
   $pd += @{id=[string]$d.DeviceId; name=$d.FriendlyName; media=[string]$d.MediaType; bus=[string]$d.BusType;
            health=[string]$d.HealthStatus; size=[double]$d.Size; wear=$(if($rc){$rc.Wear}); temp=$(if($rc){$rc.Temperature})}
-} } catch {}
-$pt=@(); try { $pt=@(Get-Partition -ErrorAction Stop | Where-Object { $_.DriveLetter } | ForEach-Object { @{l=[string]$_.DriveLetter; d=[string]$_.DiskNumber} }) } catch {}
-@{cpu=$c;ram=$m;os=$o;gpu=$g;chassis=$e;disk=$disk;vbs=$vbs;cs=$cs;net=$na;disks=$pd;parts=$pt} | ConvertTo-Json -Depth 4 -Compress
+}
+$pt=@(Get-Partition | Where-Object { $_.DriveLetter } | ForEach-Object { @{l=[string]$_.DriveLetter; d=[string]$_.DiskNumber} })
+@{disks=$pd;parts=$pt} | ConvertTo-Json -Depth 4 -Compress
 """
 
-GPU_PCI_SCRIPT = r"""
+GPU_PCI_SCRIPT = PS_QUIET + r"""
 $r=@(); foreach ($d in Get-PnpDevice -PresentOnly -Class Display -ErrorAction SilentlyContinue | Where-Object { $_.InstanceId -like 'PCI\*' }) {
   $h=@{}; foreach ($x in (Get-PnpDeviceProperty -InstanceId $d.InstanceId -KeyName DEVPKEY_PciDevice_CurrentLinkWidth,DEVPKEY_PciDevice_MaxLinkWidth,DEVPKEY_PciDevice_CurrentLinkSpeed,DEVPKEY_PciDevice_MaxLinkSpeed -ErrorAction SilentlyContinue)) { $h[$x.KeyName]=$x.Data }
   $bar=0
@@ -285,7 +289,7 @@ def _from_demo(name: str) -> dict:
     hw = dict(cpu=d["cpu"], cores=d["cores"], threads=d["threads"], mhz=d["mhz"], p_cores=d["p_cores"],
               e_cores=d["e_cores"], gpus=d["gpus"], ram_gb=float(total), ram_modules=len(d["ram"]),
               ram_max_speed=max(m[1] for m in d["ram"]), ram_speed=max(m[2] for m in d["ram"]),
-              ram_type=DDR.get(d["ram"][0][3], ""), chassis=d["chassis"], disk_type=d["disk"][0],
+              ram_type=HN.MEM_TYPES.get(d["ram"][0][3], ""), chassis=d["chassis"], disk_type=d["disk"][0],
               disk_bus=d["disk"][1], disk_name=d["disk"][2], battery=d["battery"], lid=d["lid"],
               modern_standby=d["aoac"], refresh=d["refresh"], vbs_running=d["vbs"] == 2, os=d["os"][0],
               build=int(d["os"][1]), vendor=d["vendor"], wifi=d["wifi"], ethernet=d["ethernet"],
@@ -296,51 +300,183 @@ def _from_demo(name: str) -> dict:
     return _finish(hw)
 
 
+MEDIA_NAMES = {"3": "HDD", "4": "SSD", "5": "SCM", "HDD": "HDD", "SSD": "SSD", "SCM": "SCM"}
+HEALTH_NAMES = {"0": "Healthy", "1": "Warning", "2": "Unhealthy", "5": "", "Unknown": ""}
+
+
+def _bus_name(v) -> str:
+    v = str(v if v is not None else "").strip()
+    if v.isdigit():
+        return HN.BUS_TYPES.get(int(v), "")
+    return "" if v.lower() in ("unknown", "0") else v
+
+
+def _int(v) -> int:
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _clean_name(v) -> str:
+    return re.sub(r"\s+", " ", str(v or "")).strip()
+
+
+def ram_speed_fix(speed: int, conf: int) -> int:
+    """Старі BIOS (SMBIOS до 3.1) пишуть у «налаштовану швидкість» реальну частоту, тобто половину МТ/с:
+    DDR4-3200 показувалася як 1600 МГц, а перевірка збірки радила вмикати XMP, який уже ввімкнено."""
+    if speed and conf and abs(conf * 2 - speed) <= speed * 0.03:
+        return speed
+    return conf or speed
+
+
+def merge_disks(ps_disks: list, parts: list, native: list) -> list:
+    """Диски з PowerShell (назва, стан, знос, температура) + запити до драйвера (шина, SSD чи HDD, букви).
+    Кожне джерело може бути порожнім."""
+    out = {}
+    for d in native or []:
+        if isinstance(d, dict) and d.get("id") not in (None, ""):
+            out[str(d["id"])] = dict(d, letters=list(d.get("letters") or []))
+    for d in ps_disks or []:
+        if not isinstance(d, dict) or d.get("id") in (None, ""):
+            continue
+        i = str(d["id"])
+        cur = out.setdefault(i, dict(id=i, name="", media="?", bus="", health="", size_gb=0, wear=None, temp=None,
+                                     letters=[]))
+        name = _clean_name(d.get("name"))
+        if name:
+            cur["name"] = name
+        bus = _bus_name(d.get("bus"))
+        if bus and not (bus in ("RAID", "Spaces", "SCSI") and cur.get("bus")):  # RAID/Spaces приховують справжню шину
+            cur["bus"] = bus
+        media = MEDIA_NAMES.get(str(d.get("media") or "").strip(), "")
+        if media:
+            cur["media"] = media
+        health = str(d.get("health") if d.get("health") is not None else "").strip()
+        cur["health"] = HEALTH_NAMES.get(health, health)
+        if d.get("size"):
+            cur["size_gb"] = round(float(d["size"]) / 1e9)
+        for k in ("wear", "temp"):
+            if isinstance(d.get(k), (int, float)):
+                cur[k] = d[k]
+    for p in parts or []:
+        if isinstance(p, dict) and str(p.get("d")) in out and p.get("l"):
+            letters = out[str(p["d"])]["letters"]
+            if str(p["l"]).upper() not in letters:
+                letters.append(str(p["l"]).upper())
+    res = []
+    for i in sorted(out, key=lambda x: _int(x)):
+        d = out[i]
+        if d.get("bus") == "NVMe":
+            d["media"] = "NVMe"
+        elif d.get("media") in ("", None):
+            d["media"] = "?"
+        d["letters"] = sorted(d["letters"])
+        res.append(d)
+    return res
+
+
+def _parallel(jobs: dict, timeout: int) -> dict:
+    """{назва: функція} -> {назва: результат}; функції виконуються одночасно, збій однієї не зачіпає інших."""
+    from concurrent.futures import ThreadPoolExecutor
+    res = {}
+    with ThreadPoolExecutor(max_workers=len(jobs)) as ex:
+        futs = {k: ex.submit(f) for k, f in jobs.items()}
+        for k, fut in futs.items():
+            try:
+                res[k] = fut.result(timeout=timeout + 15)
+            except Exception as e:  # noqa: BLE001
+                res[k] = None
+                res.setdefault("_errors", []).append(f"{k}: {type(e).__name__}: {e}")
+    return res
+
+
 def detect_hw() -> dict:
     if not E.IS_WIN:
         return _from_demo(E.DEMO)
-    data = E.ps_json(HW_SCRIPT, 60) or {}
-    cpus = E.as_list(data.get("cpu"))
-    c = cpus[0] if cpus else {}
-    hw = dict(cpu=str(c.get("Name") or "").strip() or tr("hw.unknown"), cores=int(c.get("NumberOfCores") or 0),
-              threads=int(c.get("NumberOfLogicalProcessors") or 0), mhz=int(c.get("MaxClockSpeed") or 0))
+    got = _parallel({"core": lambda: E.ps_json(CORE_SCRIPT, 45), "storage": lambda: E.ps_json(STORAGE_SCRIPT, 45),
+                     "pci": lambda: E.ps_json(GPU_PCI_SCRIPT, 45), "native": HN.collect}, 45)
+    data = got.get("core") if isinstance(got.get("core"), dict) else {}
+    st = got.get("storage") if isinstance(got.get("storage"), dict) else {}
+    nat = got.get("native") if isinstance(got.get("native"), dict) else {}
+    hw = {"sources": dict(ps_core=bool(data), ps_storage=bool(st), native=sorted(k for k in nat if k != "errors"),
+                          errors=(nat.get("errors") or []) + (got.get("_errors") or []))}
+
+    # процесор: Win32_Processor — по одному запису на кожен фізичний процесор (двопроцесорні Xeon)
+    cpus = [c for c in E.as_list(data.get("cpu")) if isinstance(c, dict)]
+    hw["cpu"] = next((_clean_name(c.get("Name")) for c in cpus if _clean_name(c.get("Name"))), "") or \
+        _clean_name(nat.get("cpu")) or tr("hw.unknown")
+    hw["cores"] = sum(_int(c.get("NumberOfCores")) for c in cpus) or _int(nat.get("cores"))
+    hw["threads"] = sum(_int(c.get("NumberOfLogicalProcessors")) for c in cpus) or _int(nat.get("threads"))
+    if not hw["threads"]:
+        hw["threads"] = os.cpu_count() or 0
+    hw["cores"] = hw["cores"] or hw["threads"]
+    hw["sockets"] = len(cpus) or _int(nat.get("sockets")) or 1
+    hw["mhz"] = next((_int(c.get("MaxClockSpeed")) for c in cpus if _int(c.get("MaxClockSpeed"))), 0) or \
+        _int(nat.get("mhz"))
     try:
         p, e = _efficiency_classes()
         hw["p_cores"], hw["e_cores"] = (p, e) if e else (hw["cores"], 0)
     except Exception:
         hw["p_cores"], hw["e_cores"] = hw["cores"], 0
-    mods = E.as_list(data.get("ram"))
-    hw["ram_gb"] = sum(int(m.get("Capacity") or 0) for m in mods) / 2**30
+
+    # пам'ять: Win32_PhysicalMemory, а якщо WMI не відповів — ті самі таблиці SMBIOS напряму
+    mods = [m for m in E.as_list(data.get("ram")) if isinstance(m, dict) and _int(m.get("Capacity"))]
+    hw["ram_gb"] = sum(_int(m.get("Capacity")) for m in mods) / 2**30 or float(nat.get("ram_gb") or 0) or \
+        float(nat.get("installed_gb") or 0)
     if not hw["ram_gb"]:
         try:
             hw["ram_gb"] = E.mem_status().ullTotalPhys / 2**30
         except Exception:
             hw["ram_gb"] = 0.0
-    hw["ram_modules"] = len(mods)
-    hw["ram_max_speed"] = max((int(m.get("Speed") or 0) for m in mods), default=0)
-    hw["ram_speed"] = max((int(m.get("ConfiguredClockSpeed") or m.get("Speed") or 0) for m in mods), default=0)
-    hw["ram_type"] = DDR.get(int((mods[0].get("SMBIOSMemoryType") if mods else 0) or 0), "")
+    hw["ram_modules"] = len(mods) or _int(nat.get("ram_modules"))
+    speed = max((_int(m.get("Speed")) for m in mods), default=0) or _int(nat.get("ram_max_speed"))
+    conf = max((_int(m.get("ConfiguredClockSpeed")) for m in mods), default=0) or _int(nat.get("ram_speed"))
+    hw["ram_max_speed"] = speed
+    hw["ram_speed"] = ram_speed_fix(speed, conf)
+    hw["ram_type"] = next((HN.MEM_TYPES[_int(m.get("SMBIOSMemoryType"))] for m in mods
+                           if _int(m.get("SMBIOSMemoryType")) in HN.MEM_TYPES), "") or nat.get("ram_type", "")
+
+    # відеокарти: обсяг пам'яті — з розділу драйвера саме цього пристрою (AdapterRAM обрізається до 4 ГБ)
     gpus = []
     for g in E.as_list(data.get("gpu")):
-        name = str(g.get("Name") or "").strip()
+        if not isinstance(g, dict):
+            continue
+        name = _clean_name(g.get("Name"))
         if not name or re.search(VIRTUAL_GPU, name, re.I):
             continue
-        vram = (int(g.get("AdapterRAM") or 0) & 0xFFFFFFFF) / 2**30
-        gpus.append([name, vram, g.get("DriverDate") or ""])
-    for i, (name, vram, date) in enumerate(gpus):  # AdapterRAM обрізається до 4 ГБ — уточнюємо з реєстру
-        better = _vram_from_registry(name)
-        if better:
-            gpus[i][1] = better
-    hw["gpus"] = [tuple(g) for g in gpus] or [(tr("hw.unknown"), 0.0, "")]
-    hw["chassis"] = [int(x) for x in E.as_list(data.get("chassis")) if str(x).isdigit()]
-    disk = data.get("disk") or {}
-    media = str(disk.get("MediaType") or "")
-    hw["disk_type"] = {"4": "SSD", "3": "HDD", "SSD": "SSD", "HDD": "HDD"}.get(media, "?")
-    hw["disk_bus"] = {"17": "NVMe", "11": "SATA", "7": "USB", "NVMe": "NVMe", "SATA": "SATA"}.get(
-        str(disk.get("BusType") or ""), str(disk.get("BusType") or ""))
-    if hw["disk_bus"] == "NVMe":
-        hw["disk_type"] = "NVMe"
-    hw["disk_name"] = str(disk.get("FriendlyName") or "")
+        di = {}
+        try:
+            di = HN.driver_info(HN.driver_key_for(str(g.get("PNPDeviceID") or "")))
+        except Exception:
+            pass
+        vram = di.get("vram") or 0.0
+        if not vram:
+            try:
+                vram = _vram_from_registry(name)
+            except Exception:
+                vram = 0.0
+        if not vram:
+            vram = (_int(g.get("AdapterRAM")) & 0xFFFFFFFF) / 2**30
+        gpus.append((name, vram, str(g.get("DriverDate") or di.get("date") or "")))
+    if not gpus:
+        gpus = [(g["name"], g.get("vram") or 0.0, g.get("date") or "") for g in nat.get("gpus") or []
+                if g.get("name") and not re.search(VIRTUAL_GPU, g["name"], re.I)]
+    hw["gpus"] = gpus or [(tr("hw.unknown"), 0.0, "")]
+
+    hw["chassis"] = [int(x) for x in E.as_list(data.get("chassis")) if str(x).isdigit()] or list(nat.get("chassis") or [])
+
+    # диски
+    hw["disks"] = merge_disks(E.as_list(st.get("disks")), E.as_list(st.get("parts")), nat.get("disks") or [])
+    sys_letter = (os.environ.get("SystemDrive") or "C:")[0].upper()
+    sysd = next((d for d in hw["disks"] if sys_letter in d.get("letters", [])), None)
+    if sysd is None and len(hw["disks"]) == 1:
+        sysd = hw["disks"][0]
+    sysd = sysd or {}
+    hw["disk_type"] = sysd.get("media") or "?"
+    hw["disk_bus"] = sysd.get("bus") or ""
+    hw["disk_name"] = sysd.get("name") or ""
+
     try:
         hw["battery"] = _battery()
         hw["lid"], hw["modern_standby"] = _power_caps()
@@ -351,30 +487,21 @@ def detect_hw() -> dict:
     except Exception:
         hw["refresh"] = (0, 0)
     hw["vbs_running"] = data.get("vbs") == 2
-    osd = data.get("os") or {}
-    hw["os"] = str(osd.get("Caption") or "Windows").replace("Microsoft ", "")
-    hw["build"] = int(osd.get("BuildNumber") or E.win_build())
-    cs = data.get("cs") or {}
-    hw["vendor"], hw["model"] = str(cs.get("Manufacturer") or ""), str(cs.get("Model") or "")
-    nets = [n for n in E.as_list(data.get("net")) if isinstance(n, dict)]
-    wifi_re = re.compile(r"Wi-?Fi|Wireless|WLAN|802\.11", re.I)
-    hw["wifi"] = any(n.get("NdisPhysicalMedium") == 9 or wifi_re.search(str(n.get("InterfaceDescription") or ""))
-                     for n in nets)
-    hw["ethernet"] = any(n.get("NdisPhysicalMedium") == 14 and not wifi_re.search(str(n.get("InterfaceDescription") or ""))
+    osd = data.get("os") if isinstance(data.get("os"), dict) else {}
+    hw["os"] = HN.clean_os(osd.get("Caption")) if osd.get("Caption") else (nat.get("os") or "Windows")
+    hw["build"] = _int(osd.get("BuildNumber")) or _int(nat.get("build")) or E.win_build()
+    cs = data.get("cs") if isinstance(data.get("cs"), dict) else {}
+    hw["vendor"] = HN.clean_oem(cs.get("Manufacturer")) or nat.get("vendor", "")
+    hw["model"] = HN.clean_oem(cs.get("Model")) or nat.get("model", "")
+    if data:
+        nets = [n for n in E.as_list(data.get("net")) if isinstance(n, dict)]
+        wifi_re = re.compile(r"Wi-?Fi|Wireless|WLAN|802\.11", re.I)
+        hw["wifi"] = any(n.get("NdisPhysicalMedium") == 9 or wifi_re.search(str(n.get("InterfaceDescription") or ""))
                          for n in nets)
-    parts = [p for p in E.as_list(data.get("parts")) if isinstance(p, dict)]
-    hw["disks"] = []
-    for d in E.as_list(data.get("disks")):
-        if not isinstance(d, dict):
-            continue
-        bus = {"17": "NVMe", "11": "SATA", "7": "USB"}.get(str(d.get("bus")), str(d.get("bus") or ""))
-        media = {"4": "SSD", "3": "HDD"}.get(str(d.get("media")), str(d.get("media") or "?"))
-        if bus == "NVMe":
-            media = "NVMe"
-        hw["disks"].append(dict(id=str(d.get("id")), name=str(d.get("name") or "").strip(), media=media, bus=bus,
-                                health=str(d.get("health") or ""), size_gb=round((d.get("size") or 0) / 1e9),
-                                wear=d.get("wear"), temp=d.get("temp"),
-                                letters=sorted(p["l"] for p in parts if p.get("d") == str(d.get("id")))))
+        hw["ethernet"] = any(n.get("NdisPhysicalMedium") == 14 and
+                             not wifi_re.search(str(n.get("InterfaceDescription") or "")) for n in nets)
+    else:
+        hw["wifi"], hw["ethernet"] = bool(nat.get("wifi")), bool(nat.get("ethernet"))
     try:
         hw.update(cpu_topology())
     except Exception:
@@ -384,7 +511,7 @@ def detect_hw() -> dict:
     except Exception:
         hw["display_gpu"] = ""
     hw["gpu_pci"] = []
-    for g in E.as_list(E.ps_json(GPU_PCI_SCRIPT, 60)):
+    for g in E.as_list(got.get("pci")):
         if isinstance(g, dict) and g.get("name"):
             hw["gpu_pci"].append(dict(name=g["name"], cw=g.get("cw"), mw=g.get("mw"), cs=g.get("cs"), ms=g.get("ms"),
                                       bar_mb=round((g.get("bar") or 0) / 2**20)))
@@ -395,6 +522,65 @@ def detect_hw() -> dict:
         hw["thermal"] = {}
     hw["thermal"]["gpu"] = gpu_temp()
     return _finish(hw)
+
+
+# ───────────────────────── підписи для інтерфейсу й звітів ─────────────────────────
+def fmt_gb(v) -> str:
+    """15.98 -> «16», 1.5 -> «1.5»."""
+    v = float(v or 0)
+    return f"{v:.0f}" if abs(v - round(v)) < 0.06 or v >= 10 else f"{v:.1f}"
+
+
+def vram_text(v) -> str:
+    v = float(v or 0)
+    if v <= 0:
+        return ""
+    if v < 0.95:
+        return tr("hw.vram_mb", mb=int(round(v * 1024 / 64) * 64) or int(v * 1024))
+    return tr("hw.vram", gb=fmt_gb(v))
+
+
+def cpu_sub(hw: dict) -> str:
+    parts = []
+    if hw.get("cores"):
+        s = tr("hw.cores", c=hw["cores"], t=hw.get("threads") or hw["cores"])
+        if hw.get("hybrid"):
+            s += " " + tr("hw.pe", p=hw.get("p_cores"), e=hw.get("e_cores"))
+        parts.append(s)
+    if (hw.get("sockets") or 1) > 1:
+        parts.append(tr("hw.sockets", n=hw["sockets"]))
+    if hw.get("mhz"):
+        parts.append(tr("hw.ghz", f=f"{hw['mhz'] / 1000:.2f}"))
+    return ", ".join(parts)
+
+
+def ram_sub(hw: dict) -> str:
+    parts = [hw.get("ram_type") or ""]
+    if hw.get("ram_speed"):
+        parts.append(tr("hw.mhz", v=hw["ram_speed"]))
+    if hw.get("ram_modules"):
+        parts.append(tr("hw.modules", n=hw["ram_modules"]))
+    return ", ".join(p for p in parts if p)
+
+
+def ram_line(hw: dict) -> str:
+    """«16 ГБ DDR4, 3200 МГц» без порожніх частин."""
+    if not hw.get("ram_gb"):
+        return tr("hw.unknown")
+    head = tr("u.gb", v=fmt_gb(hw["ram_gb"])) + (f" {hw['ram_type']}" if hw.get("ram_type") else "")
+    return head + (", " + tr("hw.mhz", v=hw["ram_speed"]) if hw.get("ram_speed") else "")
+
+
+def disk_kind(hw: dict) -> str:
+    t, bus = hw.get("disk_type") or "?", hw.get("disk_bus") or ""
+    parts = [x for x in (t if t != "?" else "", bus if bus != t else "") if x]
+    return " ".join(parts) or tr("hw.unknown")
+
+
+def disk_line(hw: dict) -> str:
+    kind = disk_kind(hw)
+    name = hw.get("disk_name") or ""
+    return f"{kind} {name}".strip() if kind != tr("hw.unknown") or not name else name
 
 
 def _vram_from_registry(name: str) -> float:
@@ -497,25 +683,25 @@ def build_check(hw: dict, games=None) -> list:
         add("xmp", "warn", ("hint", "bios"), cur=cur, max=mx)
     elif not hw.get("laptop") and ((rtype == "DDR4" and 0 < cur <= 2666) or (rtype == "DDR5" and 0 < cur <= 4800)):
         add("xmp", "info", ("hint", "bios"), cur=cur, type=rtype)
-    else:
-        add("xmp", "ok", cur=cur or "?")
+    elif cur:
+        add("xmp", "ok", cur=cur)
     if hw.get("ram_modules") == 1:
         add("channel", "info" if hw.get("laptop") else "warn")
-    else:
-        add("channel", "ok", n=hw.get("ram_modules", 0))
+    elif hw.get("ram_modules"):  # кількість модулів невідома — краще промовчати, ніж показати «модулів: 0»
+        add("channel", "ok", n=hw["ram_modules"])
     rc, rm = hw.get("refresh") or (0, 0)
     if rm and rc and rm > rc + 1:
         add("refresh", "warn", ("settings", "ms-settings:display-advanced"), cur=rc, max=rm)
-    else:
-        add("refresh", "ok", cur=rc or "?")
+    elif rc:
+        add("refresh", "ok", cur=rc)
     disks = hw.get("disks") or []
     ssd = next((d for d in disks if d.get("media") in ("SSD", "NVMe")), None)
     if hw.get("hdd") and ssd:
         add("disk", "info", ("hint", "move_ssd"), ssd=ssd["name"])
     elif hw.get("hdd"):
         add("disk", "warn")
-    else:
-        add("disk", "ok", type=hw.get("disk_type", "?"))
+    elif hw.get("disk_type") not in (None, "", "?"):
+        add("disk", "ok", type=disk_kind(hw))
     # здоров'я дисків (SMART)
     worst = None
     for d in disks:

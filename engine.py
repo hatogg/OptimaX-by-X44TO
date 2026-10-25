@@ -30,7 +30,7 @@ from i18n import tr, tweak_text
 APP_NAME = "OptimaX"
 AUTHOR = "X44TO"
 APP_TITLE = f"{APP_NAME} by {AUTHOR}"
-VERSION = "6.3.4"
+VERSION = "6.3.5"
 IS_WIN = sys.platform == "win32"
 DRY_RUN = (not IS_WIN) or ("--dry-run" in sys.argv)
 DEMO = os.environ.get("OPTIMAX_DEMO", "gaming")  # демо-залізо поза Windows: gaming/laptop/old/x3d/xeon
@@ -177,13 +177,40 @@ def ps(script: str, timeout: int = 30, log: Optional[Callable] = None, ro: bool 
 
 def ps_json(script: str, timeout: int = 40):
     """PowerShell-запит, що повертає JSON. Лише читання. -> об'єкт або None."""
-    rc, out = ps(script, timeout, ro=True)
-    if rc != 0 or not out.strip():
+    _rc, out = ps(script, timeout, ro=True)
+    # Код повернення не дивимося: PowerShell повертає 1, якщо остання команда скрипту дала помилку, хоча JSON уже
+    # виведено. stderr злитий зі stdout — попередження й помилки окремих команд (обмежений режим мови, зламаний
+    # WMI-клас, антивірус) стоять перед JSON або після нього, тож шукаємо сам JSON.
+    return parse_json_out(out)
+
+
+def parse_json_out(out: str):
+    out = (out or "").strip()
+    if not out:
         return None
     try:
         return json.loads(out)
     except Exception:
-        return None
+        pass
+    lines = out.splitlines()
+    for line in reversed(lines):  # -Compress: увесь JSON — один рядок
+        s = line.strip()
+        if s[:1] in "{[" and s[-1:] in "}]":
+            try:
+                return json.loads(s)
+            except Exception:
+                continue
+    starts = [i for i, ln in enumerate(lines) if ln.lstrip()[:1] in "{["]
+    ends = [i for i, ln in enumerate(lines) if ln.rstrip()[-1:] in "}]"]
+    for a in starts:  # багаторядковий JSON серед сторонніх рядків
+        for b in reversed(ends):
+            if b < a:
+                break
+            try:
+                return json.loads("\n".join(lines[a:b + 1]))
+            except Exception:
+                continue
+    return None
 
 
 def as_list(x):

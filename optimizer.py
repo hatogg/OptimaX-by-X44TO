@@ -118,7 +118,8 @@ class Main(QWidget):
         self.hk_busy = []
         self.hk = HK.Listener(self.hotkey_pressed.emit)
         self.hotkey_pressed.connect(self._hotkey)
-        self.update_info = None
+        self.update_info = U.cached(F.CFG["updates"])  # знайдена раніше версія не зникає до наступної перевірки
+        self._upd_busy = False
         self.crash = None  # збій після останніх змін (аварійний відкат)
         self.crash_prompt = "--check-crash" in sys.argv
         self.ipc = L.start_server(self.show_window)  # друга копія програми просить показати це вікно
@@ -162,6 +163,12 @@ class Main(QWidget):
                            ok_msg=tr("svc.repaired", n=broken))
         self.detect()
         self.guard_refresh()
+        # Оновлення перевіряємо окремо від аналізу заліза (раніше перевірка чекала на нього, а якщо аналіз
+        # не вдавався — не відбувалася зовсім) і далі щогодини: програма місяцями живе в треї.
+        self.upd_timer = QTimer(self)
+        self.upd_timer.timeout.connect(lambda: self.check_updates(auto=True))
+        self.upd_timer.start(60 * 60 * 1000)
+        QTimer.singleShot(8000, lambda: self.check_updates(auto=True, startup=True))
         if G.trial_state() and G.trial_state()[0] == "decide":
             QTimer.singleShot(1500, self.ask_trial)
 
@@ -225,6 +232,13 @@ class Main(QWidget):
         ver = label(tr("app.version", v=E.VERSION), "muted")
         ver.setContentsMargins(10, 0, 0, 0)
         v.addWidget(ver)
+        self.upd_side = QPushButton()  # видно на кожній сторінці, навіть коли на головній інший банер
+        self.upd_side.setObjectName("sideUpd")
+        self.upd_side.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.upd_side.clicked.connect(self.install_update)
+        self.upd_side.hide()
+        v.addSpacing(6)
+        v.addWidget(self.upd_side)
         return side
 
     def go(self, key: str):
@@ -254,6 +268,7 @@ class Main(QWidget):
         m.addAction(tr("tray.quit")).triggered.connect(self.quit_app)
         self.tray_menu = m
         self.tray.setContextMenu(m)
+        self.tray.messageClicked.connect(self.show_window)
         self.tray.activated.connect(lambda reason: self.show_window()
                                     if reason == QSystemTrayIcon.ActivationReason.Trigger else None)
         self.tray.show()
@@ -347,7 +362,6 @@ class Main(QWidget):
         self.pages["network"].sync()
         self._guard_tick()
         self.safety_check(prompt=self.crash_prompt)
-        self.check_updates(auto=True)
         if AB.Backend(F.CFG).mode == "filter":  # після оновлення програми чи збою фільтр має знову працювати
             self.run_quick("adblock", lambda log, p: AB.Backend(F.CFG).ensure_running(log), silent=True)
         if F.CFG["first_run"]:
@@ -603,11 +617,14 @@ class Main(QWidget):
         elif rev:
             home.set_banner("guard", tr("guard.banner_t", n=len(rev)), tr("guard.banner_d"),
                             (tr("guard.reapply"), self.guard_reapply), (tr("guard.details"), lambda: self.go("backup")))
-        elif self.update_info and (F.CFG["updates"] or {}).get("skip") != self.update_info["version"]:
+        elif self.update_info and not U.snoozed(F.CFG["updates"], self.update_info["version"]):
             home.set_banner("update", tr("upd.banner_t", v=self.update_info["version"]), tr("upd.banner_d"),
                             (tr("upd.install"), self.install_update), (tr("upd.later"), self.skip_update))
         else:
             home.set_banner(None)
+        self.upd_side.setVisible(bool(self.update_info))
+        if self.update_info:
+            self.upd_side.setText(tr("upd.side", v=self.update_info["version"]))
         self.pages["backup"].reload_guard()
 
     # ── аварійний відкат ──
@@ -710,25 +727,55 @@ class Main(QWidget):
         SC.ShareDialog(self).exec()
 
     # ── оновлення ──
-    def check_updates(self, auto: bool = False, btn=None):
+    def check_updates(self, auto: bool = False, btn=None, startup: bool = False):
         cfg = F.CFG["updates"] or {}
-        if not U.enabled() or (auto and (not cfg.get("auto", True) or time.time() - cfg.get("last_check", 0) < 20 * 3600)):
+        if not U.enabled() or (auto and not cfg.get("auto", True)):
             return
+        if (auto and not U.due(cfg)) or self._upd_busy:
+            if startup:
+                self.notify_update(startup=True)  # версію знайшли раніше, а перевіряти ще зарано
+            return
+        self._upd_busy = True
 
         def done(info):
-            c = F.CFG["updates"] or {}
-            c["last_check"] = int(time.time())
+            self._upd_busy = False
+            c = dict(F.CFG["updates"] or {})
+            now = int(time.time())
+            c["last_try"] = now
+            if isinstance(info, dict) and info.get("error") and not info.get("version"):
+                F.CFG["updates"] = c  # невдала спроба: last_check не чіпаємо, повторимо за пів години
+                self.pages["settings"].sync_updates(failed=True)
+                if not auto:
+                    self.toast(tr("upd.fail"), "bad")
+                elif startup:
+                    self.notify_update(startup=True)
+                return
+            c["last_check"] = now
+            c["latest"] = info if isinstance(info, dict) and info.get("version") else None
             F.CFG["updates"] = c
-            self.update_info = info if isinstance(info, dict) and info.get("version") else None
+            self.update_info = c["latest"]
             self.pages["settings"].sync_updates()
             self.guard_refresh()
-            if self.update_info and auto and not self.isVisible():
-                self.tray.showMessage(E.APP_TITLE, tr("upd.banner_t", v=self.update_info["version"]),
-                                      QSystemTrayIcon.MessageIcon.Information, 5000)
-            elif not auto:
+            if not auto:
                 self.toast(tr("upd.found", v=self.update_info["version"]) if self.update_info else tr("upd.none"),
                            "warn" if self.update_info else "ok")
+            else:
+                self.notify_update(startup=startup)
         self.run_quick(tr("upd.title"), lambda log, p: U.check(log), busy=btn, silent=True, on_done=done)
+
+    def notify_update(self, startup: bool = False):
+        """Спливаюче повідомлення про нову версію: під час запуску програми й один раз для кожної нової версії."""
+        info = self.update_info
+        c = dict(F.CFG["updates"] or {})
+        if not info or U.snoozed(c, info["version"]) or (not startup and c.get("notified") == info["version"]):
+            return
+        c["notified"] = info["version"]
+        F.CFG["updates"] = c
+        if self.isVisible():
+            self.toast(tr("upd.banner_t", v=info["version"]), "warn")
+        elif self.tray.isVisible():
+            self.tray.showMessage(E.APP_TITLE, tr("upd.banner_t", v=info["version"]) + "\n" + tr("upd.tray_d"),
+                                  QSystemTrayIcon.MessageIcon.Information, 10000)
 
     def install_update(self):
         info = self.update_info
@@ -750,8 +797,10 @@ class Main(QWidget):
             self.toast(tr("toast.preview_only"), "warn")
 
     def skip_update(self):
-        c = F.CFG["updates"] or {}
-        c["skip"] = (self.update_info or {}).get("version")
+        """«Пізніше»: ховає банер і сповіщення про цю версію на добу (раніше — назавжди)."""
+        c = dict(F.CFG["updates"] or {})
+        c.pop("skip", None)
+        c["snooze"] = {"v": (self.update_info or {}).get("version"), "until": int(time.time()) + U.SNOOZE}
         F.CFG["updates"] = c
         self.guard_refresh()
 

@@ -896,11 +896,12 @@ class HomePage(QWidget):
         style_badge(self.dev_badge, tr(f"dev.{hw.get('device', 'gaming')}"), "acc")
         clear_layout(self.dev_grid)
         gpus = ", ".join(n for n, _, _ in hw.get("gpus", []))
-        rows = [(tr("hw.cpu"), hw.get("cpu", "")), (tr("hw.gpu"), gpus),
-                (tr("hw.ram"), tr("hw.ram_v", gb=f"{hw.get('ram_gb', 0):.0f}", type=hw.get("ram_type", ""),
-                                  speed=hw.get("ram_speed", "?"))),
-                (tr("hw.disk"), f"{hw.get('disk_type', '?')} {hw.get('disk_name', '')}".strip()),
-                (tr("hw.os"), f"{hw.get('os', '')} ({hw.get('build', '')})")]
+        cpu = hw.get("cpu", "")
+        if (hw.get("sockets") or 1) > 1:
+            cpu = f"{hw['sockets']} × {cpu}"
+        rows = [(tr("hw.cpu"), cpu), (tr("hw.gpu"), gpus), (tr("hw.ram"), H.ram_line(hw)),
+                (tr("hw.disk"), H.disk_line(hw)),
+                (tr("hw.os"), f"{hw.get('os', '')}" + (f" ({hw['build']})" if hw.get("build") else ""))]
         for i, (k, val) in enumerate(rows):
             self.dev_grid.addWidget(label(k, "desc"), i, 0, Qt.AlignmentFlag.AlignTop)
             lv = label(val, "rowTitle", wrap=True)

@@ -8,12 +8,12 @@ STRINGS = {
     "lc.installed": ("встановлена версія", "установленная версия", "installed"),
     "lc.portable": ("портативна версія", "портативная версия", "portable"),
     "upd.title": ("Оновлення", "Обновления", "Updates"),
-    "upd.sub": ("OptimaX перевіряє нові версії раз на день і оновлюється за кілька секунд — налаштування, ігри "
-                "й журнал змін зберігаються.",
-                "OptimaX проверяет новые версии раз в день и обновляется за несколько секунд — настройки, игры и "
-                "журнал изменений сохраняются.",
-                "OptimaX checks for new versions once a day and updates in seconds — settings, games and the change "
-                "journal are kept."),
+    "upd.sub": ("OptimaX сам перевіряє нові версії під час запуску й кожні кілька годин і оновлюється за кілька "
+                "секунд — налаштування, ігри й журнал змін зберігаються.",
+                "OptimaX сам проверяет новые версии при запуске и каждые несколько часов и обновляется за несколько "
+                "секунд — настройки, игры и журнал изменений сохраняются.",
+                "OptimaX checks for new versions at startup and every few hours and updates in seconds — settings, "
+                "games and the change journal are kept."),
     "upd.auto": ("Перевіряти оновлення автоматично", "Проверять обновления автоматически", "Check for updates automatically"),
     "upd.checking": ("  · перевіряю оновлення…", "  · проверяю обновления…", "  · checking for updates…"),
     "upd.latest": ("  · остання версія: {v}", "  · последняя версия: {v}", "  · latest version: {v}"),
@@ -24,7 +24,12 @@ STRINGS = {
                      "Обновление займёт несколько секунд. Настройки, игры и журнал изменений останутся.",
                      "Updating takes a few seconds. Your settings, games and change journal are kept."),
     "upd.install": ("Оновити", "Обновить", "Update"),
-    "upd.later": ("Пропустити", "Пропустить", "Skip"),
+    "upd.later": ("Пізніше", "Позже", "Later"),
+    "upd.side": ("Оновити до {v}", "Обновить до {v}", "Update to {v}"),
+    "upd.tray_d": ("Натисніть, щоб відкрити OptimaX і оновити.", "Нажмите, чтобы открыть OptimaX и обновить.",
+                   "Click to open OptimaX and update."),
+    "upd.fail": ("Не вдалося перевірити оновлення — немає зв'язку з GitHub", "Не удалось проверить обновления — нет связи "
+                 "с GitHub", "Couldn't check for updates — GitHub is unreachable"),
     "upd.found": ("Доступна версія {v}", "Доступна версия {v}", "Version {v} is available"),
     "upd.none": ("У вас найновіша версія", "У вас самая новая версия", "You have the latest version"),
     "upd.ask_t": ("Оновити до версії {v}?", "Обновить до версии {v}?", "Update to version {v}?"),
@@ -37,4 +42,7 @@ STRINGS = {
                      "Version {v} is the latest. Checked: {when}."),
     "upd.state_never": ("Версія {v}. Оновлення ще не перевірялися.", "Версия {v}. Обновления ещё не проверялись.",
                         "Version {v}. Updates haven't been checked yet."),
+    "upd.state_fail": ("Версія {v}. Не вдалося зв'язатися з GitHub — перевірте інтернет або спробуйте пізніше.",
+                       "Версия {v}. Не удалось связаться с GitHub — проверьте интернет или попробуйте позже.",
+                       "Version {v}. Couldn't reach GitHub — check your connection or try again later."),
 }

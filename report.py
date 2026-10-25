@@ -11,6 +11,7 @@ from datetime import datetime
 
 import engine as E
 import features as F
+import hardware as H
 from i18n import tr
 
 
@@ -19,21 +20,29 @@ def _exe_name(path) -> str:
     return ntpath.basename(str(path)) if path else ""
 
 
-def _gpus(hw):
-    return ", ".join(f"{n} ({vr:.0f} GB)" if vr >= 0.5 else n for n, vr, _ in hw.get("gpus", []))
+def gpus_line(hw):
+    """«NVIDIA GeForce RTX 4070 (12 GB), Intel UHD Graphics» — обсяг лише для дискретних відеокарт."""
+    return ", ".join(f"{n} ({H.fmt_gb(vr)} GB)" if vr >= 0.95 and not H.is_integrated(n, vr) else n
+                     for n, vr, _ in hw.get("gpus", []))
+
 
 
 def sections(hw: dict, checks: list, analysis: dict) -> list:
     """-> [(заголовок, [(ключ, значення)] | [рядки])]"""
     hw = hw or {}
-    spec = [(tr("hw.cpu"), hw.get("cpu", "?")), (tr("hw.gpu"), _gpus(hw) or "?"),
-            (tr("hw.ram"), tr("hw.ram_v", gb=f"{hw.get('ram_gb', 0):.0f}", type=hw.get("ram_type", ""),
-                              speed=hw.get("ram_speed", "?")) + f", {hw.get('ram_modules', '?')}×"),
+    cpu = hw.get("cpu", "?")
+    if (hw.get("sockets") or 1) > 1:
+        cpu = f"{hw['sockets']} × {cpu}"
+    if hw.get("cores"):
+        cpu += f" ({H.cpu_sub(hw)})"
+    spec = [(tr("hw.cpu"), cpu), (tr("hw.gpu"), gpus_line(hw) or "?"),
+            (tr("hw.ram"), H.ram_line(hw) + (f", {hw['ram_modules']}×" if hw.get("ram_modules") else "")),
             (tr("hw.disk"), "; ".join(f"{d['name']} ({d['media']}, {d.get('size_gb', '?')} GB"
                                       + (f", {tr('rep.wear')} {d['wear']}%" if d.get("wear") is not None else "")
                                       + ")" for d in hw.get("disks") or []) or hw.get("disk_name", "?")),
-            (tr("hw.display"), tr("hw.hz", hz=(hw.get("refresh") or (0, 0))[0])),
-            (tr("hw.os"), f"{hw.get('os', '')} ({hw.get('build', '')})"),
+            (tr("hw.display"), tr("hw.hz", hz=(hw.get("refresh") or (0, 0))[0]) if (hw.get("refresh") or (0, 0))[0]
+             else "—"),
+            (tr("hw.os"), f"{hw.get('os', '')}" + (f" ({hw['build']})" if hw.get("build") else "")),
             (tr("rep.vendor"), " ".join(x for x in (hw.get("vendor"), hw.get("model")) if x) or "—")]
     out = [(tr("rep.spec"), spec)]
     if analysis:

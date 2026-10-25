@@ -22,6 +22,7 @@ import hotkeys as HK
 import i18n
 import lifecycle as L
 import power as PW
+import report as RP
 import updater as U
 from i18n import tr
 from pages_optimize import TweakRow
@@ -427,26 +428,20 @@ class HardwarePage(QWidget):
         self.msi_loaded = False
 
     def set_hw(self, hw: dict, checks: list):
-        cores = tr("hw.cores", c=hw.get("cores", "?"), t=hw.get("threads", "?"))
-        if hw.get("hybrid"):
-            cores += " " + tr("hw.pe", p=hw.get("p_cores"), e=hw.get("e_cores"))
-        if hw.get("mhz"):
-            cores += tr("hw.ghz", f=f"{hw['mhz'] / 1000:.2f}")
-        self.cards["cpu"].set(hw.get("cpu"), cores)
+        self.cards["cpu"].set(hw.get("cpu"), H.cpu_sub(hw))
         gpus = hw.get("gpus", [])
-        self.cards["gpu"].set("\n".join(n for n, _, _ in gpus),
-                              "\n".join(tr("hw.vram", gb=f"{vr:.0f}") + (", " + tr("hw.driver", d=dt) if dt else "")
-                                        if vr >= 0.5 else (tr("hw.driver", d=dt) if dt else tr("hw.integrated"))
-                                        for _, vr, dt in gpus))
-        self.cards["ram"].set(tr("u.gb", v=f"{hw.get('ram_gb', 0):.0f}"),
-                              tr("hw.ram_sub", type=hw.get("ram_type", ""), speed=hw.get("ram_speed", "?"),
-                                 n=hw.get("ram_modules", "?")))
-        self.cards["disk"].set(f"{hw.get('disk_type', '?')}" + (f" {hw.get('disk_bus')}" if hw.get("disk_bus") and
-                                                               hw.get("disk_bus") != hw.get("disk_type") else ""),
-                               hw.get("disk_name", ""))
+
+        def gpu_sub(name, vr, dt):
+            drv = tr("hw.driver", d=dt) if dt else ""
+            if H.is_integrated(name, vr):
+                return ", ".join(x for x in (tr("hw.integrated"), drv) if x)
+            return ", ".join(x for x in (H.vram_text(vr), drv) if x)
+        self.cards["gpu"].set("\n".join(n for n, _, _ in gpus), "\n".join(gpu_sub(*g) for g in gpus))
+        self.cards["ram"].set(tr("u.gb", v=H.fmt_gb(hw["ram_gb"])) if hw.get("ram_gb") else "", H.ram_sub(hw))
+        self.cards["disk"].set(H.disk_kind(hw), hw.get("disk_name", ""))
         rc, rm = hw.get("refresh") or (0, 0)
-        self.cards["display"].set(tr("hw.hz", hz=rc or "?"), tr("hw.hz_max", hz=rm) if rm else "")
-        self.cards["os"].set(hw.get("os", ""), tr("hw.build", b=hw.get("build", "")))
+        self.cards["display"].set(tr("hw.hz", hz=rc) if rc else "", tr("hw.hz_max", hz=rm) if rm else "")
+        self.cards["os"].set(hw.get("os", ""), tr("hw.build", b=hw["build"]) if hw.get("build") else "")
         clear_layout(self.notes)
         for key in ("x3d_dual", "hybrid", "xeon", "old", "laptop"):
             if hw.get(key):
@@ -498,9 +493,7 @@ class HardwarePage(QWidget):
 
     def copy(self):
         hw = self.main.hw or {}
-        gpus = ", ".join(f"{n} ({vr:.0f} GB)" if vr >= 0.5 else n for n, vr, _ in hw.get("gpus", []))
-        text = tr(OC_PROMPT_KEY, cpu=hw.get("cpu", "?"), gpu=gpus or "?",
-                  ram=f"{hw.get('ram_gb', 0):.0f} GB {hw.get('ram_type', '')} {hw.get('ram_speed', '')} MHz",
+        text = tr(OC_PROMPT_KEY, cpu=hw.get("cpu", "?"), gpu=RP.gpus_line(hw) or "?", ram=H.ram_line(hw),
                   os=f"{hw.get('os', '')} {hw.get('build', '')}")
         QGuiApplication.clipboard().setText(text)
         self.main.toast(tr("oc.copied"))
@@ -1403,10 +1396,12 @@ class SettingsPage(QWidget):
         c["auto"] = on
         F.CFG["updates"] = c
 
-    def sync_updates(self):
+    def sync_updates(self, failed: bool = False):
         info = self.main.update_info
         last = (F.CFG["updates"] or {}).get("last_check")
-        if info:
+        if failed and not info:
+            self.upd_state.setText(tr("upd.state_fail", v=E.VERSION))
+        elif info:
             self.upd_state.setText(tr("upd.state_new", v=info["version"], cur=E.VERSION))
         elif last:
             self.upd_state.setText(tr("upd.state_ok", v=E.VERSION,

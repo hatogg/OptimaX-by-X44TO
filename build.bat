@@ -15,7 +15,7 @@ if not defined PY (
     goto :fail
 )
 
-for %%F in (optimizer.py engine.py hardware.py features.py monitor.py fpstest.py netlab.py guard.py apps.py power.py report.py hotkeys.py lifecycle.py updater.py ui_kit.py pages_optimize.py pages_tools.py pages_extra.py i18n.py lang_ui.py lang_engine.py lang_tweaks.py lang_extra.py lang_setup.py lang_lab.py gpubench.py adblock.py benchtools.py pages_lab.py rescue.py abtest.py smart_ui.py sharecard.py lang_safe.py selftest.py) do (
+for %%F in (optimizer.py engine.py hardware.py hwnative.py features.py monitor.py fpstest.py netlab.py guard.py apps.py power.py report.py hotkeys.py lifecycle.py updater.py ui_kit.py pages_optimize.py pages_tools.py pages_extra.py i18n.py lang_ui.py lang_engine.py lang_tweaks.py lang_extra.py lang_setup.py lang_lab.py gpubench.py adblock.py benchtools.py pages_lab.py rescue.py abtest.py smart_ui.py sharecard.py lang_safe.py selftest.py) do (
     if not exist "%%F" (
         echo [ERROR] %%F not found next to this script.
         goto :fail

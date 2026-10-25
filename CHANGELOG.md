@@ -2,6 +2,35 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [6.3.5] — 2026-10-25
+
+### Виправлено
+
+- **Залізо більше не показується як «Не визначено».** Раніше всі характеристики збиралися одним великим запитом PowerShell: якщо служба дисків Windows відповідала довго (часто на ПК з HDD чи USB-дисками), антивірус або політика компанії обмежували PowerShell чи WMI, увесь запит не вдавався — і процесор, пам'ять, відеокарта й диск ставали «Не визначено». Тепер запити розділено й виконуються одночасно, а все головне OptimaX додатково читає напряму з Windows — з таблиць SMBIOS, реєстру й драйверів пристроїв — без PowerShell.
+- **Правильні цифри заліза:**
+  - частота процесора підписана як базова: Windows повідомляє саме її, а не частоту прискорення, тож «до 3,40 ГГц» для процесора з турбо 5,4 ГГц вводило в оману;
+  - на ПК із двома процесорами (Xeon на платах X99 тощо) ядра й потоки рахуються для обох, а не лише для першого;
+  - тип пам'яті визначається для LPDDR4/LPDDR5 і DDR2 (раніше поле лишалося порожнім, а частина кодів SMBIOS розпізнавалася неправильно);
+  - частота пам'яті на старих BIOS більше не показується вдвічі меншою (1600 замість 3200 МГц) — і перевірка збірки не радить увімкнути XMP, який уже ввімкнено;
+  - обсяг відеопам'яті береться з драйвера саме цієї відеокарти, а не обрізається до 4 ГБ; невеликий обсяг показується в МБ, а не як «0 ГБ»;
+  - тип системного диска (SSD чи HDD) визначається, навіть коли Windows його не повідомляє; шина показується назвою (SATA, NVMe, USB), а не числом; невідомий стан диска більше не вважається несправністю;
+  - назва Windows без «Майкрософт», а замість «To be filled by O.E.M.» — виробник материнської плати;
+  - коли щось справді не вдалося визначити, програма не показує «0 ГБ», «? МГц» чи «модулів: 0» і не робить за такими даними висновків у перевірці збірки.
+- **Повідомлення про нову версію знову з'являється.**
+  - Перевірка оновлень більше не чекає на аналіз заліза (якщо аналіз не вдавався, вона не відбувалася зовсім) і виконується під час запуску та кожні 6 годин, а не раз на 20 годин — програма часто тижнями працює в треї.
+  - Невдала перевірка (немає інтернету) більше не відкладає наступну на 20 годин, а ручна перевірка в такому разі не пише «У вас найновіша версія».
+  - Знайдена версія запам'ятовується: після перезапуску банер не зникає.
+  - Про нову версію сповіщає спливаюче повідомлення — у вікні або в треї (натискання відкриває OptimaX), а в бічному меню на кожній сторінці з'являється кнопка «Оновити до …», навіть коли головну сторінку займає інший банер.
+  - Кнопка «Пропустити» стала «Пізніше» й ховає повідомлення на добу, а не назавжди.
+  - Якщо GitHub API недоступний (ліміт запитів на спільну IP-адресу провайдера) або Python не довіряє сертифікату, OptimaX перевіряє сторінку релізу напряму чи через системний завантажувач Windows; так само докачується й саме оновлення.
+
+<details>
+<summary>English</summary>
+
+**Fixed: hardware no longer shows up as “Unknown”.** All specs used to come from one big PowerShell query: if the Windows storage service was slow to answer (common on PCs with HDDs or USB drives), or an antivirus or company policy restricted PowerShell or WMI, the whole query failed and the CPU, memory, graphics card and drive all became “Unknown”. The queries are now split and run in parallel, and OptimaX also reads everything important straight from Windows — SMBIOS tables, the registry and device drivers — without PowerShell. **Correct hardware numbers:** the CPU clock is labelled as the base clock (that's what Windows reports, so “up to 3.40 GHz” for a CPU that boosts to 5.4 GHz was misleading); dual-CPU systems (X99 Xeon boards and the like) count cores and threads of both CPUs; LPDDR4/LPDDR5 and DDR2 memory types are recognised (the field used to be empty, and some SMBIOS codes were mapped wrong); memory speed on older BIOSes is no longer shown at half (1600 instead of 3200 MHz), so the build check no longer suggests enabling XMP that is already on; VRAM comes from that graphics card's own driver instead of being capped at 4 GB, and small amounts show in MB rather than “0 GB”; the system drive type (SSD or HDD) is detected even when Windows doesn't report it, the bus is shown by name (SATA, NVMe, USB) instead of a number, and an unknown drive health is no longer treated as a fault; the Windows name drops the localised “Microsoft”, and “To be filled by O.E.M.” is replaced by the motherboard maker; when something really can't be detected, the app no longer shows “0 GB”, “? MHz” or “0 modules” or draws build-check conclusions from it. **The new version notice shows up again:** the update check no longer waits for the hardware analysis (if that failed, the check never ran) and runs at startup and every 6 hours instead of once per 20 hours, since the app often lives in the tray for weeks; a failed check (no internet) no longer postpones the next one by 20 hours, and a manual check no longer says “You have the latest version” when it failed; a found version is remembered, so the banner survives a restart; a pop-up notice appears in the window or the tray (clicking it opens OptimaX), and an “Update to …” button shows in the sidebar on every page even when another banner occupies the home page; “Skip” is now “Later” and hides the notice for a day instead of forever; when the GitHub API is unavailable (the request limit of a shared ISP address) or Python doesn't trust the certificate, OptimaX checks the release page directly or through the Windows downloader, and downloads the update itself the same way.
+
+</details>
+
 ## [6.3.4] — 2026-10-22
 
 Перша версія, у якій повна перевірка на справжній Windows (Server 2022 і 2025) проходить від початку до кінця: кожна оптимізація застосовується, перевіряється й відкочується поодинці і пакетом — через журнал програми та через `OptimaX-Rescue.cmd` — і система щоразу повертається точно в початковий стан.
@@ -145,6 +174,7 @@ A safety review of the whole tweak catalogue: ready-made profiles and the wizard
 
 </details>
 
+[6.3.5]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.3.5
 [6.3.4]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.3.4
 [6.3.3]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.3.3
 [6.3.2]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.3.2

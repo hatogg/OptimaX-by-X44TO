@@ -39,7 +39,7 @@ DEFAULTS = {
     "fps_tests": {},  # {exe: {before, after}}
     "diag_last": None,
     "net": {},
-    "updates": {"auto": True, "last_check": 0, "skip": None},
+    "updates": {"auto": True, "last_check": 0, "last_try": 0, "latest": None, "snooze": None, "notified": None},
     "bench": [],  # результати тестів відеокарти
     "adblock": {"mode": "off", "light": None},  # off | filter | light
     "safety": None,  # останній пакет змін для перевірки стабільності {ts, ids, kind, boot, checked}

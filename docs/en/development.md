@@ -94,6 +94,7 @@ OptimaX/
 ├── ui_kit.py           ← theme, switches, cards, charts, dialogs, run console
 ├── engine.py           ← optimization catalogue, execution, rollback journal, hardware compatibility
 ├── hardware.py         ← hardware detection, analysis, build check, MSI Mode, battery, metrics
+├── hwnative.py         ← hardware detection without PowerShell: SMBIOS, registry, SetupAPI, disk IOCTLs
 ├── features.py         ← game mode, games, startup, autostart, profiles, wizard
 ├── monitor.py          ← Windows counters, Why is it lagging?, background balancer, cores for games
 ├── fpstest.py          ← FPS test through PresentMon

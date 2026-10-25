@@ -98,6 +98,9 @@ QPushButton#good:disabled { color: @mute; background: @surf; border-color: @line
 QPushButton#ghost { background: transparent; border: none; color: @acc; padding: 4px 8px; }
 QPushButton#ghost:hover { color: @acc_h; }
 QPushButton#ghost:disabled { color: @mute; }
+QPushButton#sideUpd { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 @acc, stop:1 @acc2); border: none;
+                      color: #FFFFFF; font-weight: 600; padding: 8px 12px; border-radius: 10px; text-align: left; }
+QPushButton#sideUpd:hover { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 @acc_h, stop:1 #AE85FF); }
 QPushButton#nav { text-align: left; background: transparent; border: none; border-radius: 10px;
                   padding: 7px 14px; color: @sub; font-size: 14px; }
 QPushButton#nav:hover { background: @surf; color: @text; }
@@ -1094,6 +1097,9 @@ class RunDialog(QDialog):
     def _progress(self, i: int, total: int, text: str):
         self.bar.setRange(0, max(total, 1))
         self.bar.setValue(min(i, total))
+        if total > 10000:  # завантаження: i й total — байти, а не кроки («Крок 1048577 з 48200000»)
+            self.step.setText(text)
+            return
         self.step.setText(tr("run.step", i=i + 1, n=total, what=text) if i < total else tr("run.finishing"))
 
     def _done(self, res):
