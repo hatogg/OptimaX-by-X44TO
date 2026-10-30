@@ -9,10 +9,11 @@ from PyQt6.QtWidgets import (QWidget, QFrame, QLabel, QLineEdit, QStackedWidget,
 import engine as E
 import features as F
 import hardware as H
+import modes as MD
 from i18n import tr
 from ui_kit import (T, IMPACT_COLOR, label, button, card, vbox, hbox, badge, style_badge, dot, scroller, page_header,
-                    bottom_bar, clear_layout, Switch, Ring, ProfileCard, OptionCard, Segmented, chip, Ask,
-                    icon_pixmap, Worker)
+                    section_card, bottom_bar, clear_layout, Switch, Ring, ProfileCard, OptionCard, Segmented, chip,
+                    Ask, icon_pixmap, Worker)
 
 
 # ───────────────────────── рядок оптимізації ─────────────────────────
@@ -316,6 +317,135 @@ class ExpertView(QWidget):
         self._changed()
 
 
+# ───────────────────────── режими ─────────────────────────
+MODE_COLOR = {"safe": "ok", "gaming": "acc", "lowend": "warn", "manual": "sub"}
+
+
+class ModeCard(QFrame):
+    """Режим: назва, для кого, скільки змін підходить саме цьому ПК, кнопка «Переглянути план»."""
+
+    def __init__(self, view, mode: str):
+        super().__init__()
+        self.view, self.mode = view, mode
+        self.setObjectName("card")
+        v = vbox(self, (22, 18, 22, 18), 8)
+        top = hbox(spacing=8)
+        top.addWidget(dot(T[MODE_COLOR[mode]], 10), 0, Qt.AlignmentFlag.AlignVCenter)
+        top.addWidget(label(tr(f"mode.{mode}.t"), "h2"))
+        self.rec = badge(tr("mode.rec"), "ok")
+        self.rec.hide()
+        top.addWidget(self.rec)
+        top.addStretch()
+        v.addLayout(top)
+        v.addWidget(label(tr(f"mode.{mode}.sub"), "rowTitle", wrap=True))
+        v.addWidget(label(tr(f"mode.{mode}.d"), "desc", wrap=True))
+        self.count = label("", "muted", wrap=True)
+        v.addWidget(self.count)
+        v.addStretch()
+        b = hbox(spacing=8)
+        self.btn = button(tr("mode.open_expert") if mode == "manual" else tr("mode.view"),
+                          "primary" if mode != "manual" else None, lambda: view.choose(mode))
+        b.addWidget(self.btn)
+        self.btn_why = button("", "ghost", lambda: view.show_why(mode))
+        self.btn_why.hide()
+        b.addWidget(self.btn_why)
+        b.addStretch()
+        v.addLayout(b)
+
+    def set_plan(self, p: dict, recommended: bool):
+        self.rec.setVisible(recommended)
+        if self.mode == "manual":
+            self.count.setText(tr("mode.manual.count"))
+            return
+        text = tr("mode.count", n=len(p["ids"]))
+        if p.get("proven"):
+            text += " · " + tr("mode.proven", n=len(p["proven"]))
+        if p.get("smart"):
+            text += "\n" + tr("mode.smart_note")
+        self.count.setText(text)
+        self.btn.setEnabled(bool(p["ids"]))
+        self.btn_why.setVisible(bool(p["excluded"]))
+        self.btn_why.setText(tr("mode.why", n=len(p["excluded"])))
+
+
+class ModesView(QWidget):
+    def __init__(self, page):
+        super().__init__()
+        self.page = page
+        self.plans = {}
+        outer = vbox(self)
+        body = QWidget()
+        v = vbox(body, (32, 4, 32, 24), 14)
+        lr = hbox(spacing=10)
+        self.limit = label("", "desc", wrap=True)
+        lr.addWidget(self.limit, 1)
+        lr.addWidget(button(tr("mode.diag_btn"), "ghost", lambda: page.main.go("diagnose")))
+        v.addLayout(lr)
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(14)
+        grid.setVerticalSpacing(14)
+        self.cards = {}
+        for i, m in enumerate(MD.MODES):
+            c = ModeCard(self, m)
+            self.cards[m] = c
+            grid.addWidget(c, i // 2, i % 2)
+        v.addLayout(grid)
+        self.why_card, wv = section_card(tr("mode.why_t"), tr("mode.why_sub"))
+        self.why_box = vbox(spacing=2)
+        wv.addLayout(self.why_box)
+        self.why_card.hide()
+        v.addWidget(self.why_card)
+        v.addStretch()
+        outer.addWidget(scroller(body), 1)
+
+    def refresh(self, hw: dict = None):
+        hw = hw or self.page.main.hw or {}
+        bn = MD.latest_bottleneck()
+        applied = list(E.JOURNAL.data["applied"])
+        self.plans = {m: MD.plan(m, hw, bn, applied=applied) for m in MD.MODES}
+        rec = MD.recommended(hw) if hw else None
+        for m, c in self.cards.items():
+            c.set_plan(self.plans[m], m == rec)
+        main = (self.plans.get("gaming") or {}).get("limit")
+        if main:
+            self.limit.setText(tr("mode.limit", what=tr(f"lim.{main}")))
+        elif bn.get("main"):
+            self.limit.setText(tr("mode.limit_weak", what=tr(f"lim.{bn['main']}")))
+        else:
+            self.limit.setText(tr("mode.limit_none"))
+
+    def choose(self, mode: str):
+        F.CFG["opt_mode"] = mode
+        if mode == "manual":
+            self.page.expert.clear()
+            self.page.set_mode(2)
+            return
+        p = self.plans.get(mode) or MD.plan(mode, self.page.main.hw or {})
+        self.page.show_review(p["ids"], "modes")
+        self.page.review.sw_smart.set_quiet(bool(p.get("smart")))
+        self.page.review.sw_trial.set_quiet(False)
+
+    def show_why(self, mode: str):
+        p = self.plans.get(mode) or {}
+        clear_layout(self.why_box)
+        head = label(tr(f"mode.{mode}.t"), "rowTitle")
+        head.setContentsMargins(14, 0, 14, 4)
+        self.why_box.addWidget(head)
+        for e in p.get("excluded", [])[:40]:
+            r = hbox(margins=(14, 2, 14, 2), spacing=10)
+            r.addWidget(dot(T["warn"] if e["why"] in ("harmful", "hot", "conflict") else T["mute"], 8), 0,
+                        Qt.AlignmentFlag.AlignVCenter)
+            r.addWidget(label(E.entry_title(e["id"]), "rowTitle"))
+            kw = dict(e.get("kw") or {})
+            if "limit" in kw:
+                kw["limit"] = tr(f"lim.{kw['limit']}")
+            if "other" in kw:
+                kw["other"] = E.entry_title(kw["other"])
+            r.addWidget(label(tr(f"why.{e['why']}", **kw), "desc", wrap=True), 1)
+            self.why_box.addLayout(r)
+        self.why_card.show()
+
+
 # ───────────────────────── майстер ─────────────────────────
 class WizardView(QWidget):
     def __init__(self, page):
@@ -572,7 +702,7 @@ class OptimizePage(QWidget):
         super().__init__()
         self.main = main
         outer = vbox(self)
-        self.seg = Segmented([tr("opt.mode_wizard"), tr("opt.mode_expert")])
+        self.seg = Segmented([tr("opt.mode_modes"), tr("opt.mode_wizard"), tr("opt.mode_expert")])
         self.seg.changed.connect(self.set_mode)
         self.search = QLineEdit()
         self.search.setPlaceholderText(tr("opt.search"))
@@ -584,28 +714,32 @@ class OptimizePage(QWidget):
         rh.addWidget(self.seg)
         outer.addWidget(page_header(tr("nav.optimize"), tr("opt.sub"), right))
         self.stack = QStackedWidget()
+        self.modes = ModesView(self)
         self.wizard = WizardView(self)
         self.expert = ExpertView(self)
         self.review = ReviewView(self)
-        for w in (self.wizard, self.expert, self.review):
+        for w in (self.modes, self.wizard, self.expert, self.review):
             self.stack.addWidget(w)
         outer.addWidget(self.stack, 1)
         self.search.textChanged.connect(self._search)
         self.mode = 0
         self.set_mode(0)
 
+    # вкладки: 0 — режими, 1 — майстер, 2 — експерт
     def _search(self, text: str):
-        if text and self.mode != 1:
-            self.seg.select(1)
-            self.set_mode(1)
+        if text and self.mode != 2:
+            self.seg.select(2)
+            self.set_mode(2)
         self.expert.filter_text(text)
 
     def set_mode(self, i: int):
         self.mode = i
         self.seg.select(i)
-        self.stack.setCurrentWidget(self.wizard if i == 0 else self.expert)
-        self.search.setVisible(i == 1)
+        self.stack.setCurrentWidget((self.modes, self.wizard, self.expert)[i])
+        self.search.setVisible(i == 2)
         if i == 0:
+            self.modes.refresh()
+        elif i == 1:
             self.wizard.start(self.main.hw)
 
     def show_review(self, ids, source: str):
@@ -617,24 +751,28 @@ class OptimizePage(QWidget):
         self.search.hide()
 
     def back_from_review(self):
-        self.set_mode(0 if self.review.source == "wizard" else 1)
+        self.set_mode({"modes": 0, "wizard": 1}.get(self.review.source, 2))
         if self.review.source == "wizard":
             self.wizard.i = len(self.wizard.steps()) - 1
             self.wizard.render()
 
     def open_profile(self, key: str):
         """Відкрити експертне меню з відміченим профілем."""
-        self.set_mode(1)
+        self.set_mode(2)
         if self.expert.profile != key:
             self.expert.apply_profile(key)
 
     def set_hw(self, hw: dict):
         self.expert.set_hw(hw)
-        if self.mode == 0 and self.stack.currentWidget() is self.wizard:
+        if self.mode == 0 and self.stack.currentWidget() is self.modes:
+            self.modes.refresh(hw)
+        if self.mode == 1 and self.stack.currentWidget() is self.wizard:
             self.wizard.start(hw)
 
     def refresh(self):
         self.expert.refresh_applied()
+        if self.stack.currentWidget() is self.modes:
+            self.modes.refresh()
 
 
 # ───────────────────────── сторінка «Аналіз» ─────────────────────────

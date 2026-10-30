@@ -512,11 +512,15 @@ class Main(QWidget):
 
     def open_wizard(self):
         self.go("optimize")
-        self.pages["optimize"].set_mode(0)
+        self.pages["optimize"].set_mode(1)
 
     def open_expert(self):
         self.go("optimize")
-        self.pages["optimize"].set_mode(1)
+        self.pages["optimize"].set_mode(2)
+
+    def open_modes(self):
+        self.go("optimize")
+        self.pages["optimize"].set_mode(0)
 
     def open_profile(self, key: str):
         self.go("optimize")

@@ -8,7 +8,6 @@ import json
 import os
 import sys
 
-import engine as E
 import updater as U
 import verify as V
 

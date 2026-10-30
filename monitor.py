@@ -273,6 +273,48 @@ def _avg(vals):
     return sum(vals) / len(vals) if vals else None
 
 
+# ───────────────────────── що саме обмежує продуктивність ─────────────────────────
+LIMITS = ("thermal", "ram", "disk", "gpu", "cpu", "power", "none")
+
+
+def classify(s: dict, total_mb: float) -> str:
+    """Що обмежувало FPS у цю секунду. Порядок важливий: перегрів і нестача пам'яті гальмують усе інше,
+    тож їх перевіряємо першими; відеокарта на 92%+ — це «впираємося у відеокарту», навіть якщо одне ядро зайняте."""
+    passive, temp, gpu_t = s.get("passive"), s.get("temp"), s.get("gpu_t")
+    if (passive is not None and passive < 95) or (temp or 0) >= 90 or (gpu_t or 0) >= 87:
+        return "thermal"
+    avail = s.get("avail_mb")
+    if (avail is not None and avail < 0.06 * total_mb) or (s.get("pages_in") or 0) > 400:
+        return "ram"
+    if (s.get("disk") or 0) >= 90:
+        return "disk"
+    if (s.get("gpu") or 0) >= 92:
+        return "gpu"
+    if (s.get("core_max") or 0) >= 95 or (s.get("cpu") or 0) >= 90:
+        return "cpu"
+    if s.get("limit") is not None and s["limit"] < 90:
+        return "power"
+    return "none"
+
+
+def bottleneck(samples: list, hw: dict) -> dict:
+    """Головне обмеження за весь замір: частка часу, коли кожен ресурс був «вузьким місцем».
+    -> {main, share, shares: {ресурс: %}, second}. main = none — залізо не завантажене повністю (FPS обмежує
+    ліміт кадрів, V-Sync чи сама гра); mixed — жоден ресурс не домінує."""
+    total_mb = (hw.get("ram_gb") or 16) * 1024
+    counts = Counter(classify(s, total_mb) for s in samples)
+    n = max(1, len(samples))
+    shares = {k: round(100 * counts.get(k, 0) / n) for k in LIMITS if counts.get(k)}
+    ranked = sorted(((k, c) for k, c in counts.items() if k != "none"), key=lambda kc: -kc[1])
+    main, share = "none", shares.get("none", 0)
+    if ranked and ranked[0][1] / n >= 0.3:
+        main, share = ranked[0][0], round(100 * ranked[0][1] / n)
+    elif counts.get("none", 0) / n < 0.5:
+        main, share = "mixed", round(100 * (ranked[0][1] if ranked else 0) / n)
+    second = ranked[1][0] if len(ranked) > 1 and ranked[1][1] / n >= 0.2 and main == ranked[0][0] else None
+    return {"main": main, "share": share, "shares": shares, "second": second}
+
+
 def summarize(samples: list, hw: dict, game_exe: str, bg: dict) -> dict:
     """Перетворює заміри на висновки простими словами."""
     if not samples:
@@ -318,7 +360,8 @@ def summarize(samples: list, hw: dict, game_exe: str, bg: dict) -> dict:
     stats.update(temp_max=mx["temp"], gpu_t_max=mx["gpu_t"], vram_total=vram_total, ram_total=total_mb / 1024,
                  top_bg=sorted(((n, round(v * 100, 1)) for n, v in bg.items() if v >= 0.01),
                                key=lambda x: -x[1])[:5])
-    return {"findings": f, "stats": stats, "game": game_exe, "n": len(samples), "ts": int(time.time())}
+    return {"findings": f, "stats": stats, "game": game_exe, "n": len(samples), "ts": int(time.time()),
+            "bottleneck": bottleneck(samples, hw)}
 
 
 # ───────────────────────── балансувальник фону ─────────────────────────

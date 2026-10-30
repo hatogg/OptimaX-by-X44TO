@@ -328,11 +328,25 @@ def capture(exe: str, seconds: int, log, progress) -> dict:
     return res
 
 
-def capture_runs(exe: str, seconds: int, runs: int, log, progress, pause: float = 4.0) -> dict:
+def capture_runs(exe: str, seconds: int, runs: int, log, progress, pause: float = 4.0, hw: dict = None) -> dict:
     """runs замірів по seconds секунд поспіль (гра має лишатися в тій самій сцені) -> summarize_runs().
-    Невдалий прогін (гру згорнули) не зупиняє серію: результат рахується з тих, що вдалися."""
+    Невдалий прогін (гру згорнули) не зупиняє серію: результат рахується з тих, що вдалися.
+    hw — паралельно з записом кадрів стежимо за процесором, відеокартою, пам'яттю, диском і температурами
+    (monitor.lag_diagnosis): у результаті з'являється «bottleneck» — що саме обмежувало FPS у цій грі."""
     got, last_err = [], None
     total = seconds * runs
+    diag, watcher = {}, None
+    if hw is not None:
+        import threading
+        import monitor as M
+
+        def watch():
+            try:
+                diag.update(M.lag_diagnosis(hw, total, lambda *_: None, None, game=exe))
+            except Exception:  # діагностика — додаток до заміру FPS, а не його умова
+                pass
+        watcher = threading.Thread(target=watch, daemon=True)
+        watcher.start()
     for i in range(runs):
         if E.CANCEL.is_set():
             break
@@ -351,9 +365,14 @@ def capture_runs(exe: str, seconds: int, runs: int, log, progress, pause: float 
             end = time.time() + (pause if E.IS_WIN else 0.01)
             while time.time() < end and not E.CANCEL.is_set():
                 time.sleep(0.05)
+    if watcher:
+        watcher.join(15)
     if not got:
         raise last_err or RuntimeError(tr("fps.no_frames", exe=exe))
     res = summarize_runs(got)
+    if diag.get("bottleneck"):
+        res["bottleneck"] = diag["bottleneck"]
+        res["findings"] = [f["key"] for f in diag.get("findings", [])]
     sp = (res.get("spread") or {}).get("avg")
     log(tr("fps.runs_log", n=res["runs"], avg=res["avg"], low=res["low1"],
            sp="—" if sp is None else f"±{sp * 100:.1f}%") + (tr("fps.dropped", n=res["dropped"]) if res["dropped"] else ""))

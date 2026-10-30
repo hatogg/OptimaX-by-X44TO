@@ -240,6 +240,143 @@ STRINGS = {
                        "were tested ({n})? Privacy, ads and cleanup stay. Note: some changes (timer, mouse) affect "
                        "responsiveness, not FPS."),
 
+    # ── головне обмеження продуктивності ──
+    "lim.head": ("Головне обмеження: {what} — {pct}% часу", "Главное ограничение: {what} — {pct}% времени",
+                 "Main limit: {what} — {pct}% of the time"),
+    "lim.head_fps": ("Під час заміру FPS обмежував: {what} ({pct}% часу)",
+                     "Во время замера FPS ограничивал: {what} ({pct}% времени)",
+                     "During the measurement FPS was limited by: {what} ({pct}% of the time)"),
+    "lim.second": ("Інколи також: {what}.", "Иногда также: {what}.", "Sometimes also: {what}."),
+    "lim.cpu": ("процесор", "процессор", "the CPU"),
+    "lim.gpu": ("відеокарта", "видеокарта", "the graphics card"),
+    "lim.ram": ("оперативна пам'ять", "оперативная память", "RAM"),
+    "lim.disk": ("диск", "диск", "the drive"),
+    "lim.thermal": ("перегрів", "перегрев", "overheating"),
+    "lim.power": ("обмеження живлення", "ограничение питания", "the power limit"),
+    "lim.none": ("ніщо із заліза", "ничто из железа", "nothing in the hardware"),
+    "lim.mixed": ("різне, без явного лідера", "разное, без явного лидера", "a mix, no clear leader"),
+    "lim.cpu.d": ("Відеокарта чекає на процесор. Допоможуть менше фонових програм, пріоритет гри, план живлення; "
+                  "у грі — нижчі налаштування, що навантажують процесор (дальність, натовпи, фізика).",
+                  "Видеокарта ждёт процессор. Помогут меньше фоновых программ, приоритет игры, план питания; "
+                  "в игре — ниже настройки, нагружающие процессор (дальность, толпы, физика).",
+                  "The graphics card waits for the CPU. Fewer background apps, game priority and the power plan "
+                  "help; in game, lower CPU-heavy settings (draw distance, crowds, physics)."),
+    "lim.gpu.d": ("Відеокарта працює на повну — це нормально для гри. Більше FPS дадуть нижча роздільність чи "
+                  "якість, DLSS/FSR; твіки процесора тут FPS не додадуть.",
+                  "Видеокарта работает на полную — это нормально для игры. Больше FPS дадут ниже разрешение или "
+                  "качество, DLSS/FSR; твики процессора здесь FPS не добавят.",
+                  "The graphics card is fully used — normal for a game. Lower resolution or quality, DLSS/FSR add "
+                  "FPS; CPU tweaks won't."),
+    "lim.ram.d": ("Пам'яті бракує, Windows підкачує з диска — звідси фризи. Закрийте браузер і фонові програми; "
+                  "найкраще — додати пам'ять.",
+                  "Памяти не хватает, Windows подкачивает с диска — отсюда фризы. Закройте браузер и фоновые "
+                  "программы; лучше всего — добавить память.",
+                  "RAM runs out and Windows pages to disk — hence the stutters. Close the browser and background "
+                  "apps; adding RAM helps most."),
+    "lim.disk.d": ("Диск зайнятий майже весь час — гра довантажує дані повільно. Допоможуть менше фонового "
+                   "індексування й оновлень, а найбільше — SSD.",
+                   "Диск занят почти всё время — игра подгружает данные медленно. Помогут меньше фоновой "
+                   "индексации и обновлений, а больше всего — SSD.",
+                   "The drive is busy nearly all the time and the game loads data slowly. Less background indexing "
+                   "and updates help; an SSD helps most."),
+    "lim.thermal.d": ("Залізо перегрівається й скидає частоти. Спершу охолодження: пил, термопаста, підставка для "
+                      "ноутбука. Твіки, що підвищують частоти й нагрів, OptimaX не пропонуватиме.",
+                      "Железо перегревается и сбрасывает частоты. Сначала охлаждение: пыль, термопаста, подставка для "
+                      "ноутбука. Твики, повышающие частоты и нагрев, OptimaX предлагать не будет.",
+                      "The hardware overheats and drops clocks. Cooling first: dust, thermal paste, a laptop stand. "
+                      "OptimaX won't offer tweaks that raise clocks and heat."),
+    "lim.power.d": ("Процесор обмежує план живлення чи режим енергозбереження. Допоможе план «Максимальна "
+                    "продуктивність» (на ноутбуці — від розетки).",
+                    "Процессор ограничивает план питания или режим энергосбережения. Поможет план «Максимальная "
+                    "производительность» (на ноутбуке — от розетки).",
+                    "The power plan or power saving limits the CPU. The Ultimate Performance plan helps (on a laptop, "
+                    "when plugged in)."),
+    "lim.none.d": ("Ні процесор, ні відеокарта не завантажені повністю — FPS, імовірно, обмежує ліміт кадрів, V-Sync "
+                   "чи сама гра. Оптимізації Windows тут мало що змінять.",
+                   "Ни процессор, ни видеокарта не загружены полностью — FPS, вероятно, ограничивает лимит кадров, "
+                   "V-Sync или сама игра. Оптимизации Windows здесь мало что изменят.",
+                   "Neither the CPU nor the GPU is fully loaded — FPS is probably capped by a frame limiter, V-Sync "
+                   "or the game itself. Windows tweaks will change little here."),
+    "lim.mixed.d": ("Обмеження змінюється від сцени до сцени — план лишається загальним.",
+                    "Ограничение меняется от сцены к сцене — план остаётся общим.",
+                    "The limit changes from scene to scene, so the plan stays general."),
+
+    # ── режими оптимізації ──
+    "opt.mode_modes": ("Режими", "Режимы", "Modes"),
+    "mode.safe.t": ("Безпечний", "Безопасный", "Safe"),
+    "mode.safe.sub": ("Мінімум ризику", "Минимум риска", "Minimal risk"),
+    "mode.safe.d": ("Телеметрія, реклама, зайві фонові процеси. Лише зміни з низьким ризиком, кожну можна відкотити; "
+                    "служби, живлення й драйвери не змінюються.",
+                    "Телеметрия, реклама, лишние фоновые процессы. Только изменения с низким риском, каждое можно "
+                    "откатить; службы, питание и драйверы не меняются.",
+                    "Telemetry, ads, needless background work. Only low-risk changes, each one reversible; services, "
+                    "power and drivers stay untouched."),
+    "mode.gaming.t": ("Ігровий", "Игровой", "Gaming"),
+    "mode.gaming.sub": ("Максимум FPS із доказом", "Максимум FPS с доказательством", "Max FPS, with proof"),
+    "mode.gaming.d": ("Лише те, що допомагає саме вашому залізу і саме тому, що обмежує FPS. Після застосування "
+                      "OptimaX заміряє результат і прибере зміни, які шкодять.",
+                      "Только то, что помогает именно вашему железу и именно тому, что ограничивает FPS. После "
+                      "применения OptimaX замерит результат и уберёт изменения, которые вредят.",
+                      "Only what helps your hardware and what actually limits your FPS. After applying, OptimaX "
+                      "measures the result and removes changes that hurt."),
+    "mode.lowend.t": ("Слабкий ПК", "Слабый ПК", "Low-end PC"),
+    "mode.lowend.sub": ("Мало пам'яті, HDD, старе залізо", "Мало памяти, HDD, старое железо",
+                        "Little RAM, an HDD, old hardware"),
+    "mode.lowend.d": ("Звільняє пам'ять і диск: без анімацій і прозорості, менше фонових програм та індексування. "
+                      "Якщо діагностика бачить нестачу пам'яті чи диска — додає й зміни саме для них.",
+                      "Освобождает память и диск: без анимаций и прозрачности, меньше фоновых программ и индексации. "
+                      "Если диагностика видит нехватку памяти или диска — добавляет изменения именно для них.",
+                      "Frees RAM and disk: no animations or transparency, fewer background apps and less indexing. If "
+                      "the diagnosis sees RAM or disk running short, it adds changes for exactly that."),
+    "mode.manual.t": ("Ручний", "Ручной", "Manual"),
+    "mode.manual.sub": ("Повний контроль", "Полный контроль", "Full control"),
+    "mode.manual.d": ("Усі оптимізації за розділами: пояснення, поточний стан і що саме зміниться. Вибираєте самі.",
+                      "Все оптимизации по разделам: пояснения, текущее состояние и что именно изменится. Выбираете "
+                      "сами.",
+                      "All optimizations by section: explanations, current state and what exactly changes. You pick."),
+    "mode.manual.count": ("Нічого не вибрано заздалегідь", "Ничего не выбрано заранее", "Nothing is preselected"),
+    "mode.rec": ("рекомендовано", "рекомендуется", "recommended"),
+    "mode.count": ("Для вашого ПК: змін — {n}", "Для вашего ПК: изменений — {n}", "For your PC: {n} changes"),
+    "mode.proven": ("перевірено на цьому ПК — {n}", "проверено на этом ПК — {n}", "{n} proven on this PC"),
+    "mode.smart_note": ("Результат буде заміряно: залишиться лише те, що не шкодить.",
+                        "Результат будет замерен: останется только то, что не вредит.",
+                        "The result will be measured: only changes that don't hurt stay."),
+    "mode.view": ("Переглянути план", "Посмотреть план", "Review the plan"),
+    "mode.open_expert": ("Відкрити експертне меню", "Открыть экспертное меню", "Open the expert menu"),
+    "mode.why": ("Що не ввійшло ({n})", "Что не вошло ({n})", "Left out ({n})"),
+    "mode.why_t": ("Що не ввійшло в план і чому", "Что не вошло в план и почему", "What was left out and why"),
+    "mode.why_sub": ("План складено для вашого ПК: залізо, що обмежує FPS, і результати попередніх замірів.",
+                     "План составлен для вашего ПК: железо, что ограничивает FPS, и результаты прошлых замеров.",
+                     "The plan is built for your PC: hardware, what limits FPS and earlier measurements."),
+    "mode.limit": ("За останнім заміром FPS обмежує {what} — «Ігровий» план враховує це.",
+                   "По последнему замеру FPS ограничивает {what} — «Игровой» план учитывает это.",
+                   "In the latest measurement FPS was limited by {what} — the Gaming plan takes this into account."),
+    "mode.limit_weak": ("За останнім заміром явного обмеження немає (найчастіше — {what}), тож план загальний.",
+                        "По последнему замеру явного ограничения нет (чаще всего — {what}), поэтому план общий.",
+                        "The latest measurement shows no clear limit (most often {what}), so the plan is general."),
+    "mode.limit_none": ("Ще невідомо, що обмежує FPS на цьому ПК. Запустіть «Чому лагає?» або тест FPS у грі — "
+                        "і «Ігровий» план стане точнішим.",
+                        "Ещё неизвестно, что ограничивает FPS на этом ПК. Запустите «Почему лагает?» или тест FPS в "
+                        "игре — и «Игровой» план станет точнее.",
+                        "It's not known yet what limits FPS on this PC. Run “Why does it lag?” or an in-game FPS test "
+                        "and the Gaming plan gets more precise."),
+    "mode.diag_btn": ("Діагностика", "Диагностика", "Diagnose"),
+    "why.na": ("не підходить цьому залізу чи версії Windows", "не подходит этому железу или версии Windows",
+               "doesn't fit this hardware or Windows version"),
+    "why.block": ("шкодить на такому залізі", "вредит на таком железе", "harmful on this hardware"),
+    "why.harmful": ("шкодило саме на цьому ПК — так показали заміри розумної оптимізації",
+                    "вредило именно на этом ПК — так показали замеры умной оптимизации",
+                    "hurt this very PC — smart optimization measurements showed it"),
+    "why.no_effect": ("двічі не дало ефекту понад похибку в замірах на цьому ПК",
+                      "дважды не дало эффекта сверх погрешности в замерах на этом ПК",
+                      "twice showed no effect beyond the measurement error on this PC"),
+    "why.limit": ("не допоможе: FPS обмежує {limit}", "не поможет: FPS ограничивает {limit}",
+                  "won't help: FPS is limited by {limit}"),
+    "why.hot": ("підвищує нагрів, а залізо вже перегрівається", "повышает нагрев, а железо уже перегревается",
+                "adds heat, and the hardware already overheats"),
+    "why.conflict": ("суперечить «{other}»", "противоречит «{other}»", "conflicts with “{other}”"),
+    "why.not_reversible": ("не відкочується", "не откатывается", "can't be rolled back"),
+
     "bk.partial": ("відкат не завершено", "откат не завершён", "rollback incomplete"),
     "bk.partial_d": ("Частину кроків не вдалося повернути — повторіть відкат або скористайтеся OptimaX-Rescue.cmd",
                      "Часть шагов не удалось вернуть — повторите откат или воспользуйтесь OptimaX-Rescue.cmd",

@@ -169,6 +169,9 @@ class DiagnosePage(QWidget):
         self.res_head = label("", "desc", wrap=True)
         self.res_head.setContentsMargins(14, 0, 14, 4)
         rv.addWidget(self.res_head)
+        self.res_limit = label("", "h3", wrap=True)  # головне обмеження продуктивності
+        self.res_limit.setContentsMargins(14, 2, 14, 6)
+        rv.addWidget(self.res_limit)
         self.res_box = vbox(spacing=2)
         rv.addLayout(self.res_box)
         self.stat_grid = QGridLayout()
@@ -219,6 +222,9 @@ class DiagnosePage(QWidget):
         self.legend = label("", "muted")
         self.legend.setContentsMargins(14, 0, 14, 0)
         fv.addWidget(self.legend)
+        self.fps_limit = label("", "desc", wrap=True)
+        self.fps_limit.setContentsMargins(14, 0, 14, 0)
+        fv.addWidget(self.fps_limit)
         vr = hbox(margins=(14, 6, 14, 8), spacing=10)
         self.verdict = label("", "h3", wrap=True)
         vr.addWidget(self.verdict, 1)
@@ -269,6 +275,7 @@ class DiagnosePage(QWidget):
         self.res_card.show()
         st = res.get("stats", {})
         self.res_head.setText(tr("diag.head", game=res.get("game") or tr("diag.game_unknown"), n=res.get("n", 0)))
+        set_limit_label(self.res_limit, res.get("bottleneck"))
         clear_layout(self.res_box)
         for f in res.get("findings", []):
             self.res_box.addWidget(finding_row(self.main, f))
@@ -330,6 +337,8 @@ class DiagnosePage(QWidget):
         self.chart.set_series([(b.get("series", []) if b else [], T["mute"]), (a.get("series", []) if a else [],
                                                                                T["acc"])])
         self.legend.setText(tr("fps.legend") if (a or b) else "")
+        last = a if a.get("bottleneck") else b
+        set_limit_label(self.fps_limit, last.get("bottleneck") if last else None, during_fps=True)
         self.btn_revert.hide()
         if cmp_:
             col = {"better": T["ok"], "same": T["sub"], "worse": T["bad"]}[cmp_["verdict"]]
@@ -393,9 +402,11 @@ class DiagnosePage(QWidget):
                        tr("fps.runs_q", n=runs, total=FT_minutes(secs, runs)), tr("fps.start")):
             return
 
+        hw = self.main.hw or {}
+
         def job(log, prog):
             log(f"[►] {tr('fps.title')}: {exe} ({tr('fps.' + which)})")
-            return FT.capture_runs(exe, secs, runs, log, prog)
+            return FT.capture_runs(exe, secs, runs, log, prog, hw=hw)
 
         def done(res):
             if isinstance(res, dict) and res.get("avg"):
@@ -439,6 +450,25 @@ class DiagnosePage(QWidget):
     def copy_report(self):
         QGuiApplication.clipboard().setText(RP.to_text(self._sections()))
         self.main.toast(tr("rep.copied"))
+
+
+LIMIT_KIND = {"thermal": "bad", "ram": "bad", "disk": "warn", "cpu": "warn", "gpu": "ok", "power": "warn",
+              "none": "sub", "mixed": "sub"}
+
+
+def set_limit_label(lbl, bn: dict, during_fps: bool = False) -> None:
+    """«Головне обмеження: процесор — 85% часу» з поясненням, що з цим робити."""
+    if not bn or not bn.get("main"):
+        lbl.hide()
+        return
+    key = bn["main"]
+    text = tr("lim.head_fps" if during_fps else "lim.head", what=tr(f"lim.{key}"), pct=bn.get("share", 0))
+    if bn.get("second"):
+        text += " " + tr("lim.second", what=tr(f"lim.{bn['second']}"))
+    lbl.setText(text + "\n" + tr(f"lim.{key}.d"))
+    col = {"bad": T["bad"], "warn": T["warn"], "ok": T["ok"], "sub": T["sub"]}[LIMIT_KIND.get(key, "sub")]
+    lbl.setStyleSheet(f"color:{col};")
+    lbl.show()
 
 
 def FT_minutes(secs: int, runs: int) -> str:
