@@ -120,6 +120,8 @@ class SmartDialog(QDialog):
         rt.addWidget(self.res_d)
         rh.addLayout(rt, 1)
         rv.addLayout(rh)
+        self.res_margin = label("", "desc", wrap=True)
+        rv.addWidget(self.res_margin)
         self.res_removed = label("", "desc", wrap=True)
         rv.addWidget(self.res_removed)
         self.res.hide()
@@ -137,6 +139,9 @@ class SmartDialog(QDialog):
         self.btn_revert = button(tr("sm.revert_all"), "danger", self.revert_all)
         self.btn_revert.hide()
         bh.addWidget(self.btn_revert)
+        self.btn_noeffect = button(tr("sm.no_effect_btn"), None, self.revert_no_effect)
+        self.btn_noeffect.hide()
+        bh.addWidget(self.btn_noeffect)
         bh.addStretch()
         self.btn_main = button(tr("run.stop"), None, self._main_clicked)
         bh.addWidget(self.btn_main)
@@ -218,7 +223,7 @@ class SmartDialog(QDialog):
 
     def _game_done(self, res):
         if isinstance(res, dict) and res.get("avg"):
-            self._fed({"avg": res["avg"], "low1": res.get("low1") or res["avg"]})
+            self._fed({"avg": res["avg"], "low1": res.get("low1") or res["avg"], "low01": res.get("low01")})
         elif self.stopping:
             self._stopped()
         else:
@@ -240,7 +245,7 @@ class SmartDialog(QDialog):
         run.cleanup()
         res = st.get("result") or {}
         if s == "done" and res.get("avg"):
-            self._fed({"avg": res["avg"], "low1": res.get("low1") or res["avg"]})
+            self._fed({"avg": res["avg"], "low1": res.get("low1") or res["avg"], "low01": res.get("low01")})
         elif s == "cancelled" and self.stopping:
             self._stopped()
         elif s == "error":
@@ -328,6 +333,7 @@ class SmartDialog(QDialog):
         sm = self.s.summary()
         F.CFG["smart_last"] = sm
         F.CFG["smart"] = None
+        F.CFG["tweak_evidence"] = AB.update_evidence(F.CFG["tweak_evidence"], sm)
         set_resume_task(False)
         self.finished_ok = True
         self.timer.stop()
@@ -345,6 +351,12 @@ class SmartDialog(QDialog):
         self.res_d.setText(tr("sm.r.detail", avg0=f"{(sm.get('base') or {}).get('avg', 0):.0f}",
                               avg1=f"{(sm.get('final') or {}).get('avg', 0):.0f}",
                               low=f"{d.get('low1', 0):+.1f}", n=sm["measures"]) + " " + tr(f"sm.r.{res}.d"))
+        if sm.get("margin") is not None and d:  # чи перевищує зміна похибку вимірювання
+            self.res_margin.setText(tr("sm.margin_sig" if sm.get("significant") else "sm.margin_ns",
+                                       m=f"{sm['margin']:.1f}", nb=sm["runs"]["base"], na=sm["runs"]["after"]))
+            self.res_margin.show()
+        else:
+            self.res_margin.hide()
         if sm["removed"]:
             self.res_removed.setText(tr("sm.removed", items=", ".join(E.entry_title(i) for i in sm["removed"])))
             self.res_removed.show()
@@ -354,6 +366,10 @@ class SmartDialog(QDialog):
         self.log(tr("sm.done_log", res=tr(f"sm.r.{res}.badge"), d=f"{d.get('avg', 0):+.1f}"))
         self.btn_share.show()
         self.btn_revert.setVisible(res == "unexplained")
+        # доведеного приросту немає — можна прибрати зміни продуктивності, які нічого не дали
+        no_effect = [i for i in sm.get("measured") or [] if E.JOURNAL.has(i)]
+        self.btn_noeffect.setVisible(res == "same" and bool(no_effect))
+        self.btn_noeffect.setText(tr("sm.no_effect_btn_n", n=len(no_effect)))
         self._finish_buttons()
         self.main.refresh_all()
 
@@ -437,6 +453,14 @@ class SmartDialog(QDialog):
             return
         self._start_worker(lambda log, p: E.undo_ids(ids, log, p),
                            lambda _r: (self.btn_revert.hide(), self.main.refresh_all(),
+                                       self.main.toast(tr("sm.reverted", n=len(ids)))))
+
+    def revert_no_effect(self):
+        ids = [i for i in (self.s.summary().get("measured") or []) if E.JOURNAL.has(i)]
+        if not ids or not Ask.ask(self, tr("sm.no_effect_btn"), tr("sm.no_effect_q", n=len(ids)), tr("bk.undo")):
+            return
+        self._start_worker(lambda log, p: E.undo_ids(ids, log, p),
+                           lambda _r: (self.btn_noeffect.hide(), self.main.refresh_all(),
                                        self.main.toast(tr("sm.reverted", n=len(ids)))))
 
     def share(self):

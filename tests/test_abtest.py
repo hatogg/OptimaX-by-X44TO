@@ -45,13 +45,14 @@ SEEDS = (1, 2, 3, 4)
 @cases("seed", SEEDS)
 def test_all_good(seed):
     r = simulate(seed=seed)
-    assert r["result"] == "better" and not r["removed"] and r["measures"] <= 6
+    # 3 заміри «до» + 3 «після» + перевірка двох половин
+    assert r["result"] == "better" and not r["removed"] and r["measures"] <= 8 and r["significant"], r
 
 
 @cases("seed", SEEDS)
 def test_one_culprit(seed):
     r = simulate(bad={"t13"}, seed=seed)
-    assert r["result"] == "fixed" and r["removed"] == ["t13"] and r["measures"] <= 14, r
+    assert r["result"] == "fixed" and r["removed"] == ["t13"] and r["measures"] <= 16, r
 
 
 @cases("seed", SEEDS)
@@ -80,10 +81,9 @@ def test_noise_is_not_a_culprit(seed):
 
 def test_resume_after_reboot():
     s = AB.Session(["a", "b"], ["c"], [], mode="new")
-    s.next()
-    s.feed({"avg": 100, "low1": 80})
-    s.next()
-    s.feed({"avg": 101, "low1": 81})
+    for avg in (100, 101, 99.5):  # AB.BASE_RUNS заміри «до»
+        s.next()
+        s.feed({"avg": avg, "low1": avg * 0.8})
     s.next()
     s.ok(applied=["a", "b", "c"])
     assert s.next()["do"] == "reboot"
@@ -92,3 +92,27 @@ def test_resume_after_reboot():
     s2.ok()
     nxt = s2.next()
     assert nxt["do"] == "measure" and nxt["label"] == "after", nxt
+
+
+def test_noise_is_rarely_claimed_as_gain_or_harm():
+    """Змін немає, а заміри «гуляють» на ±2.5%: «стало краще» чи «знайшли шкоду» — не частіше ніж у ~5% сесій
+    (похибка — 2 стандартні похибки, ≈95%). Перевіряємо на 200 сесіях, а не на одній вдалій."""
+    better = harm = 0
+    for seed in range(1, 201):
+        r = simulate(n_live=3, good=0.0, noise=0.025, seed=seed)
+        better += r["result"] == "better"
+        harm += r["result"] in ("fixed", "unexplained")
+        assert r["margin"] >= 2.0
+    assert better <= 16 and harm <= 16, (better, harm)
+
+
+def test_clear_gain_is_significant_with_margin():
+    r = simulate(n_live=3, good=0.02, noise=0.004, seed=3)
+    assert r["result"] == "better" and r["significant"] and r["delta"]["avg"] > r["margin"], r
+    assert r["runs"] == {"base": AB.BASE_RUNS, "after": AB.AFTER_RUNS}
+
+
+def test_median_ignores_one_bad_run():
+    """Один невдалий прогін (сповіщення, догрузка рівня) не зсуває центр заміру."""
+    m = AB.mean_metric([{"avg": 200, "low1": 160}, {"avg": 120, "low1": 60}, {"avg": 202, "low1": 161}])
+    assert m["avg"] == 200 and m["low1"] == 160

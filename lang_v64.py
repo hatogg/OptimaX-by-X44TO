@@ -157,6 +157,89 @@ STRINGS = {
                   "{why}\n\nOptimaX doesn't run files that fail verification. You can download the update "
                   "manually from the release page and compare its checksum with SHA256SUMS.txt."),
 
+    # ── тест FPS: кілька прогонів, медіана, похибка ──
+    "fps.runs_3": ("3 прогони", "3 прогона", "3 runs"),
+    "fps.runs_5": ("5 прогонів", "5 прогонов", "5 runs"),
+    "fps.runs_tip": ("Скільки разів поспіль міряти. Результат — медіана: один невдалий прогін її не зсуне, а розкид "
+                     "між прогонами показує похибку вимірювання.",
+                     "Сколько раз подряд мерить. Результат — медиана: один неудачный прогон её не сдвинет, а разброс "
+                     "между прогонами показывает погрешность измерения.",
+                     "How many times in a row to measure. The result is the median: one bad run won't shift it, and "
+                     "the spread between runs shows the measurement error."),
+    "fps.runs_q": ("Прогонів поспіль: {n}, з короткими паузами (разом ≈{total} хв). Увесь цей час лишайтеся в тій "
+                   "самій сцені.",
+                   "Прогонов подряд: {n}, с короткими паузами (всего ≈{total} мин). Всё это время оставайтесь в той "
+                   "же сцене.",
+                   "{n} runs in a row with short pauses (≈{total} min in total). Stay in the same scene the whole "
+                   "time."),
+    "fps.run_of": ("Прогін {i} з {n}", "Прогон {i} из {n}", "Run {i} of {n}"),
+    "fps.run_failed": ("  ⚠ прогін {i} не вдався: {err}", "  ⚠ прогон {i} не удался: {err}", "  ⚠ run {i} failed: {err}"),
+    "fps.runs_log": ("  ✓ медіана {n} прогонів: FPS {avg}, 1% low {low}, розкид FPS {sp}",
+                     "  ✓ медиана {n} прогонов: FPS {avg}, 1% low {low}, разброс FPS {sp}",
+                     "  ✓ median of {n} runs: FPS {avg}, 1% low {low}, FPS spread {sp}"),
+    "fps.dropped": (" · відкинуто невдалих прогонів: {n}", " · отброшено неудачных прогонов: {n}",
+                    " · bad runs dropped: {n}"),
+    "fps.before_n": ("До (медіана {n})", "До (медиана {n})", "Before (median of {n})"),
+    "fps.after_n": ("Після (медіана {n})", "После (медиана {n})", "After (median of {n})"),
+    "fps.change": ("Зміна ± похибка", "Изменение ± погрешность", "Change ± error"),
+    "fps.delta": ("{d}% ± {m}%", "{d}% ± {m}%", "{d}% ± {m}%"),
+    "fps.sig": ("Зміна більша за похибку вимірювання — її не пояснити випадковістю",
+                "Изменение больше погрешности измерения — его не объяснить случайностью",
+                "The change exceeds the measurement error — chance can't explain it"),
+    "fps.not_sig": ("Зміна в межах похибки — може бути випадковою", "Изменение в пределах погрешности — может быть "
+                    "случайным", "The change is within the measurement error — it may be random"),
+    "fps.stutters_pm": ("Фризи за хвилину", "Фризы в минуту", "Stutters per minute"),
+    "fps.smooth": ("Плавність (100 — ідеально рівні кадри)", "Плавность (100 — идеально ровные кадры)",
+                   "Smoothness (100 = perfectly even frames)"),
+    "fps.v2.better": ("Приріст підтверджено: FPS {avg}%, 1% low {low}% — більше за похибку вимірювання ±{m}%",
+                      "Прирост подтверждён: FPS {avg}%, 1% low {low}% — больше погрешности измерения ±{m}%",
+                      "Gain confirmed: FPS {avg}%, 1% low {low}% — more than the ±{m}% measurement error"),
+    "fps.v2.same": ("Різниці немає: FPS {avg}%, 1% low {low}% — у межах похибки вимірювання ±{m}%",
+                    "Разницы нет: FPS {avg}%, 1% low {low}% — в пределах погрешности измерения ±{m}%",
+                    "No real difference: FPS {avg}%, 1% low {low}% — within the ±{m}% measurement error"),
+    "fps.v2.worse": ("Стало гірше: FPS {avg}%, 1% low {low}% — більше за похибку ±{m}%; можна відкотити зміни між "
+                     "замірами",
+                     "Стало хуже: FPS {avg}%, 1% low {low}% — больше погрешности ±{m}%; можно откатить изменения "
+                     "между замерами",
+                     "Got worse: FPS {avg}%, 1% low {low}% — more than the ±{m}% error; you can roll back the changes "
+                     "made between the measurements"),
+    "fps.smooth_up": ("Кадри рівніші (+{d} плавності).", "Кадры ровнее (+{d} плавности).",
+                      "Frames are more even (+{d} smoothness)."),
+    "fps.smooth_down": ("Кадри менш рівні (−{d} плавності).", "Кадры менее ровные (−{d} плавности).",
+                        "Frames are less even (−{d} smoothness)."),
+    "fps.low_conf": ("Один із замірів зроблено одним прогоном (до 6.4) — похибку оцінено приблизно. Повторіть "
+                     "заміри, щоб висновок був точним.",
+                     "Один из замеров сделан одним прогоном (до 6.4) — погрешность оценена приблизительно. Повторите "
+                     "замеры, чтобы вывод был точным.",
+                     "One of the measurements is a single run (before 6.4), so the error is only estimated. Measure "
+                     "again for a precise verdict."),
+
+    # ── розумна оптимізація: похибка й зміни без ефекту ──
+    "sm.margin_sig": ("Похибка вимірювання ±{m}% (заміри: {nb} до, {na} після) — зміна більша за неї, це не "
+                      "випадковість.",
+                      "Погрешность измерения ±{m}% (замеры: {nb} до, {na} после) — изменение больше неё, это не "
+                      "случайность.",
+                      "Measurement error ±{m}% ({nb} runs before, {na} after) — the change exceeds it, so it's not "
+                      "random."),
+    "sm.margin_ns": ("Похибка вимірювання ±{m}% (заміри: {nb} до, {na} після) — зміна в її межах, доведеного "
+                     "приросту немає.",
+                     "Погрешность измерения ±{m}% (замеры: {nb} до, {na} после) — изменение в её пределах, "
+                     "доказанного прироста нет.",
+                     "Measurement error ±{m}% ({nb} runs before, {na} after) — the change is within it, so there's "
+                     "no proven gain."),
+    "sm.no_effect_btn": ("Прибрати зміни без ефекту", "Убрать изменения без эффекта", "Remove changes with no effect"),
+    "sm.no_effect_btn_n": ("Прибрати зміни без ефекту ({n})", "Убрать изменения без эффекта ({n})",
+                           "Remove changes with no effect ({n})"),
+    "sm.no_effect_q": ("Заміри не показали приросту FPS понад похибку. Відкотити зміни продуктивності, які "
+                       "перевірялися ({n})? Приватність, реклама й очищення залишаться. Зважте: частина змін "
+                       "(таймер, миша) впливає на відгук, а не на FPS.",
+                       "Замеры не показали прироста FPS сверх погрешности. Откатить изменения производительности, "
+                       "которые проверялись ({n})? Приватность, реклама и очистка останутся. Учтите: часть изменений "
+                       "(таймер, мышь) влияет на отклик, а не на FPS.",
+                       "The measurements showed no FPS gain beyond the error. Roll back the performance changes that "
+                       "were tested ({n})? Privacy, ads and cleanup stay. Note: some changes (timer, mouse) affect "
+                       "responsiveness, not FPS."),
+
     "bk.partial": ("відкат не завершено", "откат не завершён", "rollback incomplete"),
     "bk.partial_d": ("Частину кроків не вдалося повернути — повторіть відкат або скористайтеся OptimaX-Rescue.cmd",
                      "Часть шагов не удалось вернуть — повторите откат или воспользуйтесь OptimaX-Rescue.cmd",

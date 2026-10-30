@@ -194,6 +194,12 @@ class DiagnosePage(QWidget):
         self.fdur_i = 0
         self.fdur.changed.connect(lambda i: setattr(self, "fdur_i", i))
         g.addWidget(self.fdur)
+        # кількість прогонів: медіана 3–5 замірів відсіює випадкові результати
+        self.fruns = Segmented([tr("fps.runs_3"), tr("fps.runs_5")])
+        self.fruns_i = 0
+        self.fruns.changed.connect(lambda i: setattr(self, "fruns_i", i))
+        self.fruns.setToolTip(tr("fps.runs_tip"))
+        g.addWidget(self.fruns)
         g.addStretch()
         self.btn_before = button(tr("fps.run_before"), None, lambda: self.run_fps("before"))
         self.btn_after = button(tr("fps.run_after"), "primary", lambda: self.run_fps("after"))
@@ -291,24 +297,50 @@ class DiagnosePage(QWidget):
         self.btn_game.setText(tr("fps.game", name=F.game_name(self.game)) if self.game else tr("fps.pick_game"))
         clear_layout(self.fps_grid)
         t = (F.CFG["fps_tests"] or {}).get((self.game or "").lower(), {}) if self.game else {}
-        b, a = t.get("before"), t.get("after")
-        heads = ("", tr("fps.before"), tr("fps.after"))
+        b, a = FT.as_summary(t.get("before")), FT.as_summary(t.get("after"))
+        cmp_ = FT.compare_runs(b, a)
+        heads = ("", tr("fps.before_n", n=b.get("runs", 0)) if b else tr("fps.before"),
+                 tr("fps.after_n", n=a.get("runs", 0)) if a else tr("fps.after"), tr("fps.change") if cmp_ else "")
         for j, h in enumerate(heads):
             self.fps_grid.addWidget(label(h, "muted"), 0, j)
-        rows = [("avg", tr("fps.avg")), ("low1", "1% low"), ("low01", "0.1% low"), ("stutters", tr("fps.stutters"))]
+
+        def cell(r, k):
+            if not r or r.get(k) is None:
+                return "—"
+            v = r[k]
+            sp = (r.get("spread") or {}).get(k)
+            return f"{v}  ±{sp * 100:.1f}%" if sp is not None and k in FT.METRICS else str(v)
+        rows = [("avg", tr("fps.avg")), ("low1", "1% low"), ("low01", "0.1% low"), ("stutters_pm", tr("fps.stutters_pm")),
+                ("smooth", tr("fps.smooth"))]
         for i, (k, cap) in enumerate(rows, 1):
             self.fps_grid.addWidget(label(cap, "desc"), i, 0)
             for j, r in enumerate((b, a), 1):
-                self.fps_grid.addWidget(label("—" if not r else str(r.get(k, "—")), "rowTitle"), i, j)
-        self.fps_grid.setColumnStretch(3, 1)
+                self.fps_grid.addWidget(label(cell(r, k), "rowTitle"), i, j)
+            m = (cmp_.get("metrics") or {}).get(k) if cmp_ else None
+            if m:  # зміна ± похибка; кольором — лише те, що більше за похибку
+                d = label(tr("fps.delta", d=f"{m['d']:+.1f}", m=f"{m['margin']:.1f}"), "desc")
+                d.setStyleSheet(f"color:{T['ok'] if m['dir'] > 0 else T['bad'] if m['dir'] < 0 else T['sub']};")
+                d.setToolTip(tr("fps.sig") if m["sig"] else tr("fps.not_sig"))
+                self.fps_grid.addWidget(d, i, 3)
+            elif cmp_ and k == "smooth" and cmp_.get("d_smooth") is not None:
+                self.fps_grid.addWidget(label(f"{cmp_['d_smooth']:+.1f}", "desc"), i, 3)
+            elif cmp_ and k == "stutters_pm":
+                self.fps_grid.addWidget(label(f"{cmp_['d_stutter_pm']:+.1f}", "desc"), i, 3)
+        self.fps_grid.setColumnStretch(4, 1)
         self.chart.set_series([(b.get("series", []) if b else [], T["mute"]), (a.get("series", []) if a else [],
                                                                                T["acc"])])
         self.legend.setText(tr("fps.legend") if (a or b) else "")
-        cmp_ = FT.compare(b, a)
         self.btn_revert.hide()
         if cmp_:
             col = {"better": T["ok"], "same": T["sub"], "worse": T["bad"]}[cmp_["verdict"]]
-            self.verdict.setText(tr(f"fps.v.{cmp_['verdict']}", avg=f"{cmp_['d_avg']:+.1f}", low=f"{cmp_['d_low']:+.1f}"))
+            text = tr(f"fps.v2.{cmp_['verdict']}", avg=f"{cmp_['d_avg']:+.1f}", low=f"{cmp_['d_low']:+.1f}",
+                      m=f"{cmp_['m_avg']:.1f}")
+            if cmp_.get("d_smooth") is not None and abs(cmp_["d_smooth"]) >= 2:
+                text += " " + tr("fps.smooth_up" if cmp_["d_smooth"] > 0 else "fps.smooth_down",
+                                 d=f"{abs(cmp_['d_smooth']):.0f}")
+            if cmp_["confidence"] == "low":
+                text += "\n" + tr("fps.low_conf")
+            self.verdict.setText(text)
             self.verdict.setStyleSheet(f"color:{col};")
             if cmp_["verdict"] == "worse" and FT.changes_between(b["ts"], a["ts"]):
                 self.btn_revert.show()
@@ -356,13 +388,14 @@ class DiagnosePage(QWidget):
             return
         exe = ntpath.basename(self.game)
         secs = (30, 60)[self.fdur_i]
-        if not Ask.ask(self, tr(f"fps.run_{which}"), tr("fps.run_q", game=F.game_name(self.game), s=secs),
-                       tr("fps.start")):
+        runs = (3, 5)[self.fruns_i]
+        if not Ask.ask(self, tr(f"fps.run_{which}"), tr("fps.run_q", game=F.game_name(self.game), s=secs) + "\n\n" +
+                       tr("fps.runs_q", n=runs, total=FT_minutes(secs, runs)), tr("fps.start")):
             return
 
         def job(log, prog):
             log(f"[►] {tr('fps.title')}: {exe} ({tr('fps.' + which)})")
-            return FT.capture(exe, secs, log, prog)
+            return FT.capture_runs(exe, secs, runs, log, prog)
 
         def done(res):
             if isinstance(res, dict) and res.get("avg"):
@@ -374,7 +407,7 @@ class DiagnosePage(QWidget):
                 F.CFG["fps_tests"] = tests
                 self.main.toast(tr("fps.saved", avg=res["avg"]))
             self.refresh_fps()
-        self.busy_fps.start(job, done, tr("fps.recording", s=secs))
+        self.busy_fps.start(job, done, tr("fps.recording", s=secs * runs))
 
     def revert_between(self):
         t = (F.CFG["fps_tests"] or {}).get((self.game or "").lower(), {})
@@ -406,6 +439,11 @@ class DiagnosePage(QWidget):
     def copy_report(self):
         QGuiApplication.clipboard().setText(RP.to_text(self._sections()))
         self.main.toast(tr("rep.copied"))
+
+
+def FT_minutes(secs: int, runs: int) -> str:
+    """Скільки триватиме серія замірів (разом із паузами між прогонами), у хвилинах."""
+    return f"{(secs * runs + 4 * (runs - 1)) / 60:.0f}"
 
 
 # ───────────────────────── Мережа ─────────────────────────

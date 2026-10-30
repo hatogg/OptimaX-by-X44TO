@@ -613,14 +613,16 @@ class Nvml:
 
 # ───────────────────────── підсумки ─────────────────────────
 def frame_stats(frame_ms: list) -> dict:
-    """-> avg, low1 (1% найповільніших кадрів), min, max FPS."""
+    """-> avg, low1 (1% найповільніших кадрів), low01 (0.1%), min, max FPS."""
     good = [x for x in frame_ms if x > 0]
     if not good:
-        return dict(avg=0.0, low1=0.0, min=0.0, max=0.0, frames=0)
+        return dict(avg=0.0, low1=0.0, low01=0.0, min=0.0, max=0.0, frames=0)
     total = sum(good)
     s = sorted(good, reverse=True)
     worst = s[:max(1, len(s) // 100)]
+    worst01 = s[:max(1, len(s) // 1000)]
     return dict(avg=round(1000 * len(good) / total, 1), low1=round(1000 / (sum(worst) / len(worst)), 1),
+                low01=round(1000 / (sum(worst01) / len(worst01)), 1),
                 min=round(1000 / s[0], 1), max=round(1000 / s[-1], 1), frames=len(good))
 
 
@@ -1042,6 +1044,7 @@ class DemoRun:
             ms = [1000 / f for f in fps for _ in range(max(1, int(f // 20)))]
             stt = frame_stats(ms)
             stt["low1"] = round(stt["avg"] * 0.86, 1)
+            stt["low01"] = round(stt["avg"] * 0.74, 1)
             res = dict(state="done", preset=self.preset, mode=self.mode, minutes=self.minutes if self.mode == "stress" else 0,
                        dur=n, gpu=st["gpu"], gl="4.6.0", errors=0, checks=st["checks"], **stt)
             res["score"] = int(round(stt["avg"] * SCORE_K)) if self.mode == "bench" else None

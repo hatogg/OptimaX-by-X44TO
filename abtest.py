@@ -15,12 +15,32 @@ Session — лише логіка, без інтерфейсу й без сис�
 """
 from __future__ import annotations
 
+import math
 import time
 
 PERF_GROUPS = ("perf", "gaming", "hw", "lite", "svc", "visual", "laptop")
 MIN_NOISE = 0.02  # навіть стабільний тест «гуляє» на 1–2% між запусками
 MAX_ROUNDS = 12
 MAX_CULPRITS = 2
+# Скільки замірів «до» і «після» (6.4): медіана трьох прогонів не зсувається від одного невдалого, а розкид між
+# ними показує похибку — приріст, менший за неї, не вважається доведеним.
+BASE_RUNS = 3
+AFTER_RUNS = 3
+MEDIAN_EFF = 1.57  # дисперсія медіани ≈ π/2 дисперсії середнього
+# Двосторонній 95% квантиль Стьюдента за ступенями свободи: розкид, оцінений лише з 3 прогонів, сам неточний,
+# тож множник більший за «2 сигми» (з 3+3 замірами — 2.78, з 5+5 — 2.31).
+_T95 = {1: 12.71, 2: 4.30, 3: 3.18, 4: 2.78, 5: 2.57, 6: 2.45, 7: 2.36, 8: 2.31, 9: 2.26, 10: 2.23, 12: 2.18,
+        16: 2.12, 20: 2.09, 30: 2.04}
+
+
+def t95(df: int) -> float:
+    """Множник похибки для df ступенів свободи; без оцінки розкиду (df ≤ 0) — 2, як для відомого розкиду."""
+    if df <= 0:
+        return 2.0
+    for k in sorted(_T95):
+        if df <= k:
+            return _T95[k]
+    return 1.96
 
 
 def split_plan(ids, tweaks: dict) -> tuple:
@@ -37,10 +57,28 @@ def split_plan(ids, tweaks: dict) -> tuple:
     return live, boot, other
 
 
+def _median(vals: list) -> float:
+    v = sorted(vals)
+    if not v:
+        return 0.0
+    m = len(v) // 2
+    return v[m] if len(v) % 2 else (v[m - 1] + v[m]) / 2
+
+
 def mean_metric(ms: list) -> dict:
+    """Центр кількох замірів — медіана кожної метрики (назва лишилася з 6.3, де це було середнє)."""
     if not ms:
-        return {"avg": 0.0, "low1": 0.0}
-    return {k: round(sum(m[k] for m in ms) / len(ms), 2) for k in ("avg", "low1")}
+        return {"avg": 0.0, "low1": 0.0, "low01": 0.0}
+    return {k: round(_median([m.get(k) or m["avg"] for m in ms]), 2) for k in ("avg", "low1", "low01")}
+
+
+def cv(ms: list, key: str = "avg"):
+    """Відносний розкид між замірами (None, якщо замір один)."""
+    v = [m[key] for m in ms if m.get(key)]
+    if len(v) < 2:
+        return None
+    mean = sum(v) / len(v)
+    return math.sqrt(sum((x - mean) ** 2 for x in v) / (len(v) - 1)) / mean if mean else None
 
 
 def rel(x: float, base: float) -> float:
@@ -85,10 +123,20 @@ class Session:
 
     @property
     def noise(self) -> float:
-        if len(self.base) < 2:
-            return MIN_NOISE
-        a, b = self.base[0]["avg"], self.base[1]["avg"]
-        return max(MIN_NOISE, abs(a - b) / ((a + b) / 2 or 1))
+        """Розкид одного заміру щодо інших (за замірами «до»)."""
+        c = cv(self.base)
+        return MIN_NOISE if c is None else max(MIN_NOISE, c)
+
+    def margin(self, key: str = "avg") -> float:
+        """Похибка порівняння медіан «до» і «після»: 2 стандартні похибки різниці (≈95%), не менше MIN_NOISE."""
+        floor = {"avg": MIN_NOISE, "low1": 2 * MIN_NOISE, "low01": 4 * MIN_NOISE}[key]
+        cb = cv(self.base, key)
+        ca = cv(self.after, key) if len(self.after) > 1 else cb
+        df = (len(self.base) - 1 if cb is not None else 0) + (len(self.after) - 1 if len(self.after) > 1 else 0)
+        cb = floor if cb is None else cb
+        ca = floor if ca is None else ca
+        se2 = MEDIAN_EFF * (cb ** 2 / max(1, len(self.base)) + ca ** 2 / max(1, len(self.after)))
+        return max(floor, t95(df) * math.sqrt(se2))
 
     def _cmp(self, m: dict, ref: dict) -> str:
         n = self.noise
@@ -103,9 +151,23 @@ class Session:
         """better | same | worse щодо заміру до змін, з урахуванням розкиду між замірами."""
         return self._cmp(m, self.baseline)
 
+    def after_verdict(self) -> str:
+        """Медіана замірів «після» проти медіани «до»: зміна має перевищити похибку (margin), інакше same."""
+        m, b = mean_metric(self.after), self.baseline
+        da, dl = rel(m["avg"], b["avg"]), rel(m["low1"], b["low1"])
+        ma, ml = self.margin("avg"), self.margin("low1")
+        if da < -ma or dl < -ml:
+            return "worse"
+        if da > ma or dl > ml:
+            return "better"
+        return "same"
+
     def delta(self, m: dict) -> dict:
         b = self.baseline
-        return {"avg": round(rel(m["avg"], b["avg"]) * 100, 1), "low1": round(rel(m["low1"], b["low1"]) * 100, 1)}
+        out = {"avg": round(rel(m["avg"], b["avg"]) * 100, 1), "low1": round(rel(m["low1"], b["low1"]) * 100, 1)}
+        if m.get("low01") and b.get("low01"):
+            out["low01"] = round(rel(m["low01"], b["low01"]) * 100, 1)
+        return out
 
     # ── кроки ──
     def _act(self, do: str, **kw) -> dict:
@@ -132,7 +194,7 @@ class Session:
             self.stage = "base"
             return self.next()
         if st == "base":
-            if len(self.base) < 2:
+            if len(self.base) < BASE_RUNS:
                 return self._act("measure", label="base", n=len(self.base) + 1)
             self.stage = "apply"
             return self.next()
@@ -142,11 +204,9 @@ class Session:
         if st == "reboot":
             return self._act("reboot")
         if st == "after":
-            if not self.after:
-                return self._act("measure", label="after", n=1)
-            v = self.verdict(mean_metric(self.after))
-            if v == "worse" and len(self.after) < 2:  # перевіряємо ще раз, щоб не панікувати через випадковість
-                return self._act("measure", label="after", n=2)
+            if len(self.after) < AFTER_RUNS:  # стільки ж замірів, скільки «до»: приріст має перевищити похибку
+                return self._act("measure", label="after", n=len(self.after) + 1)
+            v = self.after_verdict()
             self.current = self.final = mean_metric(self.after)
             self.overall = v
             live = self.applied_live()
@@ -224,7 +284,8 @@ class Session:
 
     def feed(self, m: dict) -> None:
         a, self.pending = self.pending, None
-        m = {"avg": float(m["avg"]), "low1": float(m.get("low1") or m["avg"])}
+        m = {"avg": float(m["avg"]), "low1": float(m.get("low1") or m["avg"]),
+             "low01": float(m.get("low01") or m.get("low1") or m["avg"])}
         label_ = a["label"] if a else "base"
         if label_ == "base":
             self.base.append(m)
@@ -267,8 +328,48 @@ class Session:
     # ── підсумок ──
     def summary(self) -> dict:
         final = self.final or (mean_metric(self.after) if self.after else None)
+        delta = self.delta(final) if (final and self.base) else None
+        mg = round(self.margin("avg") * 100, 1) if (self.base and self.after) else None
         return dict(result=self.result, mode=self.mode, provider=self.provider, game=self.game,
-                    base=self.baseline if self.base else None, final=final,
-                    delta=self.delta(final) if (final and self.base) else None, removed=list(self.removed),
+                    base=self.baseline if self.base else None, final=final, delta=delta,
+                    margin=mg, significant=bool(delta and mg is not None and abs(delta["avg"]) > mg),
+                    runs={"base": len(self.base), "after": len(self.after)}, removed=list(self.removed),
                     kept=[i for i in self.live + self.boot + self.other if i not in self.removed],
+                    measured=[i for i in self.live + self.boot if i not in self.removed],
                     measures=len(self.base) + len(self.after) + len(self.probes), ts=self.ts)
+
+
+def update_evidence(ev: dict, sm: dict, now: int = None) -> dict:
+    """Що розумна оптимізація довела про зміни на цьому ПК (для режимів оптимізації):
+    harm — зміну знайдено шкідливою (відкочено); help — пакет, у якому вона була, дав приріст понад похибку;
+    none — пакет не дав різниці понад похибку. Лічильники накопичуються між сесіями."""
+    ev = {k: dict(v) for k, v in (ev or {}).items()}
+    now = int(time.time()) if now is None else now
+    for tid in sm.get("removed") or []:
+        e = ev.setdefault(tid, {})
+        e["harm"] = e.get("harm", 0) + 1
+        e["ts"] = now
+    d = (sm.get("delta") or {}).get("avg") or 0
+    outcome = None
+    if sm.get("result") in ("better", "fixed") and sm.get("significant") and d > 0:
+        outcome = "help"
+    elif sm.get("result") == "same":
+        outcome = "none"
+    if outcome:
+        for tid in sm.get("measured") or []:
+            e = ev.setdefault(tid, {})
+            e[outcome] = e.get(outcome, 0) + 1
+            e["ts"] = now
+    return ev
+
+
+def evidence_state(e: dict) -> str:
+    """harmful | proven | no_effect | unknown — для однієї зміни за накопиченими сесіями."""
+    e = e or {}
+    if e.get("harm", 0) > 0 and e.get("harm", 0) >= e.get("help", 0):
+        return "harmful"
+    if e.get("help", 0) > 0:
+        return "proven"
+    if e.get("none", 0) >= 2:
+        return "no_effect"
+    return "unknown"
