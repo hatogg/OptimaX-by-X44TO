@@ -244,7 +244,10 @@ class SmartDialog(QDialog):
         run, self.run = self.run, None
         run.cleanup()
         res = st.get("result") or {}
-        if s == "done" and res.get("avg"):
+        if s == "done" and res.get("idle_gpu"):
+            # тест малювала вбудована графіка, а ігрова NVIDIA простоювала: такий замір нічого не скаже про ігри
+            self._fail(tr("sm.idle_gpu", gpu=res.get("gpu") or "?", dgpu=res["idle_gpu"]))
+        elif s == "done" and res.get("avg"):
             self._fed({"avg": res["avg"], "low1": res.get("low1") or res["avg"], "low01": res.get("low01")})
         elif s == "cancelled" and self.stopping:
             self._stopped()

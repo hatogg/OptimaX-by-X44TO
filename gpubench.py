@@ -612,6 +612,19 @@ class Nvml:
 
 
 # ───────────────────────── підсумки ─────────────────────────
+def render_target(vendor: str, renderer: str, nv_ok: bool = False, nv_name: str = "") -> dict:
+    """Яка відеокарта справді малює тест і чи належать їй датчики NVML.
+
+    На гібридних системах (ноутбук з Optimus, майнінгова карта без виходів, картинка з якої йде через вбудоване
+    відео) вікно OpenGL часто малює вбудована графіка, а NVML бачить NVIDIA, що простоює. Без цієї перевірки тест
+    підписує результат іменем NVIDIA й показує її холодні датчики поруч із FPS вбудованої графіки.
+    -> {gpu: назва карти, що малює; sensors: чи показувати датчики NVML; idle: NVIDIA, що простоює, або ""}
+    """
+    if "nvidia" in f"{vendor} {renderer}".lower():
+        return dict(gpu=nv_name or renderer or "", sensors=bool(nv_ok), idle="")
+    return dict(gpu=renderer or "", sensors=False, idle=(nv_name or "NVIDIA") if nv_ok else "")
+
+
 def frame_stats(frame_ms: list) -> dict:
     """-> avg, low1 (1% найповільніших кадрів), low01 (0.1%), min, max FPS."""
     good = [x for x in frame_ms if x > 0]
@@ -719,6 +732,7 @@ def run_child(argv) -> int:
             self.sensors = {}
             self.temps, self.clocks, self.powers, self.throttle = [], [], [], set()
             self.lost = False
+            self.target = dict(gpu="", sensors=False, idle="")  # до initializeGL датчики не читаємо
 
         def initializeGL(self):
             ctx = self.context()
@@ -726,7 +740,11 @@ def run_child(argv) -> int:
                 gl = GL(lambda n: int(ctx.getProcAddress(n) or 0))
                 self.r = Renderer(gl, width, height, quality)
                 info = gl.info()
-                state.update(gpu=nv.name() or info["renderer"], gl=info["version"], vendor=info["vendor"])
+                self.target = render_target(info["vendor"], info["renderer"], nv.ok, nv.name() if nv.ok else "")
+                state.update(gpu=self.target["gpu"], renderer=info["renderer"], gl=info["version"],
+                             vendor=info["vendor"])
+                if self.target["idle"]:
+                    state["idle_gpu"] = self.target["idle"]
                 self.r.check()  # еталонний контрольний кадр
             except Exception as e:
                 state.update(state="error", error=str(e)[:400])
@@ -784,33 +802,38 @@ def run_child(argv) -> int:
             if not self.hud_ok:
                 return
             try:
+                left = max(0, int(duration - max(0.0, measured)))
+                rows = [(tr("gb.hud_warm") if measured <= 0 else
+                         tr("gb.hud_line", fps=f"{state['fps']:.0f}", left=f"{left // 60}:{left % 60:02d}"), "#9AA3B8")]
+                if mode == "stress":
+                    rows.append((tr("gb.hud_err", n=state["errors"], c=state["checks"]), "#9AA3B8"))
+                if self.target["sensors"] and self.sensors:
+                    s = self.sensors
+                    rows.append((tr("gb.hud_sens", t=s.get("temp", "—"), c=s.get("clock", "—"),
+                                    w=s.get("power", "—")), "#9AA3B8"))
+                if self.target["idle"]:
+                    rows.append((tr("gb.hud_idle", gpu=self.target["gpu"] or "?"), "#FFB547"))
+                wide = 460 if self.target["idle"] else 330
+                bar_y = 50 + 22 * len(rows) + 4
                 p = QPainter(self)
                 p.setRenderHint(QPainter.RenderHint.Antialiasing)
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(QColor(8, 10, 20, 170))
-                p.drawRoundedRect(QRectF(16, 16, 330, 118 if nv.ok else 84), 10, 10)
+                p.drawRoundedRect(QRectF(16, 16, wide, bar_y + 14 - 16), 10, 10)
                 p.setPen(QColor("#E8ECF6"))
                 p.setFont(font(11, True))
-                p.drawText(QRectF(30, 24, 310, 22), f"OptimaX GPU Test · {preset} · "
+                p.drawText(QRectF(30, 24, wide - 20, 22), f"OptimaX GPU Test · {preset} · "
                            f"{tr('gb.mode_bench') if mode == 'bench' else tr('gb.mode_stress')}")
                 p.setFont(font(10))
-                p.setPen(QColor("#9AA3B8"))
-                left = max(0, int(duration - max(0.0, measured)))
-                line = tr("gb.hud_warm") if measured <= 0 else \
-                    tr("gb.hud_line", fps=f"{state['fps']:.0f}", left=f"{left // 60}:{left % 60:02d}")
-                p.drawText(QRectF(30, 50, 310, 20), line)
-                if mode == "stress":
-                    p.drawText(QRectF(30, 72, 310, 20), tr("gb.hud_err", n=state["errors"], c=state["checks"]))
-                if nv.ok and self.sensors:
-                    s = self.sensors
-                    p.drawText(QRectF(30, 72 + (22 if mode == "stress" else 0), 310, 20),
-                               tr("gb.hud_sens", t=s.get("temp", "—"), c=s.get("clock", "—"), w=s.get("power", "—")))
+                for i, (text, color) in enumerate(rows):
+                    p.setPen(QColor(color))
+                    p.drawText(QRectF(30, 50 + 22 * i, wide - 20, 20), text)
                 prog = min(1.0, max(0.0, measured) / duration)
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(QColor(255, 255, 255, 40))
-                p.drawRoundedRect(QRectF(30, 102 if nv.ok else 70, 302, 4), 2, 2)
+                p.drawRoundedRect(QRectF(30, bar_y, wide - 28, 4), 2, 2)
                 p.setBrush(QColor("#7C5CFF"))
-                p.drawRoundedRect(QRectF(30, 102 if nv.ok else 70, 302 * prog, 4), 2, 2)
+                p.drawRoundedRect(QRectF(30, bar_y, (wide - 28) * prog, 4), 2, 2)
                 p.setPen(QColor(255, 255, 255, 120))
                 p.setFont(font(9))
                 p.drawText(QRectF(0, self.height() - 30, self.width() - 16, 20),
@@ -820,6 +843,8 @@ def run_child(argv) -> int:
                 self.hud_ok = False
 
         def poll_sensors(self):
+            if not self.target["sensors"]:  # датчики іншої карти, ніж та, що малює, — не показуємо й не враховуємо
+                return
             s = nv.read()
             self.sensors = s
             if s.get("temp") is not None:
@@ -838,7 +863,9 @@ def run_child(argv) -> int:
             st = frame_stats(self.frame_ms)
             res = dict(state=how, preset=preset, mode=mode, minutes=minutes if mode == "stress" else 0,
                        dur=round(len(state["series_fps"]), 0), gpu=state.get("gpu"), gl=state.get("gl"),
-                       errors=state["errors"], checks=state["checks"], **st)
+                       renderer=state.get("renderer"), errors=state["errors"], checks=state["checks"], **st)
+            if state.get("idle_gpu"):
+                res["idle_gpu"] = state["idle_gpu"]
             res["score"] = int(round(st["avg"] * SCORE_K)) if how == "done" and mode == "bench" else None
             if self.temps:
                 res["temp_max"] = max(self.temps)
@@ -1077,15 +1104,26 @@ def start(preset: str, mode: str, minutes: int = 5, fullscreen: bool = False, qu
 
 
 # ───────────────────────── історія результатів ─────────────────────────
+def same_gpu(a: dict, b: dict) -> bool:
+    """Чи на одній відеокарті зроблені два заміри (за назвою карти, що малювала, і ознакою «NVIDIA простоювала»)."""
+    ga, gb = a.get("gpu"), b.get("gpu")
+    if not (ga and gb):
+        return True  # невідомо — як раніше
+    if bool(a.get("idle_gpu")) != bool(b.get("idle_gpu")):
+        return False
+    return ga == gb
+
+
 def save_result(cfg, res: dict) -> dict:
     """Додає результат в історію (останні 40) і повертає його з порівнянням із попереднім таким самим тестом."""
     res = dict(res)
     res["ts"] = int(time.time())
     res.pop("series_clock", None)
     hist = list(cfg["bench"] or [])
+    # порівнюємо лише з тим самим тестом на тій самій відеокарті: бали вбудованої графіки й дискретної — різні речі
     prev = next((h for h in reversed(hist) if h.get("kind", "own") == res.get("kind", "own")
                  and h.get("preset") == res.get("preset") and h.get("mode") == res.get("mode")
-                 and h.get("score")), None)
+                 and h.get("score") and same_gpu(h, res)), None)
     if prev and res.get("score"):
         res["delta"] = round((res["score"] - prev["score"]) / prev["score"] * 100, 1)
         try:

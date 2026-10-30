@@ -356,6 +356,8 @@ class BenchPage(QWidget):
             cells.append((tr("gb.s.dur"), mmss(r["dur"])))
         if r.get("gpu"):
             cells.append((tr("gb.s.gpu"), r["gpu"]))
+        if r.get("idle_gpu"):
+            self.verdict_d.setText(tr("gb.idle_gpu", gpu=r.get("gpu") or "?", dgpu=r["idle_gpu"]))
         for i, (c, val) in enumerate(cells):
             stat_cell(self.grid, i, c, val)
         fs = r.get("series_fps") or []

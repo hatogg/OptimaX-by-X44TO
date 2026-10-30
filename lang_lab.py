@@ -46,6 +46,14 @@ STRINGS = {
                    "Render errors: {n} of {c} checks"),
     "gb.hud_sens": ("{t} °C · {c} МГц · {w} Вт", "{t} °C · {c} МГц · {w} Вт", "{t} °C · {c} MHz · {w} W"),
     "gb.hud_esc": ("Esc — зупинити", "Esc — остановить", "Esc — stop"),
+    "gb.hud_idle": ("⚠ Малює {gpu} — NVIDIA простоює", "⚠ Рисует {gpu} — NVIDIA простаивает",
+                    "⚠ Rendering on {gpu} — NVIDIA is idle"),
+    "gb.idle_gpu": ("Тест малювала {gpu}, а {dgpu} простоювала, тож це бали вбудованої графіки. Щоб оцінити ігрову "
+                    "карту, міряйте FPS у самій грі.",
+                    "Тест рисовала {gpu}, а {dgpu} простаивала, так что это баллы встроенной графики. Чтобы оценить "
+                    "игровую карту, меряйте FPS в самой игре.",
+                    "The test ran on {gpu} while {dgpu} sat idle, so this is the integrated graphics score. To judge "
+                    "the gaming GPU, measure FPS in the game itself."),
     "gb.cancelled": ("Тест зупинено", "Тест остановлен", "Test stopped"),
     "gb.err_t": ("Тест не запустився", "Тест не запустился", "The test didn't start"),
     "gb.err_d": ("{err}\n\nПотрібна відеокарта з OpenGL 3.3 і свіжий драйвер. Через віддалений робочий стіл (RDP) "

@@ -273,6 +273,12 @@ STRINGS = {
                    "Stopped. Temporarily rolled-back changes were re-applied — the system is as it was before the search."),
     "sm.failed": ("Не вдалося: {err}. Тимчасово відкочені зміни повернуто.", "Не удалось: {err}. Временно откаченные "
                   "изменения возвращены.", "Failed: {err}. Temporarily rolled-back changes were re-applied."),
+    "sm.idle_gpu": ("GPU-тест малювала {gpu}, а {dgpu} простоювала — такий замір нічого не каже про ігри. Оберіть "
+                    "«Моя гра (PresentMon)»",
+                    "GPU-тест рисовала {gpu}, а {dgpu} простаивала — такой замер ничего не говорит об играх. Выберите "
+                    "«Моя игра (PresentMon)»",
+                    "the GPU test ran on {gpu} while {dgpu} sat idle, so it says nothing about games. Choose "
+                    "“My game (PresentMon)”"),
 
     # ── картка результату ──
     "sc.share": ("Поділитися результатом", "Поделиться результатом", "Share the result"),
