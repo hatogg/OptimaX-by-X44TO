@@ -36,8 +36,10 @@ def test_nvidia_render_without_nvml():
     assert t == dict(gpu="NVIDIA GeForce RTX 3060/PCIe/SSE2", sensors=False, idle="")
 
 
-def _res(score, gpu, idle=""):
+def _res(score, gpu, idle="", rev=GB.BENCH_REV):
     r = dict(kind="own", preset="1080p", mode="bench", score=score, gpu=gpu, avg=score / 100)
+    if rev:
+        r["rev"] = rev
     if idle:
         r["idle_gpu"] = idle
     return r
@@ -55,3 +57,25 @@ def test_history_old_entries_without_gpu_still_compare():
     cfg = {"bench": [dict(_res(5000, NV), gpu=None)]}
     r = GB.save_result(cfg, _res(5500, NV))
     assert r.get("delta") == 10.0
+
+
+def test_history_does_not_compare_across_test_revisions():
+    # до ревізії 2 повноекранний тест упирався в 60 FPS: стрибок балів — це виправлення тесту, не оптимізація
+    cfg = {"bench": [_res(6000, NV, rev=0)]}  # запис старої версії: без поля rev
+    r = GB.save_result(cfg, _res(9000, NV, rev=0))
+    assert r["rev"] == GB.BENCH_REV
+    assert "delta" not in r, "a run of the fixed test must not be compared with a run capped by the monitor"
+    r = GB.save_result(cfg, _res(9450, NV))
+    assert r.get("delta") == 5.0
+
+
+def test_history_furmark_has_no_revision():
+    cfg = {"bench": [dict(_res(4000, NV, rev=0), kind="furmark")]}
+    r = GB.save_result(cfg, dict(_res(4400, NV, rev=0), kind="furmark"))
+    assert "rev" not in r and r.get("delta") == 10.0
+
+
+def test_keep_composited_is_a_noop_off_windows():
+    if GB.E.IS_WIN:
+        return
+    assert GB.keep_composited(12345) is False

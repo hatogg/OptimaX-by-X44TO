@@ -62,6 +62,8 @@ def hero_candidates() -> list:
     hist = [h for h in (F.CFG["bench"] or []) if h.get("score") and h.get("kind", "own") == "own"]
     for preset in ("1080p", "1440p", "4k"):
         hs = [h for h in hist if h.get("preset") == preset]
+        if hs:  # «було → стало» лише в межах однієї ревізії тесту, як і в історії балів
+            hs = [h for h in hs if h.get("rev", 1) == hs[-1].get("rev", 1)]
         if len(hs) >= 2 and hs[-1]["score"] != hs[0]["score"]:
             out.append(dict(kind="bench", title=tr("sc.hero_bench", preset={"4k": "4K"}.get(preset, preset)),
                             before=hs[0]["score"], after=hs[-1]["score"], unit=tr("gb.points"),

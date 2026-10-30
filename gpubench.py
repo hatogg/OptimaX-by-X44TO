@@ -47,6 +47,8 @@ CHECK_EVERY = 10.0  # стрес-тест: контрольний кадр ра�
 CHECK_SIZE = (480, 270)
 CHECK_TIME = 7.25  # момент анімації для контрольного кадру
 SCORE_K = 100  # бали = середній FPS × 100
+# ревізія циклу кадрів: бали різних ревізій не порівнюються (2 — FPS більше не впирається в частоту монітора)
+BENCH_REV = 2
 STRESS_MINUTES = (5, 15, 30, 60)
 
 # ───────────────────────── шейдер ─────────────────────────
@@ -681,6 +683,32 @@ def _write(path: str, data: dict) -> None:
         pass
 
 
+def keep_composited(hwnd: int) -> bool:
+    """Повноекранне OpenGL-вікно Windows виводить в обхід композиції DWM (монопольний показ), і там драйвер
+    синхронізує кадри з частотою монітора, хоч ми й просимо swapInterval(0): у вікні 100+ FPS, на весь екран — 60.
+    Рамка в 1 px (те саме робить Qt-шне QWindowsWindowFunctions::setHasBorderInFullScreen) лишає вікно під
+    композицією: воно так само на весь екран, а FPS не обмежений, як і у віконному режимі."""
+    if not E.IS_WIN or not hwnd:
+        return False
+    try:
+        user32 = ctypes.windll.user32
+        get_style, set_style = user32.GetWindowLongPtrW, user32.SetWindowLongPtrW
+        get_style.restype, get_style.argtypes = ctypes.c_ssize_t, [ctypes.c_void_p, ctypes.c_int]
+        set_style.restype = ctypes.c_ssize_t
+        set_style.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_ssize_t]
+        user32.SetWindowPos.argtypes = [ctypes.c_void_p, ctypes.c_void_p] + [ctypes.c_int] * 4 + [ctypes.c_uint]
+        GWL_STYLE, WS_BORDER = -16, 0x00800000
+        # SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED: лише перерахувати рамку
+        flags = 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020
+        style = get_style(hwnd, GWL_STYLE)
+        if not style & WS_BORDER:
+            set_style(hwnd, GWL_STYLE, style | WS_BORDER)
+            user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, flags)
+        return True
+    except Exception:
+        return False  # без рамки тест однаково пройде — лише з FPS, обмеженим монітором
+
+
 def run_child(argv) -> int:
     """Точка входу процесу тесту: OptimaX.exe --gpu-bench --preset=1080p --mode=bench|stress --minutes=N --out=…"""
     from PyQt6.QtCore import Qt, QTimer, QRectF
@@ -704,6 +732,9 @@ def run_child(argv) -> int:
     fmt.setSwapInterval(0)  # без вертикальної синхронізації — інакше FPS упреться в частоту монітора
     fmt.setSwapBehavior(QSurfaceFormat.SwapBehavior.DoubleBuffer)
     QSurfaceFormat.setDefaultFormat(fmt)
+    # між кадрами Qt чекає 5 мс (таймер QWindow::requestUpdate), а Windows може ще й подовжити цю паузу до кроку
+    # системного таймера — це стеля FPS самого тесту, а не відеокарти. 0 — новий кадр одразу після попереднього.
+    os.environ.setdefault("QT_QPA_UPDATE_IDLE_TIME", "0")
     app = QGuiApplication(sys.argv)
     nv = Nvml()
     state = dict(state="starting", preset=preset, mode=mode, minutes=minutes, duration=duration, t=0.0, fps=0.0,
@@ -912,6 +943,7 @@ def run_child(argv) -> int:
     w.resize(int(1600 * k), int(900 * k))
     if "--fullscreen" in argv:
         w.showFullScreen()
+        keep_composited(int(w.winId()))
     else:
         w.show()
 
@@ -1119,11 +1151,14 @@ def save_result(cfg, res: dict) -> dict:
     res = dict(res)
     res["ts"] = int(time.time())
     res.pop("series_clock", None)
+    if res.get("kind", "own") == "own":
+        res.setdefault("rev", BENCH_REV)
     hist = list(cfg["bench"] or [])
-    # порівнюємо лише з тим самим тестом на тій самій відеокарті: бали вбудованої графіки й дискретної — різні речі
+    # порівнюємо лише з тим самим тестом на тій самій відеокарті: бали вбудованої графіки й дискретної — різні речі;
+    # і лише з тією самою ревізією тесту — інакше виправлення самого тесту виглядало б як приріст від оптимізації
     prev = next((h for h in reversed(hist) if h.get("kind", "own") == res.get("kind", "own")
                  and h.get("preset") == res.get("preset") and h.get("mode") == res.get("mode")
-                 and h.get("score") and same_gpu(h, res)), None)
+                 and h.get("rev", 1) == res.get("rev", 1) and h.get("score") and same_gpu(h, res)), None)
     if prev and res.get("score"):
         res["delta"] = round((res["score"] - prev["score"]) / prev["score"] * 100, 1)
         try:

@@ -2,6 +2,21 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [Unreleased]
+
+### Виправлено
+
+- **GPU-тест на весь екран більше не впирається в 60 FPS.** Повноекранне вікно тесту Windows виводила в обхід композиції, і драйвер синхронізував кадри з частотою монітора, хоч тест і вимикає вертикальну синхронізацію: у вікні було 100+ FPS, на весь екран — рівно 60. Тепер вікно лишається під композицією (рамка в 1 px, як радить Qt), і на весь екран FPS такий самий, як у вікні.
+- **Без паузи між кадрами.** Qt чекав 5 мс перед кожним наступним кадром (а таймер Windows міг ще й подовжити цю паузу), тож потужні відеокарти не розкривалися навіть у вікні. Тепер новий кадр починається одразу.
+- Бали виправленого тесту не порівнюються зі старими замірами — ні в історії, ні в картці «було → стало», щоб виправлення тесту не виглядало як приріст від оптимізації. Перший замір після оновлення стає новою точкою відліку.
+
+<details>
+<summary>English</summary>
+
+**The fullscreen GPU test is no longer capped at 60 FPS.** Windows presented the fullscreen test window bypassing composition, and the driver synced frames to the monitor refresh rate even though the test turns vsync off: 100+ FPS in a window, exactly 60 in fullscreen. The window now stays composited (a 1 px border, as Qt recommends), so fullscreen FPS matches windowed. Qt also waited 5 ms before every next frame (which the Windows timer could stretch further), holding back fast GPUs even in a window; the next frame now starts right away. Scores of the fixed test are not compared with older runs, neither in the history nor on the before/after card, so the fix does not look like an optimization gain; the first run after the update is the new baseline.
+
+</details>
+
 ## [6.4.1] — 2026-10-30
 
 Майнінгові відеокарти та чесний GPU-тест на ПК, де картинку виводить вбудована графіка.
