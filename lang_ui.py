@@ -474,6 +474,8 @@ STRINGS = {
     "hw.vram_mb": ("Відеопам'ять {mb} МБ", "Видеопамять {mb} МБ", "{mb} MB VRAM"),
     "hw.driver": ("драйвер від {d}", "драйвер от {d}", "driver from {d}"),
     "hw.integrated": ("Вбудована графіка", "Встроенная графика", "Integrated graphics"),
+    "hw.mining": ("майнінгова {model}, без відеовиходів", "майнинговая {model}, без видеовыходов",
+                  "{model} mining card, no video outputs"),
     "hw.mhz": ("{v} МГц", "{v} МГц", "{v} MHz"),
     "hw.modules": ("модулів: {n}", "модулей: {n}", "{n} module(s)"),
     "hw.hz": ("{hz} Гц", "{hz} Гц", "{hz} Hz"),

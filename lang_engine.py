@@ -140,6 +140,12 @@ STRINGS = {
                        "чтобы игры работали на кристалле с 3D V-Cache. Без этого FPS падает.",
                        "Blocked on dual-CCD AMD X3D: the AMD driver relies on Game Bar and core parking to keep games "
                        "on the 3D V-Cache die. Without it FPS drops."),
+    "block.mining_gpu": ("Не для майнінгових карт: картинка з них іде через іншу відеокарту, а з пропатченими драйверами "
+                         "апаратне планування GPU часто закінчується синім екраном.",
+                         "Не для майнинговых карт: картинка с них идёт через другую видеокарту, а с пропатченными "
+                         "драйверами аппаратное планирование GPU часто заканчивается синим экраном.",
+                         "Not for mining cards: their picture goes out through another GPU, and with patched drivers "
+                         "hardware-accelerated GPU scheduling often ends in a blue screen."),
     "warn.laptop": ("Ноутбук: сильніше гріється і швидше сідає батарея.", "Ноутбук: сильнее греется и быстрее садится батарея.",
                     "Laptop: runs hotter and drains the battery faster."),
     "warn.hybrid": ("Для процесорів з P/E-ядрами краще підходить «Ігри на P-ядрах».",

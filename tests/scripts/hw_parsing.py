@@ -161,6 +161,25 @@ R["merged"] = {k: hw.get(k) for k in ("cpu", "cores", "threads", "sockets", "mhz
                                       "build", "vendor", "model", "wifi", "vbs_running")}
 R["labels"] = dict(cpu=H.cpu_sub(hw), ram=H.ram_line(hw), ram_sub=H.ram_sub(hw), disk=H.disk_line(hw),
                    kind=H.disk_kind(hw))
+
+# майнінгова P106-100 з пропатченим драйвером (зветься «GTX 1060 6GB»), монітор — у материнській платі (HD 4000)
+MINING_CORE = dict(CORE, gpu=[
+    {"Name": "Intel(R) HD Graphics 4000", "AdapterRAM": 2147479552, "PNPDeviceID": "PCI\\VEN_8086&DEV_0162&SUBSYS_84CA1043\\3",
+     "DriverDate": "2026-06-01"},
+    {"Name": "NVIDIA GeForce GTX 1060 6GB", "AdapterRAM": 4293918720,
+     "PNPDeviceID": "PCI\\VEN_10DE&DEV_1C07&SUBSYS_11D71462&REV_A1\\4", "DriverDate": "2023-01-01"}])
+hw = fake_detect(MINING_CORE, STORAGE, nat2)
+hw["display_gpu"] = "Intel(R) HD Graphics 4000"
+mchecks = H.build_check(hw, [])
+R["mining"] = dict(mining=hw["mining"], mining_gpu=hw["mining_gpu"], dgpu=hw["dgpu"],
+                   checks={c["id"]: [c["level"], list(c["fix"]) if c["fix"] else None] for c in mchecks},
+                   hags=E.compat(E.BY_ID["gpu_hw_scheduling"], hw)[0],
+                   hags_regular=E.compat(E.BY_ID["gpu_hw_scheduling"], dict(hw, mining=[], mining_gpu=""))[0],
+                   detail=next(c["detail"] for c in mchecks if c["id"] == "mining"))
+R["mining_names"] = [H.mining_model("", n) for n in ("NVIDIA P106-100", "NVIDIA P104-101", "NVIDIA CMP 30HX",
+                                                     "NVIDIA CMP 170 HX", "NVIDIA GeForce GTX 1060 6GB", "")]
+R["mining_ids"] = [H.mining_model(p) for p in ("PCI\\VEN_10DE&DEV_1C09&SUBSYS_1\\1", "pci\\ven_10de&dev_220d\\2",
+                                                "PCI\\VEN_10DE&DEV_1C03&SUBSYS_1\\1", "PCI\\VEN_1002&DEV_1C07\\1")]
 (E.ps_json, HN.collect, H.gpu_temp, H.display_adapter, H.refresh_rates, H.cpu_topology, H._efficiency_classes,
  H._battery, H._power_caps, H._vram_from_registry, HN.driver_key_for, HN.driver_info) = keep
 

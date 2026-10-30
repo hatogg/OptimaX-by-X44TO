@@ -1796,7 +1796,7 @@ tw("spectre_off", "perf", [R(MM, "FeatureSettingsOverride", 3), R(MM, "FeatureSe
 
 # ── Ігри ──
 tw("gpu_hw_scheduling", "gaming", [R(r"HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers", "HwSchMode", 2)],
-   p="FM", reboot=True, min_build=19041)
+   p="FM", reboot=True, min_build=19041, block_on=("mining_gpu",))
 tw("game_mode_on", "gaming", [R(r"HKCU\Software\Microsoft\GameBar", "AllowAutoGameMode", 1),
                               R(r"HKCU\Software\Microsoft\GameBar", "AutoGameModeEnabled", 1)], p="FMLTOX")
 tw("disable_xbox_gamebar", "gaming", [R(GCS, "GameDVR_Enabled", 0), R(POL + r"\GameDVR", "AllowGameDVR", 0),

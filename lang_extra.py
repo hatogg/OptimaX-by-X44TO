@@ -808,6 +808,15 @@ STRINGS = {
     "bc.display.ok.t": ("Монітор під'єднано до відеокарти", "Монитор подключён к видеокарте",
                         "The monitor is plugged into the graphics card"),
     "bc.display.ok.d": ("{gpu}", "{gpu}", "{gpu}"),
+    "bc.mining.info.t": ("Майнінгова відеокарта {model}", "Майнинговая видеокарта {model}", "Mining graphics card {model}"),
+    "bc.mining.info.d": ("{gpu} — це {model} без власних відеовиходів, тож монітор у материнській платі ({shown}) — "
+                         "правильно. Ігри мають іти на {model}: як це налаштувати й чого уникати — у підказці.",
+                         "{gpu} — это {model} без собственных видеовыходов, так что монитор в материнской плате "
+                         "({shown}) — правильно. Игры должны идти на {model}: как это настроить и чего избегать — "
+                         "в подсказке.",
+                         "{gpu} is a {model} with no video outputs of its own, so the monitor belongs in the "
+                         "motherboard ({shown}). Games should run on the {model}: see the hint for how to set it up "
+                         "and what to avoid."),
     "bc.pcie.warn.t": ("Відеокарта працює на PCIe x{cur} замість x{max}", "Видеокарта работает на PCIe x{cur} вместо "
                        "x{max}", "The graphics card runs at PCIe x{cur} instead of x{max}"),
     "bc.pcie.warn.d": ("{gpu} отримує менше ліній, ніж може. Зазвичай карта стоїть не в тому слоті, заважає "
@@ -884,6 +893,31 @@ STRINGS = {
                              "The back of the case has two sets of ports. The upper ones near the USB belong to the "
                              "motherboard. Use the lower horizontal ones on the graphics card itself. Move the "
                              "HDMI/DisplayPort cable there and restart the game."),
+    "hint.mining.t": ("Як грати на майнінговій карті", "Как играть на майнинговой карте", "How to game on a mining card"),
+    "hint.mining.d": ("1. Монітор лишайте в материнській платі — у карти немає виходів, картинку виводить вбудована "
+                      "графіка.\n2. Параметри → Система → Дисплей → Графіка: для кожної гри оберіть «Висока "
+                      "продуктивність» — майнінгову карту.\n3. Драйвер — лише пропатчений (dartraiden/NVIDIA-patcher): "
+                      "звичайний з nvidia.com вимкне 3D. Забороніть Windows Update оновлювати драйвери.\n4. FPS "
+                      "обмежений частотою, яку видає вбудована графіка (часто 60 Гц). Обмежте FPS через RTSS — гра "
+                      "піде рівніше.\n5. Старі ігри (DirectX 9, Adobe AIR) на такій карті можуть давати синій екран "
+                      "у dxgmms1.sys — запускайте їх на вбудованій графіці.\n6. Міряйте FPS у самій грі (PresentMon): "
+                      "GPU-тест OptimaX малює вбудована графіка.",
+                      "1. Монитор оставляйте в материнской плате — у карты нет выходов, картинку выводит встроенная "
+                      "графика.\n2. Параметры → Система → Дисплей → Графика: для каждой игры выберите «Высокая "
+                      "производительность» — майнинговую карту.\n3. Драйвер — только пропатченный "
+                      "(dartraiden/NVIDIA-patcher): обычный с nvidia.com отключит 3D. Запретите Windows Update "
+                      "обновлять драйверы.\n4. FPS ограничен частотой, которую выдаёт встроенная графика (часто "
+                      "60 Гц). Ограничьте FPS через RTSS — игра пойдёт ровнее.\n5. Старые игры (DirectX 9, Adobe AIR) "
+                      "на такой карте могут давать синий экран в dxgmms1.sys — запускайте их на встроенной графике.\n"
+                      "6. Меряйте FPS в самой игре (PresentMon): GPU-тест OptimaX рисует встроенная графика.",
+                      "1. Keep the monitor in the motherboard — the card has no outputs, the integrated graphics "
+                      "display the picture.\n2. Settings → System → Display → Graphics: set each game to “High "
+                      "performance” — the mining card.\n3. Use only the patched driver (dartraiden/NVIDIA-patcher): "
+                      "the regular one from nvidia.com disables 3D. Stop Windows Update from updating drivers.\n"
+                      "4. FPS is capped by the refresh rate the integrated graphics output (often 60 Hz). Cap FPS "
+                      "with RTSS for smoother play.\n5. Old games (DirectX 9, Adobe AIR) can blue-screen in "
+                      "dxgmms1.sys on such a card — run them on the integrated graphics.\n6. Measure FPS in the game "
+                      "itself (PresentMon): the OptimaX GPU test renders on the integrated graphics."),
     "hint.pcie.t": ("Як повернути повну швидкість PCIe", "Как вернуть полную скорость PCIe", "How to restore full PCIe speed"),
     "hint.pcie.d": ("1. Поставте відеокарту у верхній довгий слот, найближчий до процесора.\n2. Якщо є райзер — "
                     "спробуйте без нього.\n3. Вийміть карту, протріть контакти й вставте до клацання.\n4. У BIOS "

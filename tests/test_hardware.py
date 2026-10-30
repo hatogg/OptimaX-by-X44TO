@@ -92,3 +92,23 @@ def test_update_schedule_and_snooze():
     notes = r["notes"]
     assert notes.startswith("Виправлено") and "English" not in notes and "**" not in notes and "Files" not in notes
     assert len(notes) <= 1502
+
+
+def test_mining_card_is_recognised():
+    m = res()["mining"]
+    assert m["mining"] == [{"name": "NVIDIA GeForce GTX 1060 6GB", "model": "P106-100"}], \
+        "the patched driver calls a P106-100 'GTX 1060' — it must be recognised by its PCI ID"
+    assert m["mining_gpu"] == "P106-100" and m["dgpu"]
+    checks = m["checks"]
+    assert checks["mining"] == ["info", ["hint", "mining"]]
+    assert "display" not in checks, "a card without outputs must not trigger 'move the monitor cable'"
+    assert checks["driver"][0] == "ok", "never send a mining card to nvidia.com — the regular driver disables 3D"
+    assert "hags" not in checks
+    assert m["hags"] == "block" and m["hags_regular"] == "ok"
+    assert "P106-100" in m["detail"] and "Intel(R) HD Graphics 4000" in m["detail"]
+
+
+def test_mining_models_by_name_and_id():
+    r = res()
+    assert r["mining_names"] == ["P106-100", "P104-101", "CMP 30HX", "CMP 170HX", "", ""]
+    assert r["mining_ids"] == ["P106-090", "CMP 90HX", "", ""], "GTX 1060 (1C03) and non-NVIDIA IDs are not mining cards"

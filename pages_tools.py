@@ -430,12 +430,14 @@ class HardwarePage(QWidget):
     def set_hw(self, hw: dict, checks: list):
         self.cards["cpu"].set(hw.get("cpu"), H.cpu_sub(hw))
         gpus = hw.get("gpus", [])
+        mining = {m["name"]: m["model"] for m in hw.get("mining") or []}
 
         def gpu_sub(name, vr, dt):
             drv = tr("hw.driver", d=dt) if dt else ""
             if H.is_integrated(name, vr):
                 return ", ".join(x for x in (tr("hw.integrated"), drv) if x)
-            return ", ".join(x for x in (H.vram_text(vr), drv) if x)
+            mine = tr("hw.mining", model=mining[name]) if name in mining else ""
+            return ", ".join(x for x in (mine, H.vram_text(vr), drv) if x)
         self.cards["gpu"].set("\n".join(n for n, _, _ in gpus), "\n".join(gpu_sub(*g) for g in gpus))
         self.cards["ram"].set(tr("u.gb", v=H.fmt_gb(hw["ram_gb"])) if hw.get("ram_gb") else "", H.ram_sub(hw))
         self.cards["disk"].set(H.disk_kind(hw), hw.get("disk_name", ""))

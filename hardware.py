@@ -280,6 +280,14 @@ def _finish(hw: dict) -> dict:
     hw.setdefault("disks", [])
     hw.setdefault("gpu_pci", [])
     hw.setdefault("thermal", {})
+    # майнінгові карти: за PCI-ідентифікатором (detect_hw) або за назвою, якщо стоїть звичайний драйвер
+    mining = [m for m in hw.get("mining") or [] if isinstance(m, dict) and m.get("model")]
+    for n, _, _ in hw["gpus"]:
+        model = mining_model("", n)
+        if model and not any(m["name"] == n for m in mining):
+            mining.append(dict(name=n, model=model))
+    hw["mining"] = mining
+    hw["mining_gpu"] = mining[0]["model"] if mining else ""  # картинку виводить інша відеокарта — виходів у карти немає
     return hw
 
 
@@ -459,6 +467,9 @@ def detect_hw() -> dict:
         if not vram:
             vram = (_int(g.get("AdapterRAM")) & 0xFFFFFFFF) / 2**30
         gpus.append((name, vram, str(g.get("DriverDate") or di.get("date") or "")))
+        model = mining_model(str(g.get("PNPDeviceID") or ""), name)
+        if model:
+            hw.setdefault("mining", []).append(dict(name=name, model=model))
     if not gpus:
         gpus = [(g["name"], g.get("vram") or 0.0, g.get("date") or "") for g in nat.get("gpus") or []
                 if g.get("name") and not re.search(VIRTUAL_GPU, g["name"], re.I)]
@@ -646,6 +657,22 @@ DRIVER_URLS = {"nvidia": "https://www.nvidia.com/Download/index.aspx",
 
 ARC_DGPU = re.compile(r"arc(\(tm\))?\s*[ab]\d{3}", re.I)
 
+# Майнінгові карти NVIDIA без відеовиходів. Пропатчені драйвери (dartraiden/NVIDIA-patcher) показують їх як звичайні
+# GeForce (P106-100 — «GTX 1060 6GB»), тому розпізнаємо за ідентифікатором пристрою PCI, а не лише за назвою.
+MINING_GPUS = {"1C07": "P106-100", "1C09": "P106-090", "1B87": "P104-100", "1BC7": "P104-101", "1B07": "P102-100",
+               "2189": "CMP 30HX", "1F0B": "CMP 40HX", "1E09": "CMP 50HX", "248A": "CMP 70HX", "220D": "CMP 90HX",
+               "20C2": "CMP 170HX", "2082": "CMP 170HX"}
+MINING_NAME = re.compile(r"\b(P10[246]-\d{3}|CMP\s*\d{2,3}\s*HX)\b", re.I)
+
+
+def mining_model(pnp_id: str = "", name: str = "") -> str:
+    """Модель майнінгової карти за PNPDeviceID (PCI\\VEN_10DE&DEV_1C07…) або за назвою зі стандартного драйвера."""
+    m = re.search(r"VEN_10DE&DEV_([0-9A-F]{4})", pnp_id or "", re.I)
+    if m and m.group(1).upper() in MINING_GPUS:
+        return MINING_GPUS[m.group(1).upper()]
+    n = MINING_NAME.search(name or "")
+    return re.sub(r"^CMP", "CMP ", re.sub(r"\s+", "", n.group(1).upper())) if n else ""  # «CMP 30HX», «P106-100»
+
 
 def is_integrated(name: str, vram: float = 0.0) -> bool:
     """Вбудована графіка: Intel UHD/Iris/Arc Graphics у Core Ultra, AMD Radeon Graphics/Vega в APU."""
@@ -734,7 +761,10 @@ def build_check(hw: dict, games=None) -> list:
             add("trim", "warn", ("action", "trim_on"))
         else:
             add("trim", "ok")
+    mining = {m["name"]: m["model"] for m in hw.get("mining") or []}
     for name, _vram, date in hw.get("gpus", []):
+        if name in mining:  # звичайний драйвер з nvidia.com вимкне 3D на майнінговій карті — оновлюють лише пропатчений
+            continue
         age = _driver_age_days(date or "")
         vendor = _gpu_vendor(name)
         if age > 365 and vendor in DRIVER_URLS:
@@ -757,16 +787,20 @@ def build_check(hw: dict, games=None) -> list:
     if gm and gm[1] == 0:
         add("gamemode", "info", ("tweak", "game_mode_on"))
     hags = E.reg_get(r"HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers", "HwSchMode")
-    if hw.get("dgpu") and hw.get("build", 0) >= 19041 and (not hags or hags[1] != 2) and E.IS_WIN:
+    if hw.get("dgpu") and not mining and hw.get("build", 0) >= 19041 and (not hags or hags[1] != 2) and E.IS_WIN:
         add("hags", "info", ("tweak", "gpu_hw_scheduling"))
     if hw.get("vbs_running"):
         add("vbs", "info", ("tweak", "disable_vbs"))
     if hw.get("x3d_dual"):
         add("x3d", "info")
-    # монітор під'єднано до материнської плати
+    # монітор під'єднано до материнської плати. Майнінгова карта виходів не має: монітор у материнській платі — це
+    # правильно, тож замість «перекиньте кабель» пояснюємо, як на ній грати.
     shown = hw.get("display_gpu") or ""
     gpus = hw.get("gpus", [])
-    dgpus = [n for n, vr, _ in gpus if not is_integrated(n, vr)]
+    if mining:
+        m_name, m_model = next(iter(mining.items()))
+        add("mining", "info", ("hint", "mining"), model=m_model, gpu=m_name, shown=shown or "?")
+    dgpus = [n for n, vr, _ in gpus if not is_integrated(n, vr) and n not in mining]
     shown_vram = next((vr for n, vr, _ in gpus if n == shown), 0)
     if shown and dgpus and not hw.get("laptop") and is_integrated(shown, shown_vram):
         add("display", "warn", ("hint", "display_cable"), igpu=shown, dgpu=dgpus[0])
