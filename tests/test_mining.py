@@ -199,6 +199,13 @@ def test_revert_all_leaves_files_the_game_replaced():
     assert r["env"] is None
 
 
+def test_dxvk_puts_source_games_on_the_card():
+    r = fake_report()
+    assert r["dxvk_on"] == {"ok": 2, "d3d9": "dxvk x64 d3d9", "pref": "GpuPreference=2;", "status": True,
+                            "targets": 1}, r["dxvk_on"]
+    assert r["dxvk_off"] == {"d3d9": False, "pref": None, "ids": []}, "disabling DXVK removes its d3d9.dll and the exe"
+
+
 def test_my_games_takes_over_an_assigned_exe():
     r = fake_report()
     assert r["handover"] == {"mine": True, "gpu": False, "pref": "GpuPreference=2;"}

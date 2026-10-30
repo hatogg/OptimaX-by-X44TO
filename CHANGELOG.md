@@ -2,24 +2,26 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
-## [Unreleased]
+## [6.4.3] — 2026-10-30
 
-Ігри на майнінговій відеокарті: OptimaX сама переносить їх із вбудованої графіки на P106 / P104 / CMP.
+Ігри на майнінговій відеокарті: OptimaX сама переносить їх із вбудованої графіки на P106 / P104 / CMP — і DirectX 10–12, і (через перекладачі) DirectX 9 та OpenGL.
 
 ### Додано
 
-- **Ігри на P106-100** (з'являється на сторінці «Ігри», якщо в ПК майнінгова карта без відеовиходів). OptimaX знаходить встановлені ігри (Steam, Epic, GOG, Ubisoft і «Мої ігри») і призначає кожен їхній exe на майнінгову карту — як «Висока продуктивність» у налаштуваннях «Графіка» Windows, тільки для всіх ігор одразу й з відкатом. Ваш власний вибір у «Графіці» не перезаписується. Ігри на DirectX 9 і Adobe AIR лишаються на вбудованій графіці (на майнінгових картах вони дають синій екран). Перемикач «Автоматично призначати нові ігри» перевіряє нові ігри раз на 15 хвилин.
-- **OpenGL через Mesa.** На OpenGL налаштування «Графіка» Windows не діє, тож такі ігри малювала вбудована графіка. Тепер для кожної OpenGL-гри можна ввімкнути Mesa: вона перекладає OpenGL на DirectX 12, і гру малює майнінгова карта. Mesa завантажується одним натисканням з релізу OptimaX (з перевіркою суми), бібліотеки кладуться в папку гри, а файл, що лежав там раніше, відкладається й повертається відкатом (і через OptimaX-Rescue.cmd).
+- **Ігри на P106-100** (з'являється на сторінці «Ігри», якщо в ПК майнінгова карта без відеовиходів). OptimaX знаходить встановлені ігри (Steam, Epic, GOG, Ubisoft і «Мої ігри») і призначає кожен їхній exe на майнінгову карту — як «Висока продуктивність» у налаштуваннях «Графіка» Windows, тільки для всіх ігор одразу й з відкатом. Ваш власний вибір у «Графіці» не перезаписується. Перемикач «Автоматично призначати нові ігри» перевіряє нові ігри раз на 15 хвилин.
+- **DirectX 9 через DXVK.** Ігри на DirectX 9 (CS:Source, Half-Life 2, старі ігри) бачать лише відеокарту з монітором, тож «Графіка» Windows на них не діє. Для кожної такої гри тепер можна ввімкнути DXVK: він перекладає DirectX 9 на Vulkan, і гру малює майнінгова карта. На Windows DXVK працює не з кожною грою — тоді його просто вимкнути тією ж кнопкою.
+- **OpenGL через Mesa.** Так само для OpenGL: Mesa перекладає OpenGL на DirectX 12.
+- DXVK і Mesa завантажуються одним натисканням з релізу OptimaX (з перевіркою суми), лежать у папці, куди може писати лише адміністратор, і звіряються із сумами перед кожним копіюванням. Бібліотеки тієї ж розрядності, що й гра (x64 чи x86), кладуться поруч з exe, а файл, що лежав там раніше, відкладається й повертається відкатом (і через OptimaX-Rescue.cmd).
 - **GPU-тест і розумна оптимізація на майнінговій карті.** Коли Mesa завантажена, тест малює P106, а не вбудована графіка. Бали з Mesa порівнюються лише з балами з Mesa.
 
-### Змінено
+### Виправлено
 
-- Підказка «Як грати на майнінговій карті» веде до нового розділу замість ручного налаштування кожної гри.
+- Підказка «Як грати на майнінговій карті» помилково пояснювала, що ігри на DirectX 9 дають синій екран на майнінговій карті. Насправді DirectX 9 (як і OpenGL) просто не бачить карту без монітора; підказка тепер веде до DXVK і Mesa.
 
 <details>
 <summary>English</summary>
 
-Games on a mining graphics card: OptimaX moves them from the integrated graphics to the P106 / P104 / CMP by itself. **Games on the P106-100** (on the Games page when the PC has a mining card without video outputs): OptimaX finds installed games (Steam, Epic, GOG, Ubisoft and My games) and assigns each of their exe files to the mining card — like “High performance” in Windows Graphics settings, but for every game at once and with rollback. Your own Graphics choice is never overwritten. DirectX 9 and Adobe AIR games stay on the integrated graphics (they blue-screen on mining cards). The “Assign new games automatically” switch checks for new games every 15 minutes. **OpenGL via Mesa:** Windows Graphics settings don't apply to OpenGL, so such games used to render on the integrated graphics. Now Mesa can be enabled per OpenGL game: it translates OpenGL to DirectX 12 and the mining card renders the game. Mesa downloads in one click from the OptimaX release (checksum verified), the libraries go into the game folder, and any file already there is set aside and restored by rollback (and by OptimaX-Rescue.cmd). **GPU test and smart optimization on the mining card:** with Mesa downloaded the test renders on the P106 instead of the integrated graphics; Mesa scores are compared only with other Mesa scores. The “How to game on a mining card” tip now points to the new section.
+Games on a mining graphics card: OptimaX moves them from the integrated graphics to the P106 / P104 / CMP by itself — DirectX 10–12 directly, DirectX 9 and OpenGL through translation layers. **Games on the P106-100** (on the Games page when the PC has a mining card without video outputs): OptimaX finds installed games (Steam, Epic, GOG, Ubisoft and My games) and assigns each of their exe files to the mining card — like “High performance” in Windows Graphics settings, but for every game at once and with rollback. Your own Graphics choice is never overwritten. The “Assign new games automatically” switch checks for new games every 15 minutes. **DirectX 9 via DXVK:** DirectX 9 games (CS:Source, Half-Life 2, older titles) only see the card with the monitor, so Windows Graphics settings don't apply; DXVK can now be enabled per game to translate DirectX 9 to Vulkan so the mining card renders it (not every game runs with DXVK on Windows — then disable it with the same button). **OpenGL via Mesa:** the same for OpenGL, translated to DirectX 12. DXVK and Mesa download in one click from the OptimaX release (checksum verified), live in an admin-only folder and are re-verified before every copy; libraries of the game's bitness (x64 or x86) go next to the exe, and any file already there is set aside and restored by rollback (and by OptimaX-Rescue.cmd). **GPU test and smart optimization on the mining card:** with Mesa downloaded the test renders on the P106 instead of the integrated graphics; Mesa scores are compared only with other Mesa scores. **Fixed:** the “How to game on a mining card” tip wrongly said DirectX 9 games blue-screen on mining cards; DirectX 9 (like OpenGL) simply can't see a card without a monitor, and the tip now points to DXVK and Mesa.
 
 </details>
 
@@ -276,6 +278,7 @@ A safety review of the whole tweak catalogue: ready-made profiles and the wizard
 
 </details>
 
+[6.4.3]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.4.3
 [6.4.2]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.4.2
 [6.4.1]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.4.1
 [6.4]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.4

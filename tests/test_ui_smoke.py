@@ -41,7 +41,8 @@ def test_mining_card():
     st = r["steps"]
     assert st["mining_card"], "a mining card must get its own section on the Games page"
     m = st["mining"]
-    assert m["rows"] == 4 and m["gpu"] == 4 and m["mesa"], m
-    assert any("DirectX 9" in t for t in m["texts"]) and any("Mesa" in t for t in m["texts"]), m["texts"]
+    assert m["rows"] == 4 and m["mesa"] and m["dxvk"], m
+    assert m["gpu"] == 5, "4 exe from the scan + the DirectX 9 exe that DXVK puts on the card"
+    assert any("DXVK" in t for t in m["texts"]) and any("Mesa" in t for t in m["texts"]), m["texts"]
     assert "P106-100" in m["bench_note"], m["bench_note"]
     assert m["left"] == 0, "Revert all must remove every mining change"

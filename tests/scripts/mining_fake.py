@@ -191,6 +191,24 @@ R["revert"] = {"undone": out.get("undone"), "partial": out.get("partial"),
 F.set_game_option(dx11, "dgpu", False, log)
 R["handover_off"] = pref(dx11)
 
+# ── DXVK: DirectX 9 через Vulkan — d3d9.dll поруч з hl2.exe (рушій Source вантажить d3d9 з bin\\, але Windows шукає
+# її спершу поруч з exe), сам exe — на карту; вимкнення прибирає обидва ──
+dfiles = {f"{a}/d3d9.dll": f"dxvk {a} d3d9".encode() for a in ("x64", "x86")}
+dz = os.path.join(pack, "dxvk.zip")
+with zipfile.ZipFile(dz, "w") as z:
+    z.writestr("dxvk.json", json.dumps({"dxvk": "2.6.2",
+                                        "files": {n: hashlib.sha256(b).hexdigest() for n, b in dfiles.items()}}))
+    for n, b in dfiles.items():
+        z.writestr(n, b)
+MG.install_zip(dz, log, "dxvk")
+hl = next(g for g in MG.discover() if g["name"] == "Half-Life 2")
+out = MG.enable_layer("dxvk", hl, log, hw)
+R["dxvk_on"] = {"ok": out.get("ok"), "d3d9": open(os.path.join(src, "d3d9.dll"), "rb").read().decode(),
+                "pref": pref(hl2), "status": MG.game_status(hl)["dxvk"], "targets": len(MG.layer_targets(hl, "dxvk"))}
+MG.disable_layer("dxvk", hl, log)
+R["dxvk_off"] = {"d3d9": os.path.exists(os.path.join(src, "d3d9.dll")), "pref": pref(hl2),
+                 "ids": [t for t in MG.our_ids() if t.startswith(("dxvk:", "gpu:"))]}
+
 # одночасний запуск із двох потоків: друга спроба не чекає й не пише в журнал
 started, results = threading.Event(), []
 orig = E.apply_tweaks

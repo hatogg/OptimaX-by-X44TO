@@ -196,6 +196,17 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           "zip=$zip" | Add-Content $env:GITHUB_OUTPUT
           "**Mesa**: $(Split-Path $zip -Leaf), $([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB" | Add-Content $env:GITHUB_STEP_SUMMARY
+      - name: DXVK for DirectX 9 games on mining cards (DirectX 9 → Vulkan)
+        id: dxvk
+        continue-on-error: true  # сторонній реліз недоступний — програма без DXVK однаково збирається
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OPTIMAX_DXVK_TAG: "v2.6.2"  # новіші версії вимагають розширень Vulkan, яких може не бути в драйверах Pascal (P106)
+        run: |
+          $zip = python packaging/release.py dxvk Output | Select-Object -Last 1
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          "**DXVK**: $(Split-Path $zip -Leaf), $([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB" | Add-Content $env:GITHUB_STEP_SUMMARY
       - name: GPU test through Mesa (the runner has no GPU — Mesa d3d12 on WARP)
         if: ${{ steps.mesa.outcome == 'success' }}
         shell: pwsh
@@ -247,7 +258,7 @@ jobs:
         shell: pwsh
         run: |
           $files = @("Output/OptimaX-Setup-${{ steps.ver.outputs.v }}.exe", "Output/OptimaX-${{ steps.ver.outputs.v }}-portable.exe")
-          $files += @(Get-ChildItem Output/OptimaX-Mesa-*.zip -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+          $files += @(Get-ChildItem Output/OptimaX-Mesa-*.zip, Output/OptimaX-DXVK-*.zip -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
           python packaging/release.py checksums @files
       - uses: actions/upload-artifact@v7
         with:
@@ -257,6 +268,7 @@ jobs:
             Output/OptimaX-*-portable.exe
             Output/OptimaX-Rescue.cmd
             Output/OptimaX-Mesa-*.zip
+            Output/OptimaX-DXVK-*.zip
             Output/SHA256SUMS.txt
             Output/winget
           if-no-files-found: error

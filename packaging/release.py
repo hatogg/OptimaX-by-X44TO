@@ -9,6 +9,8 @@ OptimaX — допоміжний скрипт збірки релізу.
     python packaging/release.py checksums <файли…>   — SHA256SUMS.txt для релізу
     python packaging/release.py mesa <папка>         — OptimaX-Mesa-<версія>.zip для майнінгових карт (mining.py):
                                                        x64- і x86-бібліотеки з релізу pal1000/mesa-dist-win + mesa.json
+    python packaging/release.py dxvk <папка>         — OptimaX-DXVK-<версія>.zip: d3d9.dll і d3d8.dll (x64, x86) з релізу
+                                                       doitsujin/dxvk + dxvk.json
 
 Версія береться лише з engine.py (VERSION = "..."), тож змінювати її треба в одному місці.
 """
@@ -189,6 +191,70 @@ def _seven_zip() -> str:
     raise SystemExit("7-Zip not found (7z / 7za)")
 
 
+DXVK_REPO = "doitsujin/dxvk"
+DXVK_ASSET = re.compile(r"^dxvk-([\d.]+)\.tar\.gz$", re.I)
+DXVK_FILES = ("d3d9.dll", "d3d8.dll")  # як у mining.DXVK_FILES
+DXVK_DIRS = {"x64": "x64", "x86": "x32"}  # розрядність у OptimaX -> папка в архіві DXVK
+
+
+def _release_asset(repo: str, tag: str, rx, work: str) -> tuple:
+    """Реліз repo (тег або останній), ресурс за rx, завантажений у work і звірений з digest GitHub.
+    -> (шлях, версія, тег, sha256)."""
+    import json
+    with _get(f"https://api.github.com/repos/{repo}/releases/" + (f"tags/{tag}" if tag else "latest"), True) as r:
+        rel = json.load(r)
+    asset = next((a for a in rel.get("assets") or [] if rx.match(a.get("name") or "")), None)
+    if not asset:
+        raise SystemExit(f"{repo} {rel.get('tag_name')}: no asset matching {rx.pattern}")
+    path = os.path.join(work, asset["name"])
+    h = hashlib.sha256()
+    with _get(asset["browser_download_url"]) as r, open(path, "wb") as f:
+        for chunk in iter(lambda: r.read(1 << 20), b""):
+            h.update(chunk)
+            f.write(chunk)
+    digest = str(asset.get("digest") or "")
+    if digest.lower().startswith("sha256:") and digest[7:].lower() != h.hexdigest():
+        raise SystemExit(f"{asset['name']}: SHA-256 differs from the GitHub digest")
+    return path, rx.match(asset["name"]).group(1), rel.get("tag_name"), h.hexdigest()
+
+
+def build_dxvk(out_dir: str) -> str:
+    """Перепаковує DXVK (DirectX 9 / 8 → Vulkan) для DX9-ігор на майнінгових картах: лише d3d9.dll і d3d8.dll.
+    OPTIMAX_DXVK_TAG=<тег> — конкретний реліз (за замовчуванням останній)."""
+    import json
+    import tarfile
+    import tempfile
+    import zipfile
+    work = tempfile.mkdtemp(prefix="dxvk_")
+    arc, ver, tag, sha = _release_asset(DXVK_REPO, os.environ.get("OPTIMAX_DXVK_TAG", "").strip(), DXVK_ASSET, work)
+    blobs = {}
+    with tarfile.open(arc, "r:gz") as t:
+        for m in t.getmembers():
+            parts = m.name.replace("\\", "/").split("/")
+            if not m.isfile() or len(parts) < 2 or parts[-1].lower() not in DXVK_FILES:
+                continue
+            arch = next((a for a, d in DXVK_DIRS.items() if parts[-2].lower() == d), None)
+            if arch:
+                blobs[f"{arch}/{parts[-1].lower()}"] = t.extractfile(m).read()
+    if "x64/d3d9.dll" not in blobs or "x86/d3d9.dll" not in blobs:
+        raise SystemExit(f"{os.path.basename(arc)}: x64/d3d9.dll or x32/d3d9.dll not found")
+    man = {"dxvk": ver, "source": f"https://github.com/{DXVK_REPO}/releases/tag/{tag}",
+           "archive": os.path.basename(arc), "archive_sha256": sha,
+           "files": {k: hashlib.sha256(b).hexdigest() for k, b in sorted(blobs.items())}}
+    os.makedirs(out_dir, exist_ok=True)
+    out = os.path.join(out_dir, f"OptimaX-DXVK-{ver}.zip")
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("dxvk.json", json.dumps(man, indent=1))
+        z.writestr("README.txt", f"DXVK {ver} (https://github.com/{DXVK_REPO}, zlib license)\n"
+                                 f"from {man['source']}\n"
+                                 "OptimaX uses it on PCs with a mining graphics card (no video outputs): DirectX 9 sees "
+                                 "only the card with the monitor, DXVK translates it to Vulkan, which sees the mining "
+                                 "card.\n")
+        for k, b in sorted(blobs.items()):
+            z.writestr(k, b)
+    return out
+
+
 def build_mesa(out_dir: str) -> str:
     """Перепаковує Mesa для майнінгових карт: драйвер d3d12 (OpenGL поверх DirectX 12) з релізу mesa-dist-win.
     OPTIMAX_MESA_TAG=<тег> — конкретний реліз (за замовчуванням останній). Сума архіву звіряється з digest GitHub."""
@@ -274,6 +340,8 @@ if __name__ == "__main__":
         print(write_checksums(sys.argv[2:]))
     elif cmd == "mesa" and len(sys.argv) > 2:
         print(build_mesa(sys.argv[2]))
+    elif cmd == "dxvk" and len(sys.argv) > 2:
+        print(build_dxvk(sys.argv[2]))
     else:
         print(__doc__)
         sys.exit(1)

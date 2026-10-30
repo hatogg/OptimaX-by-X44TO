@@ -112,8 +112,11 @@ class GameRow(QFrame):
         self.chips["cores"].setToolTip(tr(f"games.opt.cores.tip.{mode}") if mode else tr("games.opt.cores.na"))
 
 
+LAYER_API = {"dxvk": "dx9", "mesa": "gl"}
+
+
 class MiningGameRow(QFrame):
-    """Гра в розділі «Ігри на майнінговій карті»: що з нею зроблено, а для OpenGL — перемикач Mesa."""
+    """Гра в розділі «Ігри на майнінговій карті»: що з нею зроблено, а для DirectX 9 і OpenGL — перемикачі DXVK і Mesa."""
 
     def __init__(self, g: dict, card):
         super().__init__()
@@ -132,20 +135,26 @@ class MiningGameRow(QFrame):
         self.status = label("", "desc", wrap=True)
         tv.addWidget(self.status)
         h.addLayout(tv, 1)
-        self.mesa_btn = button("", "ghost", lambda: card.toggle_mesa(self))
-        self.mesa_btn.setVisible(bool(MG.gl_targets(g)))
-        h.addWidget(self.mesa_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.btns = {}
+        for kind in ("dxvk", "mesa"):
+            b = button("", "ghost", lambda k=kind: card.toggle_layer(self, k))
+            b.setVisible(bool(MG.layer_targets(g, kind)))
+            h.addWidget(b, 0, Qt.AlignmentFlag.AlignVCenter)
+            self.btns[kind] = b
         self.sync()
+
+    @property
+    def mesa_btn(self):
+        return self.btns["mesa"]
 
     def sync(self):
         gpu = self.card.gpu
         st = MG.game_status(self.g)
         parts, color = [], "mute"
         usable = st["total"] - st["dx9"]
-        if st["dx9"] == st["total"]:
-            parts.append(tr("mg.st.dx9"))
-            color = "warn"
-        else:
+        if self.g.get("risk"):
+            parts.append(tr("mg.st.air"))
+        elif usable:
             if st["on"] and not st["free"]:
                 parts.append(tr("mg.st.on", gpu=gpu) if st["on"] == usable else
                              tr("mg.st.part", gpu=gpu, n=st["on"], total=usable))
@@ -157,21 +166,28 @@ class MiningGameRow(QFrame):
                 parts.append(tr("mg.st.kept"))
             else:
                 parts.append(tr("mg.st.free"))
-            if st["gl"] > st["gl_na"]:
-                parts.append(tr("mg.st.gl_on", gpu=gpu) if st["mesa"] else tr("mg.st.gl", gpu=gpu))
-                if not st["mesa"]:
-                    color = "warn"
-            if st["gl_na"]:
-                parts.append(tr("mg.st.gl_na"))
-            if st["dx9"]:
-                parts.append(tr("mg.st.dx9"))
+        if st["dx9"] and not self.g.get("risk"):
+            if st["dx9"] > st["dx9_na"]:
+                parts.append(tr("mg.st.dx9_on", gpu=gpu) if st["dxvk"] else tr("mg.st.dx9", gpu=gpu))
+                color = "ok" if st["dxvk"] else "warn"
+            if st["dx9_na"]:
+                parts.append(tr("mg.st.dx9_na"))
+        if st["gl"] > st["gl_na"]:
+            parts.append(tr("mg.st.gl_on", gpu=gpu) if st["mesa"] else tr("mg.st.gl", gpu=gpu))
+            if not st["mesa"]:
+                color = "warn"
+        if st["gl_na"]:
+            parts.append(tr("mg.st.gl_na"))
         self.status.setText(" · ".join(parts))
         self.dot.setStyleSheet(f"background:{T[color]};border-radius:4px;")
-        self.mesa_btn.setText(tr("mg.mesa_off_btn") if st["mesa"] else tr("mg.mesa_on_btn"))
+        for kind, b in self.btns.items():
+            what = MG.LAYER_NAMES[kind]
+            b.setText(tr("mg.off_btn", what=what) if st[kind] else tr("mg.on_btn", what=what))
 
 
 class MiningCard(QFrame):
-    """Майнінгова карта без відеовиходів (P106/P104/CMP): ігри — на неї, OpenGL — через Mesa (mining.py)."""
+    """Майнінгова карта без відеовиходів (P106/P104/CMP): ігри — на неї, DirectX 9 — через DXVK, OpenGL — через
+    Mesa (mining.py)."""
 
     def __init__(self, main, hw: dict):
         super().__init__()
@@ -206,22 +222,28 @@ class MiningCard(QFrame):
         self.empty = label(tr("mg.empty"), "sub", wrap=True)
         self.empty.setContentsMargins(14, 4, 14, 8)
         v.addWidget(self.empty)
-        mw = QFrame()
-        mw.setObjectName("row")
-        mh = hbox(mw, (14, 10, 14, 10), 12)
-        mv = vbox(spacing=2)
-        mv.addWidget(label(tr("mg.mesa_t"), "rowTitle"))
-        mv.addWidget(label(tr("mg.mesa_d", gpu=self.gpu), "desc", wrap=True))
-        self.mesa_lbl = label("", "muted")
-        mv.addWidget(self.mesa_lbl)
-        mh.addLayout(mv, 1)
-        self.btn_mesa = button(tr("mg.mesa_get"), None, self.get_mesa)
-        mh.addWidget(self.btn_mesa, 0, Qt.AlignmentFlag.AlignVCenter)
-        v.addWidget(mw)
-        self.sync_mesa()
+        self.layer_lbl, self.layer_btn = {}, {}
+        for kind, title, desc in (("dxvk", "mg.dxvk_t", "mg.dxvk_d"), ("mesa", "mg.mesa_t", "mg.mesa_d")):
+            mw = QFrame()
+            mw.setObjectName("row")
+            mh = hbox(mw, (14, 10, 14, 10), 12)
+            mv = vbox(spacing=2)
+            mv.addWidget(label(tr(title), "rowTitle"))
+            mv.addWidget(label(tr(desc, gpu=self.gpu), "desc", wrap=True))
+            self.layer_lbl[kind] = label("", "muted")
+            mv.addWidget(self.layer_lbl[kind])
+            mh.addLayout(mv, 1)
+            self.layer_btn[kind] = button("", None, lambda k=kind: self.get_layer(k))
+            mh.addWidget(self.layer_btn[kind], 0, Qt.AlignmentFlag.AlignVCenter)
+            v.addWidget(mw)
+        self.sync_layers()
         # стан без змін: які ігри є і що з ними вже зроблено (пошук іде у фоні — exe ігор бувають великі)
         self.main.run_quick(tr("mg.title", gpu=self.gpu), lambda log, p: {"list": MG.discover()}, silent=True,
                             on_done=self._listed)
+
+    @property
+    def btn_mesa(self):
+        return self.layer_btn["mesa"]
 
     def _auto(self, on: bool):
         m = dict(F.CFG["mining"] or {})
@@ -237,11 +259,16 @@ class MiningCard(QFrame):
             return True
         return False
 
+    def sync_layers(self):
+        for kind, lbl in self.layer_lbl.items():
+            info = MG.layer_info(kind)
+            what = MG.LAYER_NAMES[kind]
+            lbl.setText(tr("mg.have", what=what, v=info["version"]) if info else tr("mg.none", what=what))
+            self.layer_btn[kind].setText(tr("mg.got", what=what) if info else tr("mg.get", what=what))
+            self.layer_btn[kind].setEnabled(not info)
+
     def sync_mesa(self):
-        info = MG.mesa_info()
-        self.mesa_lbl.setText(tr("mg.mesa_have", v=info["version"]) if info else tr("mg.mesa_none"))
-        self.btn_mesa.setText(tr("mg.mesa_got") if info else tr("mg.mesa_get"))
-        self.btn_mesa.setEnabled(not info)
+        self.sync_layers()
 
     def _listed(self, res):
         games = (res or {}).get("list") if isinstance(res, dict) else None
@@ -287,25 +314,35 @@ class MiningCard(QFrame):
         self.main.run_quick(tr("mg.revert"), lambda log, p: MG.revert(log), busy=self.btn_revert, silent=True,
                             on_done=lambda r: self._busy(r) or (self.refresh_rows(), self.main.toast(tr("mg.reverted"))))
 
-    def get_mesa(self):
-        self.main.run_quick(tr("mg.mesa_get"), lambda log, p: MG.install_mesa(log, p), busy=self.btn_mesa,
-                            on_done=lambda _r: (self.sync_mesa(), self.main.pages["bench"].sync_mesa()))
+    def get_layer(self, kind: str):
+        what = MG.LAYER_NAMES[kind]
+        self.main.run_quick(tr("mg.get", what=what), lambda log, p: MG.install_layer(kind, log, p),
+                            busy=self.layer_btn[kind],
+                            on_done=lambda _r: (self.sync_layers(), self.main.pages["bench"].sync_mesa()))
 
-    def toggle_mesa(self, row: MiningGameRow):
+    def get_mesa(self):
+        self.get_layer("mesa")
+
+    def toggle_layer(self, row: MiningGameRow, kind: str):
         g = row.g
+        what = MG.LAYER_NAMES[kind]
+        btn = row.btns[kind]
         # після завершення оновлюємо всі рядки, а не цей: пошук міг тим часом перебудувати список і видалити його
-        if MG.game_status(g)["mesa"]:
-            self.main.run_quick(g["name"], lambda log, p: MG.disable_mesa(g, log), busy=row.mesa_btn,
+        if MG.layer_on(g, kind):
+            self.main.run_quick(g["name"], lambda log, p: MG.disable_layer(kind, g, log), busy=btn,
                                 on_done=lambda r: self._busy(r) or self.refresh_rows())
             return
-        if not MG.mesa_info():
-            self.main.toast(tr("mg.mesa_need"), "warn")
+        if not MG.layer_info(kind):
+            self.main.toast(tr("mg.need", what=what), "warn")
             return
-        if not Ask.ask(self, tr("mg.mesa_t"), tr("mg.mesa_q", game=g["name"]), tr("mg.mesa_on_btn")):
+        if not Ask.ask(self, tr(f"mg.{kind}_t"), tr(f"mg.{kind}_q", game=g["name"]), tr("mg.on_btn", what=what)):
             return
         hw = self.hw
-        self.main.run_quick(g["name"], lambda log, p: MG.enable_mesa(g, log, hw), busy=row.mesa_btn,
+        self.main.run_quick(g["name"], lambda log, p: MG.enable_layer(kind, g, log, hw), busy=btn,
                             on_done=lambda r: self._busy(r) or self.refresh_rows())
+
+    def toggle_mesa(self, row: MiningGameRow):
+        self.toggle_layer(row, "mesa")
 
 
 class GamesPage(QWidget):

@@ -8,20 +8,21 @@ OptimaX — ігри на майнінговій відеокарті (P106 / P1
   призначити exe гри на «Високу продуктивність» (HKCU\\…\\DirectX\\UserGpuPreferences, GpuPreference=2). OptimaX сама
   знаходить встановлені ігри (Steam, Epic, GOG, Ubisoft і «Мої ігри») і призначає кожен їхній exe — з відкатом через
   журнал. Значення, яке вже хтось задав (користувач у «Графіці» чи «Мої ігри»), не чіпаємо.
-• DirectX 9 і Adobe AIR. На пропатчених драйверах такі ігри на майнінговій карті можуть давати синій екран
-  (dxgmms1.sys), тож лишаємо їх на вбудованій графіці. DirectX 9 видно з таблиці імпорту exe або з бібліотек рушія
-  поруч (Source: bin\\shaderapidx9.dll).
-• OpenGL. Налаштування «Графіка» Windows на OpenGL не діє: вікно малює та карта, що виводить картинку. Обхід —
-  Mesa (pal1000/mesa-dist-win, драйвер d3d12: OpenGL поверх DirectX 12) у папці гри та змінна
-  MESA_D3D12_DEFAULT_ADAPTER_NAME=NVIDIA, за якою Mesa обирає карту. Бібліотеки тієї самої розрядності, що й exe
-  (x64 чи x86). Лише за згодою, для кожної гри окремо: онлайн-ігри з античитом можуть не пустити гру з чужою
-  opengl32.dll.
+• DirectX 9 / 8 і OpenGL. Вони бачать лише відеокарту, до якої підключено монітор, тож налаштування «Графіка» на них
+  не діє (перевірено на P106 + HD 4000: CS:Source з «Високою продуктивністю» однаково малює HD 4000). Обхід — шар-
+  перекладач у папці гри, лише за згодою й для кожної гри окремо:
+    – DXVK (DirectX 9 / 8 → Vulkan; Vulkan старі вбудовані графіки на Windows не мають, тож бачить лише карту);
+    – Mesa (pal1000/mesa-dist-win, драйвер d3d12: OpenGL → DirectX 12; карту обирає за змінною
+      MESA_D3D12_DEFAULT_ADAPTER_NAME=NVIDIA).
+  Бібліотеки тієї самої розрядності, що й exe (x64 чи x86). Онлайн-ігри з античитом можуть не пустити гру з чужою
+  d3d9.dll / opengl32.dll. DirectX 9 видно з таблиці імпорту exe або з бібліотек рушія поруч (Source:
+  bin\\shaderapidx9.dll). Ігри на Adobe AIR лишаються як є.
 
-Mesa не входить в інсталятор (десятки мегабайтів): CI перепаковує збірку mesa-dist-win у OptimaX-Mesa-<версія>.zip
-(x64\\ і x86\\ + mesa.json із сумами) і викладає її в реліз OptimaX поруч із SHA256SUMS.txt. Програма завантажує
-архів лише після перевірки суми й розпаковує в ProgramData\\OptimaX\\mesa, доступ до якої лишає тільки
-адміністраторам і SYSTEM (у ProgramData за замовчуванням будь-хто може створювати файли). Перед кожним копіюванням у
-папку гри й перед завантаженням у GPU-тест бібліотеки звіряються із сумами з mesa.json.
+Шари не входять в інсталятор (десятки мегабайтів): CI перепаковує збірки mesa-dist-win і DXVK у OptimaX-Mesa-<версія>.zip
+та OptimaX-DXVK-<версія>.zip (x64\\ і x86\\ + манифест із сумами) і викладає їх у реліз OptimaX поруч із
+SHA256SUMS.txt. Програма завантажує архів лише після перевірки суми й розпаковує в ProgramData\\OptimaX\\<шар>,
+доступ до якої лишає тільки адміністраторам і SYSTEM (у ProgramData за замовчуванням будь-хто може створювати файли).
+Перед кожним копіюванням у папку гри й перед завантаженням у GPU-тест бібліотеки звіряються із сумами з манифесту.
 """
 from __future__ import annotations
 
@@ -49,11 +50,8 @@ ADAPTER_VAR = "MESA_D3D12_DEFAULT_ADAPTER_NAME"
 ADAPTER_NAME = "NVIDIA"  # майнінгові карти, які ми розпізнаємо (P106/P104/P102, CMP HX), — усі NVIDIA
 ENV_KEY = r"HKCU\Environment"
 ENV_ID = "mining:mesa_env"
-MESA_FILES = ("opengl32.dll", "libgallium_wgl.dll", "libglapi.dll", "dxil.dll")
-MESA_REQUIRED = ("opengl32.dll", "libgallium_wgl.dll")
-MESA_ARCHES = ("x64", "x86")
+MESA_ARCHES = ("x64", "x86")  # розрядності шарів (Mesa, DXVK) — як у exe гри
 MACHINES = {0x8664: "x64", 0x14C: "x86"}  # ARM64 та інші — без Mesa
-MESA_ASSET_RE = re.compile(r"^OptimaX-Mesa-(\d+(?:\.\d+)*)\.zip$", re.I)
 VERSION_RE = re.compile(r"^\d+(?:\.\d+){0,3}$")
 DEMO_MESA = "26.2.0"
 
@@ -202,8 +200,8 @@ def classify(path: str, sibling_dlls: tuple = ()) -> dict:
     """-> {path, api, arch}. api: dx9 — DirectX 9 (на майнінговій карті ризик синього екрана); gl — OpenGL;
     other — решта (DX10+, Vulkan…). arch: x64 / x86 / "" — для якої Mesa підходить exe."""
     arch, imps = pe_info(path)
-    if "d3d9.dll" in imps and not imps & DX10_PLUS:
-        api = "dx9"
+    if imps & {"d3d9.dll", "d3d8.dll"} and not imps & DX10_PLUS:
+        api = "dx9"  # DirectX 9 і 8: обидва бачать лише карту з монітором, обидва перекладає DXVK
     elif "opengl32.dll" in imps:
         api = "gl"
     elif not imps & DX10_PLUS and any(DX9_DLL.search(d) for d in sibling_dlls):
@@ -446,10 +444,6 @@ def gpu_id(exe: str) -> str:
     return "gpu:" + exe.lower()
 
 
-def mesa_id(folder: str) -> str:
-    return "glmesa:" + folder.lower().rstrip("\\/")
-
-
 def exe_state(exe: str) -> str:
     """ours — призначила OptimaX тут; user — вибір уже зроблено (у «Графіці» Windows чи «Мої ігри»): не чіпаємо;
     free — ще ніхто не вибирав."""
@@ -464,31 +458,71 @@ def gpu_tweak(game: str, exe: str, gpu: str) -> E.Tweak:
     return t
 
 
-def gl_targets(g: dict) -> list:
-    """Куди класти Mesa: [(папка exe, розрядність)] для OpenGL-exe x64 / x86 (бібліотеки — поруч з exe, тієї ж
-    розрядності: 64-бітна opengl32.dll поруч із 32-бітною грою не дасть їй запуститися)."""
+# ───────────────────────── шари-перекладачі: Mesa (OpenGL) і DXVK (DirectX 9) ─────────────────────────
+# OpenGL і DirectX 9 бачать лише відеокарту, до якої підключено монітор, тож «Висока продуктивність» на них не діє.
+# Шар поруч з exe перекладає їх на API, що вміє вибрати іншу карту: Mesa — OpenGL → DirectX 12 (адаптер — за
+# MESA_D3D12_DEFAULT_ADAPTER_NAME і налаштуванням «Графіка»), DXVK — DirectX 9 / 8 → Vulkan (вбудована графіка старих
+# поколінь Vulkan на Windows не має, тож Vulkan бачить лише майнінгову карту).
+LAYERS = {
+    "mesa": dict(files=("opengl32.dll", "libgallium_wgl.dll", "libglapi.dll", "dxil.dll"),
+                 required=("opengl32.dll", "libgallium_wgl.dll"), api="gl", prefix="glmesa:",
+                 asset=re.compile(r"^OptimaX-Mesa-(\d+(?:\.\d+)*)\.zip$", re.I)),
+    "dxvk": dict(files=("d3d9.dll", "d3d8.dll"), required=("d3d9.dll",), api="dx9", prefix="dxvk:",
+                 asset=re.compile(r"^OptimaX-DXVK-(\d+(?:\.\d+)*)\.zip$", re.I)),
+}
+MESA_FILES, MESA_REQUIRED = LAYERS["mesa"]["files"], LAYERS["mesa"]["required"]
+DXVK_FILES, DXVK_REQUIRED = LAYERS["dxvk"]["files"], LAYERS["dxvk"]["required"]
+MESA_ASSET_RE = LAYERS["mesa"]["asset"]
+DEMO_VERSION = {"mesa": DEMO_MESA, "dxvk": "2.6.2"}
+
+
+def layer_id(kind: str, folder: str) -> str:
+    return LAYERS[kind]["prefix"] + folder.lower().rstrip("\\/")
+
+
+def mesa_id(folder: str) -> str:
+    return layer_id("mesa", folder)
+
+
+def layer_targets(g: dict, kind: str) -> list:
+    """Куди класти шар: [(папка exe, розрядність)] для exe з його API (gl — Mesa, dx9 — DXVK), x64 / x86. Бібліотеки —
+    поруч з exe і тієї ж розрядності: 64-бітна opengl32.dll чи d3d9.dll поруч із 32-бітною грою не дасть їй
+    запуститися. Для гри на Source exe лежить у корені, а d3d9 вантажить bin\\shaderapidx9.dll — Windows однаково шукає
+    d3d9.dll спершу поруч з exe."""
     out = []
     if g.get("risk"):
         return out
     for x in g["exes"]:
-        if x["api"] == "gl" and x.get("arch") in MESA_ARCHES:
+        if x["api"] == LAYERS[kind]["api"] and x.get("arch") in MESA_ARCHES:
             d = _dir(x["path"])
             if d.lower() not in (o[0].lower() for o in out):
                 out.append((d, x["arch"]))
     return out
 
 
+def gl_targets(g: dict) -> list:
+    return layer_targets(g, "mesa")
+
+
 def gl_folders(g: dict) -> list:
-    return [d for d, _ in gl_targets(g)]
+    return [d for d, _ in layer_targets(g, "mesa")]
+
+
+def layer_on(g: dict, kind: str) -> bool:
+    folders = [d for d, _ in layer_targets(g, kind)]
+    return bool(folders) and all(E.JOURNAL.has(layer_id(kind, f)) for f in folders)
 
 
 def game_status(g: dict) -> dict:
-    """Підсумок для рядка гри: on — скільки exe малює майнінгова карта; kept — вибір користувача; dx9 — лишено на
-    вбудованій; gl — OpenGL-exe; gl_na — OpenGL-exe, для якого немає Mesa (ARM64…); mesa — Mesa вже в усіх папках."""
-    st = dict(on=0, kept=0, free=0, dx9=0, gl=0, gl_na=0, total=len(g["exes"]))
+    """Підсумок для рядка гри: on — скільки exe малює майнінгова карта; kept — вибір користувача; dx9 — DirectX 9 /
+    Adobe AIR (Windows їх не перемикає); gl — OpenGL-exe; gl_na / dx9_na — exe, для яких шару немає (ARM64…);
+    mesa / dxvk — шар уже в усіх папках гри."""
+    st = dict(on=0, kept=0, free=0, dx9=0, gl=0, gl_na=0, dx9_na=0, total=len(g["exes"]))
     for x in g["exes"]:
         if g.get("risk") or x["api"] == "dx9":
             st["dx9"] += 1
+            if not g.get("risk") and x.get("arch") not in MESA_ARCHES:
+                st["dx9_na"] += 1
             continue
         if x["api"] == "gl":
             st["gl"] += 1
@@ -496,14 +530,15 @@ def game_status(g: dict) -> dict:
                 st["gl_na"] += 1
         s = exe_state(x["path"])
         st["on" if s == "ours" else "kept" if s == "user" else "free"] += 1
-    folders = gl_folders(g)
-    st["mesa"] = bool(folders) and all(E.JOURNAL.has(mesa_id(f)) for f in folders)
+    st["mesa"] = layer_on(g, "mesa")
+    st["dxvk"] = layer_on(g, "dxvk")
     return st
 
 
 @_exclusive
 def assign(log, hw: dict, games: list = None) -> dict:
-    """Призначає всі ще не призначені exe ігор (крім DirectX 9 / Adobe AIR) на майнінгову карту."""
+    """Призначає всі ще не призначені exe ігор на майнінгову карту. DirectX 9 і Adobe AIR пропускаємо: Windows їх на
+    карту без виходів не перенесе (DirectX 9 бачить лише карту з монітором) — для DirectX 9 є DXVK."""
     gpu = model(hw)
     games = discover() if games is None else games
     todo, res = [], dict(games=len(games), assigned=0, already=0, kept=0, dx9=0, gl=0, failed=0)
@@ -532,7 +567,8 @@ def assign(log, hw: dict, games: list = None) -> dict:
 
 
 def our_ids() -> list:
-    return [tid for tid in E.JOURNAL.newest_first() if tid.startswith(("gpu:", "glmesa:", "mining:"))]
+    prefixes = ("gpu:", "mining:") + tuple(v["prefix"] for v in LAYERS.values())
+    return [tid for tid in E.JOURNAL.newest_first() if tid.startswith(prefixes)]
 
 
 @_exclusive
@@ -559,14 +595,18 @@ def busy() -> bool:
     return _LOCK.locked()
 
 
-# ───────────────────────── Mesa: OpenGL на майнінговій карті ─────────────────────────
-def mesa_root() -> str:
-    """OptimaX з правами адміністратора копіює ці бібліотеки в папки ігор і вантажить у GPU-тест — тож вони лежать
-    у ProgramData, і доступ до папки лишаємо тільки адміністраторам і SYSTEM (за замовчуванням у підпапках
-    ProgramData будь-який користувач може створювати файли й папки — підкинути свою «Mesa»)."""
+# ───────────────────────── файли шарів: завантаження, перевірка, розпакування ─────────────────────────
+def layer_root(kind: str) -> str:
+    """OptimaX з правами адміністратора копіює ці бібліотеки в папки ігор (а Mesa ще й вантажить у GPU-тест) — тож
+    вони лежать у ProgramData, і доступ до папки лишаємо тільки адміністраторам і SYSTEM (за замовчуванням у
+    підпапках ProgramData будь-який користувач може створювати файли й папки — підкинути свої бібліотеки)."""
     if E.IS_WIN and not E.DRY_RUN and E.is_admin():
-        return os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "OptimaX", "mesa")
-    return os.path.join(E.DATA_DIR, "mesa")
+        return os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "OptimaX", kind)
+    return os.path.join(E.DATA_DIR, kind)
+
+
+def mesa_root() -> str:
+    return layer_root("mesa")
 
 
 def _secure(path: str, log=lambda *_: None) -> None:
@@ -580,7 +620,7 @@ def _vt(v: str) -> tuple:
     return tuple(int(x) for x in re.findall(r"\d+", v or ""))
 
 
-_HASHES: dict = {}  # шлях -> (розмір, mtime, sha256): mesa_info викликається часто, а бібліотеки — десятки мегабайтів
+_HASHES: dict = {}  # шлях -> (розмір, mtime, sha256): перевірка викликається часто, а бібліотеки — десятки мегабайтів
 
 
 def _sha(path: str) -> str:
@@ -594,15 +634,16 @@ def _sha(path: str) -> str:
     return h
 
 
-def verified_files(folder: str, arch: str) -> dict:
-    """Бібліотеки Mesa розрядності arch з папки версії, звірені із сумами з її mesa.json: {ім'я: шлях}. Будь-яка
-    невідповідність (файл підмінено, зіпсовано) — {} : такій Mesa не довіряємо зовсім."""
+def verified_files(folder: str, arch: str, kind: str = "mesa") -> dict:
+    """Бібліотеки шару розрядності arch з папки версії, звірені із сумами з її манифесту (mesa.json / dxvk.json):
+    {ім'я: шлях}. Будь-яка невідповідність (файл підмінено, зіпсовано) — {}: такому шару не довіряємо зовсім."""
+    lay = LAYERS[kind]
     try:
-        with open(os.path.join(folder, "mesa.json"), encoding="utf-8") as f:
+        with open(os.path.join(folder, f"{kind}.json"), encoding="utf-8") as f:
             man = json.load(f)
         files = man.get("files") or {}
         out = {}
-        for n in MESA_FILES:
+        for n in lay["files"]:
             sha = files.get(f"{arch}/{n}")
             if not sha:
                 continue
@@ -610,15 +651,15 @@ def verified_files(folder: str, arch: str) -> dict:
             if _sha(p) != str(sha).lower():
                 return {}
             out[n] = p
-        return out if all(n in out for n in MESA_REQUIRED) else {}
+        return out if all(n in out for n in lay["required"]) else {}
     except (OSError, ValueError, AttributeError):
         return {}
 
 
-def mesa_info() -> dict:
-    """Розпакована й перевірена Mesa: {version, dir, arch: {"x64": {ім'я: шлях}, "x86": {…}}} або None."""
+def layer_info(kind: str) -> dict:
+    """Розпакований і перевірений шар: {version, dir, arch: {"x64": {ім'я: шлях}, "x86": {…}}} або None."""
     best = None
-    for man in glob.glob(os.path.join(glob.escape(mesa_root()), "*", "mesa.json")):
+    for man in glob.glob(os.path.join(glob.escape(layer_root(kind)), "*", f"{kind}.json")):
         folder = os.path.dirname(man)
         ver = os.path.basename(folder)
         if not VERSION_RE.match(ver):
@@ -628,7 +669,7 @@ def mesa_info() -> dict:
                 listed = {k.split("/")[0] for k in (json.load(f).get("files") or {})}
         except (OSError, ValueError, AttributeError):
             continue
-        arches = {a: v for a in MESA_ARCHES if a in listed and (v := verified_files(folder, a))}
+        arches = {a: v for a in MESA_ARCHES if a in listed and (v := verified_files(folder, a, kind))}
         if len(arches) != len(listed & set(MESA_ARCHES)):
             continue  # хоч один файл не збігся із сумою — цій версії не довіряємо зовсім
         if arches and (best is None or _vt(ver) > _vt(best["version"])):
@@ -636,16 +677,21 @@ def mesa_info() -> dict:
     return best
 
 
-def install_zip(path: str, log) -> dict:
-    """Розпаковує перевірений архів OptimaX-Mesa-*.zip: лише відомі бібліотеки (x64/…, x86/…), кожна — за сумою з
-    mesa.json усередині архіву."""
-    allowed = {f"{a}/{n}" for a in MESA_ARCHES for n in MESA_FILES}
+def mesa_info() -> dict:
+    return layer_info("mesa")
+
+
+def install_zip(path: str, log, kind: str = "mesa") -> dict:
+    """Розпаковує перевірений архів OptimaX-Mesa-*.zip / OptimaX-DXVK-*.zip: лише відомі бібліотеки (x64/…, x86/…),
+    кожна — за сумою з манифесту всередині архіву."""
+    lay = LAYERS[kind]
+    allowed = {f"{a}/{n}" for a in MESA_ARCHES for n in lay["files"]}
     with zipfile.ZipFile(path) as z:
-        man = json.loads(z.read("mesa.json").decode("utf-8"))
-        version = str(man.get("mesa") or "")
+        man = json.loads(z.read(f"{kind}.json").decode("utf-8"))
+        version = str(man.get(kind) or "")
         if not VERSION_RE.match(version):
-            raise RuntimeError(tr("mg.mesa_bad", name="mesa.json"))
-        root = mesa_root()
+            raise RuntimeError(tr("mg.layer_bad", name=f"{kind}.json"))
+        root = layer_root(kind)
         _secure(root, log)
         dest = os.path.join(root, version)
         tmp = dest + ".part"
@@ -658,52 +704,56 @@ def install_zip(path: str, log) -> dict:
             data = z.read(name)
             if hashlib.sha256(data).hexdigest() != str(sha).lower():
                 shutil.rmtree(tmp, ignore_errors=True)
-                raise RuntimeError(tr("mg.mesa_bad", name=name))
+                raise RuntimeError(tr("mg.layer_bad", name=name))
             arch, n = key.split("/")
             os.makedirs(os.path.join(tmp, arch), exist_ok=True)
             with open(os.path.join(tmp, arch, n), "wb") as f:
                 f.write(data)
             files[key] = str(sha).lower()
-    with open(os.path.join(tmp, "mesa.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(tmp, f"{kind}.json"), "w", encoding="utf-8") as f:
         json.dump(dict(man, files=files), f, indent=1)
-    if not any(verified_files(tmp, a) for a in MESA_ARCHES):
+    if not any(verified_files(tmp, a, kind) for a in MESA_ARCHES):
         shutil.rmtree(tmp, ignore_errors=True)
-        raise RuntimeError(tr("mg.mesa_bad", name=", ".join(MESA_REQUIRED)))
+        raise RuntimeError(tr("mg.layer_bad", name=", ".join(lay["required"])))
     shutil.rmtree(dest, ignore_errors=True)
     os.replace(tmp, dest)
-    log(tr("mg.mesa_ready", v=version))
-    return mesa_info()
+    log(tr("mg.layer_ready", what=LAYER_NAMES[kind], v=version))
+    return layer_info(kind)
 
 
-def find_asset(log) -> dict:
-    """Архів Mesa в одному з останніх релізів OptimaX."""
+LAYER_NAMES = {"mesa": "Mesa", "dxvk": "DXVK"}
+
+
+def find_asset(log, kind: str = "mesa") -> dict:
+    """Архів шару в одному з останніх релізів OptimaX."""
     import updater as U
     import verify as V
     if not U.UPDATE_REPO:
-        raise RuntimeError(tr("mg.mesa_not_found"))
+        raise RuntimeError(tr("mg.layer_not_found", what=LAYER_NAMES[kind]))
     rels = json.loads(U.fetch_text(f"https://api.github.com/repos/{U.UPDATE_REPO}/releases?per_page=10", 1 << 22))
+    rx = LAYERS[kind]["asset"]
     for rel in rels if isinstance(rels, list) else []:
         if rel.get("draft"):
             continue
         assets = rel.get("assets") or []
-        a = next((a for a in assets if MESA_ASSET_RE.match(a.get("name") or "")), None)
+        a = next((a for a in assets if rx.match(a.get("name") or "")), None)
         if a:
             sums = next((x for x in assets if x.get("name") == U.SUMS_NAME), None)
             return dict(name=a["name"], url=a["browser_download_url"], size=a.get("size") or 0,
                         sha256=V.digest_of(a), sums_url=sums["browser_download_url"] if sums else "",
-                        version=MESA_ASSET_RE.match(a["name"]).group(1))
-    raise RuntimeError(tr("mg.mesa_not_found"))
+                        version=rx.match(a["name"]).group(1))
+    raise RuntimeError(tr("mg.layer_not_found", what=LAYER_NAMES[kind]))
 
 
-def install_mesa(log, progress=None) -> dict:
+def install_layer(kind: str, log, progress=None) -> dict:
     if not E.IS_WIN or E.DRY_RUN:
-        return _demo_mesa(log)
+        return _demo_layer(kind, log)
     import updater as U
-    info = find_asset(log)
+    info = find_asset(log, kind)
     log(tr("mg.mesa_dl", name=info["name"], mb=f"{info['size'] / 2**20:.0f}"))
     path = U.download(info, log, progress, publisher="")  # zip без підпису: перевіряємо суму з релізу
     try:
-        return install_zip(path, log)
+        return install_zip(path, log, kind)
     finally:
         try:
             os.remove(path)
@@ -711,62 +761,84 @@ def install_mesa(log, progress=None) -> dict:
             pass
 
 
-def _demo_mesa(log) -> dict:
-    dest = os.path.join(mesa_root(), DEMO_MESA)
+def install_mesa(log, progress=None) -> dict:
+    return install_layer("mesa", log, progress)
+
+
+def _demo_layer(kind: str, log) -> dict:
+    ver = DEMO_VERSION[kind]
+    dest = os.path.join(layer_root(kind), ver)
     files = {}
     for arch in MESA_ARCHES:
         os.makedirs(os.path.join(dest, arch), exist_ok=True)
-        for n in ("opengl32.dll", "libgallium_wgl.dll", "dxil.dll"):
+        for n in LAYERS[kind]["files"][:3]:
             data = f"demo {arch} {n}".encode()
             with open(os.path.join(dest, arch, n), "wb") as f:
                 f.write(data)
             files[f"{arch}/{n}"] = hashlib.sha256(data).hexdigest()
-    with open(os.path.join(dest, "mesa.json"), "w", encoding="utf-8") as f:
-        json.dump(dict(mesa=DEMO_MESA, files=files), f)
-    log("  [dry-run] " + tr("mg.mesa_ready", v=DEMO_MESA))
-    return mesa_info()
+    with open(os.path.join(dest, f"{kind}.json"), "w", encoding="utf-8") as f:
+        json.dump({kind: ver, "files": files}, f)
+    log("  [dry-run] " + tr("mg.layer_ready", what=LAYER_NAMES[kind], v=ver))
+    return layer_info(kind)
 
 
+# ───────────────────────── шари в папках ігор ─────────────────────────
 def env_tweak() -> E.Tweak:
     t = E.Tweak(ENV_ID, "game", [E.R(ENV_KEY, ADAPTER_VAR, ADAPTER_NAME, "sz"), E.X("env")])
     t._title = tr("mg.t_env")
     return t
 
 
-def mesa_tweak(game: str, folder: str, files: dict) -> E.Tweak:
+def layer_tweak(kind: str, game: str, folder: str, files: dict) -> E.Tweak:
     """files: {ім'я: шлях} — щойно звірені із сумами (verified_files)."""
-    ops = [E.FILE(files[n], _join(folder, n)) for n in MESA_FILES if n in files]
-    t = E.Tweak(mesa_id(folder), "game", ops)
-    t._title = tr("mg.t_mesa", game=game, folder=_base(folder) or folder)
+    ops = [E.FILE(files[n], _join(folder, n)) for n in LAYERS[kind]["files"] if n in files]
+    t = E.Tweak(layer_id(kind, folder), "game", ops)
+    t._title = tr("mg.t_layer", what=LAYER_NAMES[kind], game=game, folder=_base(folder) or folder)
     return t
 
 
+def mesa_tweak(game: str, folder: str, files: dict) -> E.Tweak:
+    return layer_tweak("mesa", game, folder, files)
+
+
 @_exclusive
-def enable_mesa(g: dict, log, hw: dict) -> dict:
-    """OpenGL-гру — на майнінгову карту через Mesa: бібліотеки потрібної розрядності в папку гри, змінна з назвою
-    карти, і сам exe — на «Високу продуктивність» (за цим Windows теж ставить карту першою для DirectX 12)."""
-    info = mesa_info()  # саме тут суми звіряються ще раз — безпосередньо перед копіюванням
+def enable_layer(kind: str, g: dict, log, hw: dict) -> dict:
+    """Гру — на майнінгову карту через шар: бібліотеки потрібної розрядності в папку гри (для Mesa — ще й змінна з
+    назвою карти), і самі exe — на «Високу продуктивність» (за цим Windows ставить карту першою для DirectX 12 і
+    Vulkan, на яких працюють Mesa й DXVK)."""
+    info = layer_info(kind)  # саме тут суми звіряються ще раз — безпосередньо перед копіюванням
     if not info:
-        return {"ok": 0, "error": "no_mesa"}
-    items = [] if E.JOURNAL.has(ENV_ID) else [env_tweak()]
-    items += [mesa_tweak(g["name"], d, info["arch"][a]) for d, a in gl_targets(g)
-              if a in info["arch"] and not E.JOURNAL.has(mesa_id(d))]
+        return {"ok": 0, "error": "no_layer"}
+    items = [] if kind != "mesa" or E.JOURNAL.has(ENV_ID) else [env_tweak()]
+    items += [layer_tweak(kind, g["name"], d, info["arch"][a]) for d, a in layer_targets(g, kind)
+              if a in info["arch"] and not E.JOURNAL.has(layer_id(kind, d))]
     items += [gpu_tweak(g["name"], x["path"], model(hw)) for x in g["exes"]
-              if x["api"] == "gl" and exe_state(x["path"]) == "free"]
+              if x["api"] == LAYERS[kind]["api"] and x.get("arch") in info["arch"] and exe_state(x["path"]) == "free"]
     if not items:
         return {"ok": 0}
     res = E.apply_tweaks(items, log, header=False, by="mining")
-    log(tr("mg.mesa_on", game=g["name"]))
+    log(tr("mg.layer_on", what=LAYER_NAMES[kind], game=g["name"]))
     return res
 
 
 @_exclusive
-def disable_mesa(g: dict, log) -> dict:
-    ids = [mesa_id(f) for f in gl_folders(g) if E.JOURNAL.has(mesa_id(f))]
+def disable_layer(kind: str, g: dict, log) -> dict:
+    ids = [layer_id(kind, d) for d, _ in layer_targets(g, kind) if E.JOURNAL.has(layer_id(kind, d))]
+    # і призначення exe цієї гри, які зробив шар: без нього DirectX 9 / OpenGL на «Високу продуктивність» не зважає
+    api = LAYERS[kind]["api"]
+    ids += [gpu_id(x["path"]) for x in g["exes"] if x["api"] == api and kind == "dxvk" and E.JOURNAL.has(gpu_id(x["path"]))]
     res = E.undo_ids(ids, log, by="mining") if ids else {"undone": 0}
-    if E.JOURNAL.has(ENV_ID) and not any(t.startswith("glmesa:") for t in E.JOURNAL.newest_first()):
+    if kind == "mesa" and E.JOURNAL.has(ENV_ID) and not any(t.startswith("glmesa:") for t in E.JOURNAL.newest_first()):
         E.undo_ids([ENV_ID], log, by="mining")  # більше жодної гри з Mesa — прибираємо й змінну
     return res
+
+
+def enable_mesa(g: dict, log, hw: dict) -> dict:
+    return enable_layer("mesa", g, log, hw)
+
+
+def disable_mesa(g: dict, log) -> dict:
+    return disable_layer("mesa", g, log)
 
 
 def bench_mesa(hw: dict) -> str:

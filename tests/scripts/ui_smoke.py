@@ -110,16 +110,22 @@ if mc is not None:
     pump(lambda: mc.btn_scan.isEnabled() and any(t.startswith("gpu:") for t in MG.our_ids()), 60)
     pump(timeout=0.3)
     shot(w, "mining-scanned")
-    mc.get_mesa()
-    pump(lambda: MG.mesa_info() is not None and mc.btn_mesa.text() == UK.tr("mg.mesa_got"), 30)
+    for kind in ("mesa", "dxvk"):
+        mc.get_layer(kind)
+        pump(lambda: MG.layer_info(kind) is not None and mc.layer_btn[kind].text() == UK.tr("mg.got", what=MG.LAYER_NAMES[kind]), 30)
     gl_row = next((r for r in mc.rows if MG.gl_folders(r.g)), None)
     if gl_row:
         mc.toggle_mesa(gl_row)
         pump(lambda: MG.game_status(gl_row.g)["mesa"] and gl_row.mesa_btn.isEnabled(), 30)
+    dx_row = next((r for r in mc.rows if MG.layer_targets(r.g, "dxvk")), None)
+    if dx_row:
+        mc.toggle_layer(dx_row, "dxvk")
+        pump(lambda: MG.game_status(dx_row.g)["dxvk"] and dx_row.btns["dxvk"].isEnabled(), 30)
     pump(timeout=0.3)
-    shot(w, "mining-mesa")
+    shot(w, "mining-layers")
     steps["mining"] = {"rows": len(mc.rows), "gpu": sum(t.startswith("gpu:") for t in MG.our_ids()),
                        "mesa": bool(gl_row and MG.game_status(gl_row.g)["mesa"]),
+                       "dxvk": bool(dx_row and MG.game_status(dx_row.g)["dxvk"]),
                        "texts": [r.status.text() for r in mc.rows],
                        "bench_note": w.pages["bench"].mesa_note.text()}
     mc.revert()
