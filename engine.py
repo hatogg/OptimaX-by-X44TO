@@ -2204,10 +2204,6 @@ def _admin_record(rec: dict) -> bool:
     return rec.get("t") != "live"
 
 
-def has_rights() -> bool:
-    """Зміни справді вносяться (не режим перегляду) і є права адміністратора."""
-    return DRY_RUN or is_admin()
-
 COLORS_KEY = r"HKCU\Control Panel\Colors"
 COLOR_NAMES = {"sel_color": ["Hilight", "HotTrackingColor"], "sel_text_color": ["HilightText"]}
 
