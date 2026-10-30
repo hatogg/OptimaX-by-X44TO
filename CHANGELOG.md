@@ -2,7 +2,9 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
-## [Unreleased]
+## [6.4.1] — 2026-10-30
+
+Майнінгові відеокарти та чесний GPU-тест на ПК, де картинку виводить вбудована графіка.
 
 ### Додано
 
@@ -15,6 +17,13 @@
 - **Розумна оптимізація** не приймає замір GPU-тесту, зроблений на вбудованій графіці при наявній NVIDIA, і пропонує міряти у грі (PresentMon) — інакше рішення про твіки ухвалювалися б за швидкодією не тієї відеокарти.
 - **Історія балів** порівнює результат лише з попереднім заміром на тій самій відеокарті.
 - Рядки датчиків і помилок у вікні тесту більше не накладаються на смугу прогресу в стрес-тесті з NVIDIA.
+
+<details>
+<summary>English</summary>
+
+Mining graphics cards and an honest GPU test on PCs where the integrated graphics display the picture. **Mining cards:** OptimaX recognises P106-090/100, P104-100/101, P102-100 and CMP 30HX–170HX by their PCI ID, even when a patched driver presents them as GeForce (a P106-100 shows up as “GTX 1060 6GB”). The Hardware page labels the card as a mining card without video outputs, and the PC check explains how to game on it instead of the wrong “move the monitor cable to the graphics card”: assign games to the card, use only the patched driver, FPS is capped by the integrated graphics refresh rate, run old games (DirectX 9, Adobe AIR) on the integrated graphics, measure in the game. OptimaX no longer suggests a driver from nvidia.com for these cards (the regular driver disables 3D) and blocks hardware-accelerated GPU scheduling on them (with patched drivers it often ends in a blue screen). **GPU test on hybrid systems:** when the test window is rendered by the integrated graphics while an NVIDIA card sits idle (Optimus laptops, mining cards), the result is labelled with the GPU that actually rendered it and the idle card’s sensors are no longer shown; the test window warns about it and the result card explains it. Smart optimization rejects such a measurement and suggests measuring in the game (PresentMon). Scores are compared only with a previous run on the same GPU. The sensor line no longer overlaps the progress bar in the stress test.
+
+</details>
 
 ## [6.4] — 2026-10-30
 
@@ -225,6 +234,8 @@ A safety review of the whole tweak catalogue: ready-made profiles and the wizard
 
 </details>
 
+[6.4.1]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.4.1
+[6.4]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.4
 [6.3.5]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.3.5
 [6.3.4]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.3.4
 [6.3.3]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.3.3
