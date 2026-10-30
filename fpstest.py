@@ -67,6 +67,18 @@ def download_presentmon(log) -> str:
     if os.path.getsize(tmp) < 100_000:
         os.remove(tmp)
         raise RuntimeError(tr("fps.bad_download"))
+    # PresentMon запускатиметься з правами адміністратора: сума з GitHub (якщо реліз її публікує) має збігтися,
+    # а пошкоджений чи недовірений підпис — ніколи
+    import verify as V
+    try:
+        digest = V.digest_of(asset)
+        if digest:
+            V.check_file(tmp, digest, publisher="", name=asset["name"])
+        elif V.signature(tmp)["status"] == "invalid":
+            raise V.VerifyError("vf.sig_invalid", name=asset["name"], code="WinVerifyTrust")
+    except V.VerifyError:
+        os.remove(tmp)
+        raise
     os.replace(tmp, dest)
     log(tr("fps.downloaded"))
     return dest
@@ -149,6 +161,9 @@ def capture(exe: str, seconds: int, log, progress) -> dict:
         res.update(exe=exe, ts=int(time.time()))
         log(tr("fps.result_log", avg=res["avg"], low=res["low1"]))
         return res
+    import verify as V
+    if V.signature(pm)["status"] == "invalid":  # файл підмінили після завантаження
+        raise RuntimeError(tr("vf.sig_invalid", name=os.path.basename(pm), code="WinVerifyTrust"))
     os.makedirs(TOOLS_DIR, exist_ok=True)
     out = os.path.join(TOOLS_DIR, f"capture_{int(time.time())}.csv")
     cmd = [pm, "--process_name", exe, "--output_file", out, "--timed", str(seconds), "--terminate_after_timed",

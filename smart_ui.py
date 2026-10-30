@@ -289,8 +289,8 @@ class SmartDialog(QDialog):
         def job(log, prog):
             if a["do"] == "apply":
                 items = [E.BY_ID[i] for i in ids if i in E.BY_ID]
-                return E.apply_tweaks(items, log, prog, header=False, hw=hw, restore_point=rp)
-            return E.undo_ids(ids, log, prog)
+                return E.apply_tweaks(items, log, prog, header=False, hw=hw, restore_point=rp, by="smart")
+            return E.undo_ids(ids, log, prog, by="smart")
 
         def done(res):
             if first:
@@ -377,7 +377,7 @@ class SmartDialog(QDialog):
         hw = self.main.hw or {}
         E.CANCEL.clear()
         self._start_worker(lambda log, p: E.apply_tweaks([E.BY_ID[i] for i in missing if i in E.BY_ID], log, p,
-                                                         header=False, hw=hw), lambda _r: then())
+                                                         header=False, hw=hw, by="smart"), lambda _r: then())
 
     def _stopped(self):
         def then():

@@ -521,5 +521,6 @@ for t in E.TWEAKS:
     for op in t.ops:
         if op[0] == "pw":
             PW["vals"].setdefault((BALANCED, op[1], op[2]), (5, 5))
-sys.argv = [os.path.join(ROOT, "tests", "windows", "tweak_roundtrip.py")] + sys.argv[1:]
+# FAKE_TARGET — інший сценарій на цій же фальшивій Windows (аварійне відновлення, знімок налаштувань тощо)
+sys.argv = [os.environ.get("FAKE_TARGET") or os.path.join(ROOT, "tests", "windows", "tweak_roundtrip.py")] + sys.argv[1:]
 runpy.run_path(sys.argv[0], run_name="__main__")

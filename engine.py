@@ -402,35 +402,115 @@ def ensure_ultimate(log: Optional[Callable] = None):
 
 
 # ───────────────────────── журнал відкату ─────────────────────────
+class JournalError(RuntimeError):
+    """Журнал відкату не вдалося записати на диск. Без запису зміну потім не буде як повернути — тож її не робимо."""
+
+
+def _write_atomic(path: str, data, durable: bool) -> None:
+    """Запис через тимчасовий файл: файл на диску — або старий, або новий, але ніколи не наполовину записаний.
+    durable — ще й дочекатися фізичного запису (fsync): журнал має пережити вимкнення світла одразу після змін.
+    Антивірус, що саме сканує файл, на мить блокує заміну — пробуємо кілька разів."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=1)
+        f.flush()
+        if durable:
+            os.fsync(f.fileno())
+    for i in range(6):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if i == 5:
+                raise
+            time.sleep(0.15 * (i + 1))
+
+
 class Journal:
+    """Журнал відкату: для кожної застосованої зміни — що саме було до неї.
+
+    Надійність (6.4):
+    • Попередній запис (write-ahead). Перед кожною зміною в системі її запис відкату вже лежить на диску
+      (back.pending.json). Якщо OptimaX аварійно закриється посеред оптимізації, під час наступного запуску
+      recover_interrupted() поверне саме те, що встигло змінитися, — у системі не лишиться змін без запису.
+    • Резервна копія. Попередня версія журналу зберігається як back.json.bak; пошкоджений файл (вимкнули світло
+      під час запису) відкладається як back.json.corrupt-<час>, а журнал відновлюється з копії.
+    • Помилка запису більше не ігнорується: put() кидає JournalError, і пакет змін зупиняється.
+    • Позначка операції ("op"): пакет застосування чи відкату, який не дійшов до кінця, видно після перезапуску."""
+
     def __init__(self, path: str):
         self.path = path
+        self.bak = path + ".bak"
+        self.wal = (path[:-5] if path.endswith(".json") else path) + ".pending.json"
         self.lock = threading.RLock()
         self.data = {"applied": {}}
         self.listeners = []  # викликаються після кожного запису (наприклад, оновлення OptimaX-Rescue.cmd)
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                d = json.load(f)
-            if isinstance(d, dict) and isinstance(d.get("applied"), dict):
-                self.data = d
-        except Exception:
-            pass
+        self.problem = None  # None | "restored" — відновлено з копії | "lost" — журнал пошкоджено, копії немає
+        self.save_error = None
+        self._wal = None
+        self._load()
 
-    def _save(self) -> None:
-        try:
-            os.makedirs(os.path.dirname(self.path), exist_ok=True)
-            tmp = self.path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(self.data, f, ensure_ascii=False, indent=1)
-            os.replace(tmp, self.path)
-        except Exception:
-            pass
-        for cb in list(self.listeners):
+    # ── читання й запис ──
+    @staticmethod
+    def _read(p: str) -> dict:
+        with open(p, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        if not (isinstance(d, dict) and isinstance(d.get("applied"), dict)):
+            raise ValueError("not an OptimaX journal")
+        for tid, e in d["applied"].items():
+            if not (isinstance(e, dict) and isinstance(e.get("undo"), list)):
+                raise ValueError(f"bad entry {tid}")
+        return d
+
+    def _load(self) -> None:
+        broken = False
+        if os.path.exists(self.path):
             try:
-                cb(self)
+                self.data = self._read(self.path)
+                return
             except Exception:
-                pass
+                broken = True
+                try:  # пошкоджений файл не перезаписуємо — відкладаємо поруч, щоб його можна було дослідити
+                    os.replace(self.path, f"{self.path}.corrupt-{int(time.time())}")
+                except OSError:
+                    pass
+        # основного файлу немає або він зіпсований: аварія між кроками запису — новіша копія в .tmp, інакше .bak
+        for p in (self.path + ".tmp", self.bak):
+            if not os.path.exists(p):
+                continue
+            try:
+                self.data = self._read(p)
+            except Exception:
+                continue
+            self.problem = "restored"
+            self._save()
+            return
+        if broken:
+            self.problem = "lost"
 
+    def _save(self, notify: bool = True) -> bool:
+        ok = True
+        try:
+            if os.path.exists(self.path):  # попередня версія — резервна копія
+                try:
+                    shutil.copyfile(self.path, self.bak)
+                except OSError:
+                    pass
+            _write_atomic(self.path, self.data, durable=True)
+            self.save_error = None
+        except Exception as e:
+            ok = False
+            self.save_error = f"{type(e).__name__}: {e}"
+        if notify:
+            for cb in list(self.listeners):
+                try:
+                    cb(self)
+                except Exception:
+                    pass
+        return ok
+
+    # ── записи ──
     def has(self, tid: str) -> bool:
         return tid in self.data["applied"]
 
@@ -441,18 +521,90 @@ class Journal:
         with self.lock:
             if tid in self.data["applied"]:  # повторне застосування: зберігаємо найперший знімок
                 return
-            entry = {"ts": int(time.time()), "undo": undo}
+            entry = {"ts": int(time.time()), "undo": list(undo)}
             if title:
                 entry["title"] = title
             if group:
                 entry["group"] = group
             self.data["applied"][tid] = entry
-            self._save()
+            if not self._save():
+                self.data["applied"].pop(tid, None)
+                raise JournalError(self.save_error)
 
     def pop(self, tid: str) -> None:
         with self.lock:
             self.data["applied"].pop(tid, None)
             self._save()
+
+    def replace_undo(self, tid: str, undo: list) -> None:
+        """Після часткового відкату лишаємо в журналі лише кроки, які не вдалося повернути."""
+        with self.lock:
+            e = self.data["applied"].get(tid)
+            if e is not None:
+                e["undo"] = list(undo)
+                e["partial"] = True
+                self._save()
+
+    # ── попередній запис (write-ahead) однієї оптимізації ──
+    def begin(self, tid: str, title: str = None, group: str = None) -> None:
+        with self.lock:
+            self._wal = {"tid": tid, "ts": int(time.time()), "title": title, "group": group,
+                         "fresh": tid not in self.data["applied"], "undo": []}
+            try:
+                _write_atomic(self.wal, self._wal, durable=True)
+            except Exception as e:
+                self._wal = None
+                raise JournalError(f"{type(e).__name__}: {e}") from None
+
+    def note(self, undo: list) -> None:
+        """Записи відкату поточної оптимізації — на диск до того, як зміна відбудеться. Без fsync: процес, що
+        аварійно завершився, файл не втрачає, а від вимкнення світла не вберігає й сам реєстр Windows."""
+        with self.lock:
+            if self._wal is None:
+                return
+            self._wal["undo"] = list(undo)
+            try:
+                _write_atomic(self.wal, self._wal, durable=False)
+            except Exception as e:
+                raise JournalError(f"{type(e).__name__}: {e}") from None
+
+    def commit(self, tid: str, undo: list, title: str = None, group: str = None) -> None:
+        if undo:
+            self.put(tid, undo, title, group)
+        self.abort()
+
+    def abort(self) -> None:
+        with self.lock:
+            self._wal = None
+            try:
+                os.remove(self.wal)
+            except OSError:
+                pass
+
+    def interrupted(self):
+        """Запис оптимізації, застосування якої обірвалося (аварійне завершення), або None."""
+        try:
+            with open(self.wal, "r", encoding="utf-8") as f:
+                d = json.load(f)
+            return d if isinstance(d, dict) and d.get("tid") and isinstance(d.get("undo"), list) else None
+        except (OSError, ValueError):
+            return None
+
+    # ── позначка пакета (застосування чи відкату), щоб після аварії знати, що він не дійшов до кінця ──
+    def begin_op(self, kind: str, ids=(), by: str = "") -> None:
+        with self.lock:
+            self.data["op"] = {"kind": kind, "ts": int(time.time()), "ids": list(ids)[:500], "by": by}
+            if not self._save(notify=False):
+                self.data.pop("op", None)
+                raise JournalError(self.save_error)
+
+    def end_op(self) -> None:
+        with self.lock:
+            if self.data.pop("op", None) is not None:
+                self._save(notify=False)
+
+    def op(self):
+        return self.data.get("op")
 
     def newest_first(self):
         """Від найновішого до найстарішого. Кілька твіків пакета мають однакову секунду ts — тоді вирішує порядок
@@ -469,19 +621,50 @@ class Journal:
 JOURNAL = Journal(JOURNAL_PATH)
 
 
+class UndoLog(list):
+    """Список записів відкату, який після кожного нового запису одразу зберігає його в журнал на диску
+    (Journal.note) — ще до того, як операція змінить систему."""
+
+    def __init__(self, on_change: Optional[Callable] = None):
+        super().__init__()
+        self.on_change = on_change
+
+    def _changed(self) -> None:
+        if self.on_change:
+            self.on_change(self)
+
+    def append(self, rec) -> None:
+        super().append(rec)
+        self._changed()
+
+    def insert(self, i, rec) -> None:
+        super().insert(i, rec)
+        self._changed()
+
+    def extend(self, recs) -> None:
+        super().extend(recs)
+        self._changed()
+
+    def __iadd__(self, recs):
+        super().extend(recs)
+        self._changed()
+        return self
+
+
 class Ctx:
     """Контекст виконання: журнал виводу, накопичення записів відкату, знайдене залізо."""
 
-    def __init__(self, log: Callable, journal: Journal = JOURNAL, hw: dict = None):
+    def __init__(self, log: Callable, journal: Journal = None, hw: dict = None):
         self.log = log
-        self.journal = journal
+        self.journal = journal or JOURNAL
         self.hw = hw or {}
-        self.undo: list = []
+        self.undo: list = UndoLog()
         self._tasks = False
         self.deferred = None  # множина «живих» оновлень, які виконаємо один раз наприкінці пакета
 
-    def begin(self) -> None:
-        self.undo = []
+    def begin(self, track: bool = False) -> None:
+        """track — кожен запис відкату одразу потрапляє в попередній запис журналу (Journal.begin/note)."""
+        self.undo = UndoLog(self.journal.note if track else None)
 
     def enabled_tasks(self):
         """Множина ввімкнених задач планувальника (у нижньому регістрі) або None."""
@@ -638,7 +821,9 @@ def _undo_record(rec: dict, log: Callable, deferred: set = None) -> None:
         else:
             reg_set(rec["p"], rec["n"], _dec(rec["old"][1]), rec["old"][0])
     elif t == "svc":
-        run(f"sc config {rec['n']} start= {rec['old']}", 15, log)
+        rc, out = run(f"sc config {rec['n']} start= {rec['old']}", 15, log)
+        if rc not in (0, 1060):  # 1060 — служби вже немає: повертати нічого
+            raise RuntimeError(f"sc config {rec['n']}: {first_line(out, 70) or rc}")
     elif t == "task":
         run(f'schtasks /Change /Enable /TN "{rec["n"]}"', 15, log)
     elif t == "cmd":
@@ -656,15 +841,28 @@ def _undo_record(rec: dict, log: Callable, deferred: set = None) -> None:
         live_refresh(rec["k"], log)
 
 
-def undo_one(tid: str, log: Callable, deferred: set = None) -> bool:
-    entry = JOURNAL.get(tid)
-    if not entry:
-        return False
-    for rec in reversed(entry["undo"]):
+def _rollback(records: list, log: Callable, deferred: set = None) -> list:
+    """Виконує записи відкату від останнього до першого. -> записи, які повернути не вдалося (у початковому порядку)."""
+    failed = []
+    for rec in reversed(list(records)):
         try:
             _undo_record(rec, log, deferred)
         except Exception as e:
             log(f"  ⚠ {type(e).__name__}: {e}")
+            failed.append(rec)
+    return list(reversed(failed))
+
+
+def undo_one(tid: str, log: Callable, deferred: set = None):
+    """-> True — повернуто; "partial" — частину кроків повернути не вдалося (вони лишаються в журналі, щоб
+    повторити відкат пізніше або через OptimaX-Rescue.cmd); False — у журналі немає такого запису."""
+    entry = JOURNAL.get(tid)
+    if not entry:
+        return False
+    failed = _rollback(entry["undo"], log, deferred)
+    if failed:
+        JOURNAL.replace_undo(tid, failed)
+        return "partial"
     JOURNAL.pop(tid)
     return True
 
@@ -1051,10 +1249,15 @@ def legacy_to_repair() -> list:
 
 def repair_legacy(log: Callable) -> dict:
     """Повертає ці записи до початкового стану з журналу і прибирає їх із нього — решта змін користувача лишається."""
-    todo = legacy_to_repair()
+    todo, done = legacy_to_repair(), []
     for tid, u in todo:
         log(f"  · {tid}: {u.get('n') or u.get('p')} → {u.get('old', '')}")
-        _undo_record(u, log)
+        try:
+            _undo_record(u, log)
+            done.append((tid, u))
+        except Exception as e:  # не вдалося — запис лишається в журналі, спробуємо під час наступного запуску
+            log(f"  ⚠ {type(e).__name__}: {e}")
+    todo = done
     with JOURNAL.lock:
         for tid in {t for t, _ in todo}:
             rec = JOURNAL.get(tid)
@@ -1952,6 +2155,59 @@ tw("sel_text_color", "visual", custom=True)
 
 BY_ID = {t.id: t for t in TWEAKS}
 
+
+def _conflict_map() -> dict:
+    """Конфлікти симетричні: якщо A конфліктує з B, то й B з A (у каталозі достатньо вказати з одного боку)."""
+    m = {t.id: set(t.conflicts) for t in TWEAKS}
+    for t in TWEAKS:
+        for o in t.conflicts:
+            m.setdefault(o, set()).add(t.id)
+    return m
+
+
+CONFLICTS = _conflict_map()
+
+
+def conflicts_of(tid: str) -> set:
+    return CONFLICTS.get(tid, set())
+
+
+def resolve_conflicts(ids, applied=None) -> tuple:
+    """Із вибраного прибирає те, що суперечить уже застосованому або вибраному раніше в цьому ж пакеті
+    (наприклад, «Агресивний Turbo» і «Тихий режим»: друге просто перезаписало б перше).
+    -> (що застосовувати, [(id, з чим конфліктує)])."""
+    applied = set(JOURNAL.data["applied"]) if applied is None else set(applied)
+    keep, dropped = [], []
+    for tid in ids:
+        clash = next((o for o in sorted(conflicts_of(tid)) if o in applied or o in keep), None)
+        if clash:
+            dropped.append((tid, clash))
+        else:
+            keep.append(tid)
+    return keep, dropped
+
+
+def _admin_op(op) -> bool:
+    """Чи потрібні права адміністратора для операції. Без них змінюються лише параметри поточного користувача."""
+    if op[0] in ("reg", "regdel"):
+        return not str(op[1]).upper().startswith("HKCU")
+    return op[0] != "live"
+
+
+def needs_admin(t: Tweak) -> bool:
+    return any(_admin_op(op) for op in t.ops)
+
+
+def _admin_record(rec: dict) -> bool:
+    if rec.get("t") == "reg":
+        return not str(rec.get("p", "")).upper().startswith("HKCU")
+    return rec.get("t") != "live"
+
+
+def has_rights() -> bool:
+    """Зміни справді вносяться (не режим перегляду) і є права адміністратора."""
+    return DRY_RUN or is_admin()
+
 COLORS_KEY = r"HKCU\Control Panel\Colors"
 COLOR_NAMES = {"sel_color": ["Hilight", "HotTrackingColor"], "sel_text_color": ["HilightText"]}
 
@@ -2261,18 +2517,39 @@ def run_tweak(t: Tweak, ctx: Ctx):
     if state in ("na", "block"):
         ctx.log(tr("e.blocked", reason=reason))
         return None
-    ctx.begin()
-    good = True
+    if not DRY_RUN and needs_admin(t) and not is_admin():
+        ctx.log(tr("e.need_admin"))
+        return None
+    title = t._title or None
+    track = t.reversible
+    if track:  # JournalError тут — ще нічого не змінено; пакет зупиниться
+        ctx.journal.begin(t.id, title, t.group)
+    ctx.begin(track)
     try:
         for op in t.ops:
             exec_op(op, ctx)
+        if track:
+            ctx.journal.commit(t.id, list(ctx.undo), title=title, group=t.group)
     except Exception as e:
+        # Оптимізація або вся, або ніяк: те, що встигло змінитися до помилки, одразу повертаємо — інакше в системі
+        # лишився б «напівзастосований» пункт. Записи відкату вже на диску, тож навіть аварія під час цього
+        # відкату не загубить їх (recover_interrupted доверне під час наступного запуску).
         ctx.log(tr("e.err", err=f"{type(e).__name__}: {e}"))
-        good = False
-    if t.reversible and ctx.undo:
-        title = t._title or None
-        ctx.journal.put(t.id, ctx.undo, title=title, group=t.group)
-    return good
+        if track and ctx.undo:
+            failed = _rollback(list(ctx.undo), ctx.log)
+            if failed:  # що не повернулося — у журнал, щоб можна було повторити відкат
+                try:
+                    ctx.journal.put(t.id, failed, title=title, group=t.group)
+                except JournalError:
+                    pass
+            ctx.log(tr("e.rolled_back") if not failed else tr("e.rolled_back_part", n=len(failed)))
+        if track:
+            if isinstance(e, JournalError):
+                ctx.journal.abort()
+                raise
+            ctx.journal.abort()
+        return False
+    return True
 
 
 def integrity_check(log: Callable, progress: Optional[Callable], done: int, total: int) -> None:
@@ -2323,21 +2600,43 @@ def create_restore_point(log: Callable) -> dict:
     return {"ok": ok}
 
 
+# Викликаються перед першою зміною кожного пакета (baseline.py: знімок початкових налаштувань Windows).
+BEFORE_APPLY: list = []
+
+
 def apply_tweaks(items, log: Callable, progress: Optional[Callable] = None, sfc: bool = False,
-                 header: bool = True, hw: dict = None, restore_point: bool = False) -> dict:
+                 header: bool = True, hw: dict = None, restore_point: bool = False, by: str = "") -> dict:
     ctx = Ctx(log, hw=hw)
+    keep, dropped = resolve_conflicts([t.id for t in items])
+    items = [t for t in items if t.id in set(keep)]
     if len(items) > 1:
         ctx.deferred = set()  # Провідник перезапускаємо один раз наприкінці, а не після кожного твіка
     total = len(items) + (2 if sfc else 0) + (1 if restore_point else 0)
     ok = fail = skipped = 0
     reboot = False
     step = 0
+    error = None
     if header:
         log("═" * 58)
         log(f" {APP_TITLE} — {tr('e.header_run')}")
         log("═" * 58)
         if DRY_RUN:
             log(tr("e.preview"))
+    for tid, other in dropped:
+        log(tr("e.conflict", title=entry_title(tid), other=entry_title(other)))
+    if not DRY_RUN and not is_admin() and any(needs_admin(t) for t in items):
+        log(tr("e.need_admin_all"))
+    try:
+        JOURNAL.begin_op("apply", [t.id for t in items], by)
+    except JournalError as e:  # журнал не записується (диск повний, немає доступу) — не змінюємо нічого
+        log(tr("e.journal_fail", err=str(e)))
+        return {"ok": 0, "fail": 0, "skipped": len(items), "reboot": False, "error": "journal",
+                "conflicts": dropped}
+    for hook in list(BEFORE_APPLY):
+        try:
+            hook(log)
+        except Exception as e:  # знімок початкових налаштувань не має заважати оптимізації
+            log(f"  ⚠ {type(e).__name__}: {e}")
     if restore_point:
         if progress:
             progress(0, total, tr("e.rp_step"))
@@ -2350,7 +2649,13 @@ def apply_tweaks(items, log: Callable, progress: Optional[Callable] = None, sfc:
         if progress:
             progress(step + i, total, t.title)
         log(f"\n[►] {t.title}")
-        res = run_tweak(t, ctx)
+        try:
+            res = run_tweak(t, ctx)
+        except JournalError as e:
+            log(tr("e.journal_fail", err=str(e)))
+            error = "journal"
+            fail += 1
+            break
         if res is None:
             skipped += 1
             continue
@@ -2362,7 +2667,8 @@ def apply_tweaks(items, log: Callable, progress: Optional[Callable] = None, sfc:
         reboot = reboot or t.reboot
     for kind in sorted(ctx.deferred or ()):
         live_refresh(kind, log)
-    if sfc and not CANCEL.is_set():
+    JOURNAL.end_op()  # пакет дійшов до кінця (перевірка цілісності нижче нічого не змінює в журналі)
+    if sfc and not CANCEL.is_set() and not error:
         integrity_check(log, progress, step + len(items), total)
     if progress:
         progress(total, total, tr("e.finished"))
@@ -2371,12 +2677,15 @@ def apply_tweaks(items, log: Callable, progress: Optional[Callable] = None, sfc:
         msg = tr("e.summary", ok=ok)
         if fail:
             msg += tr("e.summary_fail", fail=fail)
-        if skipped:
-            msg += tr("e.summary_skip", n=skipped)
+        if skipped or dropped:
+            msg += tr("e.summary_skip", n=skipped + len(dropped))
         msg += tr("e.summary_reboot") if reboot else "."
         log(" " + msg)
         log("═" * 58)
-    return {"ok": ok, "fail": fail, "skipped": skipped, "reboot": reboot}
+    res = {"ok": ok, "fail": fail, "skipped": skipped, "reboot": reboot, "conflicts": dropped}
+    if error:
+        res["error"] = error
+    return res
 
 
 def run_selected(ids, log: Callable, progress: Optional[Callable] = None, sfc: bool = True, hw: dict = None,
@@ -2393,14 +2702,19 @@ def entry_title(tid: str) -> str:
     return e.get("title") or tid
 
 
-def undo_ids(ids, log: Callable, progress: Optional[Callable] = None) -> dict:
+def undo_ids(ids, log: Callable, progress: Optional[Callable] = None, by: str = "") -> dict:
     # Завжди від найновішого до найстарішого, хоч би в якому порядку прийшли id (пробний режим, «зміни між
     # тестами FPS», аварійний відкат…): якщо два твіки змінили одне значення, лише так воно стане початковим.
     order = {tid: i for i, tid in enumerate(JOURNAL.newest_first())}
     ids = sorted(dict.fromkeys(ids), key=lambda tid: order.get(tid, len(order)))
-    n = 0
+    n = partial = 0
     reboot = False
     deferred = set() if len(ids) > 1 else None
+    admin = DRY_RUN or is_admin()
+    try:
+        JOURNAL.begin_op("undo", ids, by)
+    except JournalError:
+        pass  # відкат усе одно робимо: він лише повертає систему до початкового стану
     for i, tid in enumerate(ids):
         if CANCEL.is_set():
             break
@@ -2409,23 +2723,71 @@ def undo_ids(ids, log: Callable, progress: Optional[Callable] = None) -> dict:
             progress(i, len(ids), title)
         log(f"\n[↩] {title}")
         t = BY_ID.get(tid)
+        entry = JOURNAL.get(tid) or {}
+        if not admin and any(_admin_record(r) for r in entry.get("undo", [])):
+            log(tr("e.need_admin"))
+            continue
         reboot = reboot or bool(t and t.reboot) or tid.startswith("msi:")
-        if undo_one(tid, log, deferred):
+        res = undo_one(tid, log, deferred)
+        if res == "partial":
+            partial += 1
+            log(tr("e.undo_partial", n=len((JOURNAL.get(tid) or {}).get("undo", []))))
+        elif res:
             n += 1
             log(tr("e.undone"))
         else:
             log(tr("e.no_undo"))
     for kind in sorted(deferred or ()):
         live_refresh(kind, log)
+    JOURNAL.end_op()
     if progress:
         progress(len(ids), len(ids), tr("e.finished"))
     log(tr("e.undone_total", n=n))
-    return {"undone": n, "reboot": reboot}
+    return {"undone": n, "partial": partial, "reboot": reboot}
+
+
+def recover_interrupted(log: Callable = lambda *_: None) -> dict:
+    """Після аварійного завершення OptimaX (виліт, зняли процес, синій екран, зникло світло):
+
+    1. Оптимізацію, яка застосовувалась у мить аварії, повертаємо одразу за попереднім записом журналу —
+       вона «напівзастосована», і в журналі відкату її ще немає.
+    2. Пакет, що не дійшов до кінця, повертаємо як {"op": {kind, ts, ids, by}, "ids": [...]}:
+       apply — зміни цього пакета, які вже застосовано (інтерфейс запропонує їх відкотити);
+       undo — зміни, які ще не відкочено (запропонує завершити відкат).
+    Позначку пакета знімає той, хто ухвалить рішення (Journal.end_op)."""
+    res = {"tweak": None, "records": 0, "failed": 0, "op": None, "ids": []}
+    w = JOURNAL.interrupted()
+    if w:
+        tid = w["tid"]
+        if w.get("fresh") and not JOURNAL.has(tid) and w.get("undo"):
+            log(tr("e.recover_tweak", title=w.get("title") or entry_title(tid)))
+            failed = _rollback(w["undo"], log)
+            res.update(tweak=tid, records=len(w["undo"]), failed=len(failed))
+            if failed:  # не вдалося — у журнал, щоб повернути пізніше (зокрема через OptimaX-Rescue.cmd)
+                try:
+                    JOURNAL.put(tid, failed, title=w.get("title"), group=w.get("group"))
+                except JournalError:
+                    pass
+        JOURNAL.abort()
+    op = JOURNAL.op()
+    if op:
+        if op.get("kind") == "undo":
+            ids = [i for i in op.get("ids") or [] if JOURNAL.has(i)]
+        else:
+            ids = [i for i in JOURNAL.newest_first() if (JOURNAL.get(i) or {}).get("ts", 0) >= op.get("ts", 0)]
+        if ids:
+            res.update(op=op, ids=ids)
+        else:
+            JOURNAL.end_op()  # нічого не лишилося — і пропонувати нічого
+    return res
 
 
 def undo_or_default(t: Tweak, log: Callable) -> dict:
     log(f"\n[↩] {t.title}")
-    if undo_one(t.id, log):
+    res = undo_one(t.id, log)
+    if res == "partial":
+        log(tr("e.undo_partial", n=len((JOURNAL.get(t.id) or {}).get("undo", []))))
+    elif res:
         log(tr("e.undone"))
     elif t.off:
         ctx = Ctx(log)

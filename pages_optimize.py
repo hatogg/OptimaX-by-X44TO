@@ -204,6 +204,7 @@ class ExpertView(QWidget):
             sec.changed.connect(self._changed)
             for r in sec.rows:
                 self.rows[r.t.id] = r
+                r.clicked.connect(lambda on, tid=r.t.id: self._user_toggled(tid, on))
             self.sections.append(sec)
             v.addWidget(sec)
         self.empty = label(tr("opt.nothing_found"), "sub")
@@ -227,6 +228,18 @@ class ExpertView(QWidget):
 
     def selected(self):
         return [tid for tid, r in self.rows.items() if r.isChecked()]
+
+    def _user_toggled(self, tid: str, on: bool):
+        """Увімкнули пункт, що суперечить уже вибраному (наприклад, «Тихий режим» і «Агресивний Turbo»), —
+        вимикаємо інший, щоб в одному пакеті не опинилися зміни, які перезаписують одна одну."""
+        if not on:
+            return
+        for other in sorted(E.conflicts_of(tid)):
+            r = self.rows.get(other)
+            if r and r.isChecked():
+                r.setChecked(False)
+                self.page.main.toast(tr("opt.conflict_off", title=E.entry_title(tid), other=E.entry_title(other)),
+                                     "warn")
 
     def set_selected(self, ids) -> None:
         wanted = set(ids)
@@ -406,7 +419,7 @@ class WizardView(QWidget):
 
 # ───────────────────────── перегляд змін ─────────────────────────
 class ReviewRow(QFrame):
-    def __init__(self, t: E.Tweak, hw: dict):
+    def __init__(self, t: E.Tweak, hw: dict, conflict: str = None):
         super().__init__()
         self.t = t
         self.setObjectName("row")
@@ -426,9 +439,13 @@ class ReviewRow(QFrame):
             n = label(("⚠ " if state == "warn" else "") + reason, "desc", wrap=True)
             n.setStyleSheet(f"color:{T['warn']};")
             v.addWidget(n)
+        if conflict:  # суперечить уже застосованому чи вибраному вище — у пакеті буде пропущено
+            n = label("⊘ " + tr("rv.conflict", other=E.entry_title(conflict)), "desc", wrap=True)
+            n.setStyleSheet(f"color:{T['warn']};")
+            v.addWidget(n)
         h.addLayout(v, 1)
         self.sw = Switch()
-        self.sw.set_quiet(True)
+        self.sw.set_quiet(not conflict)
         h.addWidget(self.sw, 0, Qt.AlignmentFlag.AlignVCenter)
 
     def mouseReleaseEvent(self, e):
@@ -517,11 +534,12 @@ class ReviewView(QWidget):
         for imp, (c, box) in self.sections.items():
             clear_layout(box)
         counts = {"habits": 0, "medium": 0, "safe": 0}
+        clash = dict(E.resolve_conflicts([i for i in ids if i in E.BY_ID])[1])
         for tid in ids:
             t = E.BY_ID.get(tid)
             if not t:
                 continue
-            r = ReviewRow(t, hw)
+            r = ReviewRow(t, hw, clash.get(tid))
             r.sw.toggled.connect(lambda _=False: self._count())
             self.sections[t.impact][1].addWidget(r)
             self.rows.append(r)

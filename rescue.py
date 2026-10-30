@@ -132,6 +132,25 @@ def dismiss() -> None:
     _stop_watch()
 
 
+# ───────────────────────── аварійне завершення самої OptimaX ─────────────────────────
+def recover_on_start(log=lambda *_: None) -> dict:
+    """Під час запуску: повернути оптимізацію, застосування якої обірвалося, знайти перерваний пакет
+    і зробити знімок початкових налаштувань, якщо його ще немає (оновлення з 6.3)."""
+    res = E.recover_interrupted(log)
+    if res.get("op") and F.CFG["smart"]:  # розумна оптимізація продовжить сама й поверне узгоджений стан
+        E.JOURNAL.end_op()
+        res.update(op=None, ids=[])
+    try:
+        import baseline as BL
+        BL.ensure(log)  # без журналу («lost») знімок не робиться: поточні значення вже не «початкові»
+    except Exception as e:  # знімок — запасний механізм; без нього програма працює як раніше
+        log(f"  ⚠ baseline: {type(e).__name__}: {e}")
+    if res.get("tweak"):
+        write_rescue()
+    res["journal"] = E.JOURNAL.problem
+    return res
+
+
 def revert(log, progress=None) -> dict:
     st = F.CFG["safety"] or {}
     ids = [i for i in st.get("ids", []) if E.JOURNAL.has(i)]

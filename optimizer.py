@@ -44,6 +44,7 @@ import monitor as M
 import power as PW
 import adblock as AB
 import rescue as RS
+import baseline as BL  # noqa: F401  (знімок початкових налаштувань перед першою зміною)
 import updater as U
 from i18n import tr
 from pages_extra import DiagnosePage, NetworkPage, AppsPage
@@ -121,6 +122,7 @@ class Main(QWidget):
         self.update_info = U.cached(F.CFG["updates"])  # знайдена раніше версія не зникає до наступної перевірки
         self._upd_busy = False
         self.crash = None  # збій після останніх змін (аварійний відкат)
+        self.interrupted = None  # пакет змін, який обірвало аварійне завершення OptimaX
         self.crash_prompt = "--check-crash" in sys.argv
         self.ipc = L.start_server(self.show_window)  # друга копія програми просить показати це вікно
 
@@ -157,6 +159,9 @@ class Main(QWidget):
             self.run_quick("charge", lambda log, p: PW.set_charge_limit(lim["method"], lim["pct"], log), silent=True)
         if F.CFG["hotkeys"]:
             self.set_hotkeys(True, quiet=True)
+        # минулого разу OptimaX закрилася аварійно посеред змін: повертаємо «напівзастосоване» й питаємо про пакет
+        self.run_quick(tr("rec.title"), lambda log, p: RS.recover_on_start(log), silent=True,
+                       on_done=self._recovered)
         broken = len(E.legacy_to_repair())
         if broken:  # зміни старіших версій, які виявилися шкідливими (служби ноутбука тощо), — повертаємо з журналу
             self.run_quick(tr("svc.repair_t"), lambda log, p: E.repair_legacy(log),
@@ -606,6 +611,17 @@ class Main(QWidget):
                             tr("rs.banner_d", what=RS.describe(cr["kinds"])),
                             (tr("rs.revert", n=len(cr["ids"])), self.rescue_revert),
                             (tr("rs.not_us"), self.rescue_dismiss))
+        elif self._interrupted_ids():
+            undo = (self.interrupted.get("op") or {}).get("kind") == "undo"
+            n = len(self._interrupted_ids())
+            when = time.strftime("%d.%m %H:%M", time.localtime((self.interrupted.get("op") or {}).get("ts", 0)))
+            home.set_banner("crash", tr("rec.undo_t" if undo else "rec.apply_t", when=when),
+                            tr("rec.undo_d" if undo else "rec.apply_d", n=n),
+                            (tr("rec.finish" if undo else "rec.revert", n=n), self.interrupted_revert),
+                            (tr("rec.keep"), self.interrupted_dismiss))
+        elif E.JOURNAL.problem == "lost":
+            home.set_banner("guard", tr("rec.lost_t"), tr("rec.lost_d"),
+                            (tr("rec.lost_check"), lambda: self.go("backup")), None)
         elif st:
             n = len(st[1].get("ids", []))
             home.set_banner("trial", tr("trial.title"), tr(f"trial.{st[0]}", n=n),
@@ -649,6 +665,36 @@ class Main(QWidget):
             elif manual:
                 self.toast(tr("rs.found") if self.crash else tr("rs.clean"), "warn" if self.crash else "ok")
         self.run_quick(tr("rs.title"), job, busy=btn, silent=True, on_done=done)
+
+    # ── аварійне завершення самої OptimaX ──
+    def _recovered(self, res):
+        if not isinstance(res, dict):
+            return
+        if res.get("tweak"):
+            self.toast(tr("rec.tweak_done", title=E.entry_title(res["tweak"])), "warn")
+        if E.JOURNAL.problem == "restored":
+            self.toast(tr("rec.restored"), "warn")
+        self.interrupted = res if res.get("ids") else None
+        self.guard_refresh()
+        if res.get("tweak"):
+            self.refresh_all()
+
+    def _interrupted_ids(self) -> list:
+        return [i for i in (self.interrupted or {}).get("ids") or [] if E.JOURNAL.has(i)]
+
+    def interrupted_revert(self):
+        ids = self._interrupted_ids()
+        if ids:
+            RunDialog(self, tr("rs.title"), lambda log, prog: E.undo_ids(ids, log, prog)).exec()
+        E.JOURNAL.end_op()
+        self.interrupted = None
+        self.refresh_all()
+
+    def interrupted_dismiss(self):
+        E.JOURNAL.end_op()
+        self.interrupted = None
+        self.guard_refresh()
+        self.toast(tr("rec.kept"))
 
     def ask_crash(self):
         cr = self.crash
@@ -795,6 +841,12 @@ class Main(QWidget):
             self.quit_app()  # інсталятор замінить файли й запустить нову версію
         elif not E.IS_WIN or E.DRY_RUN:
             self.toast(tr("toast.preview_only"), "warn")
+        elif dlg.res.get("error") or U.LAST_ERROR:
+            # файл не пройшов перевірку (сума, підпис) або не завантажився — не запускаємо, пропонуємо сторінку релізу
+            why = U.LAST_ERROR or dlg.res.get("error")
+            if Ask.ask(self, tr("vf.fail_t"), tr("vf.fail_d", why=why), tr("fps.open_page")):
+                import webbrowser
+                webbrowser.open(info.get("page") or "")
 
     def skip_update(self):
         """«Пізніше»: ховає банер і сповіщення про цю версію на добу (раніше — назавжди)."""
@@ -941,7 +993,7 @@ def main():
         sys.exit(maintenance_main())
     if "--check-crash" in sys.argv:  # задача «OptimaX Safety» після змін: вікно — лише якщо був збій
         RS.sync()
-        if not RS.check():
+        if not RS.check() and not E.JOURNAL.op() and not E.JOURNAL.interrupted():
             sys.exit(0)
     code = L.run_cli(sys.argv)  # службові режими інсталятора: --uninstall, --set-autostart …
     if code is not None:

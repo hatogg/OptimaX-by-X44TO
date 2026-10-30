@@ -89,6 +89,7 @@ def _load() -> None:
     from lang_setup import STRINGS as setup
     from lang_lab import STRINGS as lab
     from lang_safe import STRINGS as safe
+    from lang_v64 import STRINGS as v64
     from lang_tweaks import TEXTS
     STR.update(eng)
     STR.update(ui)
@@ -96,6 +97,7 @@ def _load() -> None:
     STR.update(setup)
     STR.update(lab)
     STR.update(safe)
+    STR.update(v64)
     TWEAK_TEXT.update(TEXTS)
 
 

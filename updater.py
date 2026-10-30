@@ -3,6 +3,11 @@ OptimaX — оновлення через GitHub Releases.
 
 У релізі мають лежати OptimaX-Setup-<версія>.exe (для встановленої програми) і, за бажанням,
 OptimaX-<версія>-portable.exe. Тег релізу — версія: v6.1, 6.1 тощо.
+
+Безпека (6.4): завантажений файл запускається лише після перевірки (verify.py) — SHA-256 має збігтися з
+сумою з GitHub (digest ресурсу) та/або SHA256SUMS.txt релізу, а цифровий підпис не може бути пошкодженим
+чи чужим. Файл кладеться в папку, куди звичайний користувач не може писати, і перевіряється ще раз
+безпосередньо перед запуском.
 """
 from __future__ import annotations
 
@@ -28,6 +33,7 @@ try:
 except ImportError:
     _BUILT_REPO = ""
 UPDATE_REPO = os.environ.get("OPTIMAX_UPDATE_REPO", "") or _BUILT_REPO
+SUMS_NAME = "SHA256SUMS.txt"
 SETUP_RE = re.compile(r"^OptimaX-Setup-[\d.]+\.exe$", re.I)
 PORTABLE_RE = re.compile(r"^OptimaX-[\d.]+-portable\.exe$", re.I)
 CHECK_EVERY = 6 * 3600   # автоматична перевірка не частіше
@@ -93,7 +99,7 @@ def _page_latest() -> dict:
     base = f"https://github.com/{UPDATE_REPO}/releases/download/{urllib.parse.quote(tag)}/"
     return {"tag_name": tag, "html_url": final, "body": "",
             "assets": [{"name": n, "browser_download_url": base + n, "size": 0}
-                       for n in (f"OptimaX-Setup-{ver}.exe", f"OptimaX-{ver}-portable.exe")]}
+                       for n in (f"OptimaX-Setup-{ver}.exe", f"OptimaX-{ver}-portable.exe", SUMS_NAME)]}
 
 
 def _ps_quote(s: str) -> str:
@@ -145,10 +151,14 @@ def from_release(rel: dict, installed: bool):
     if vtuple(ver) <= vtuple(E.VERSION):
         return None
     pattern = SETUP_RE if installed else PORTABLE_RE
-    asset = next((a for a in rel.get("assets", []) if pattern.match(a.get("name", ""))), None)
+    assets = rel.get("assets", [])
+    asset = next((a for a in assets if pattern.match(a.get("name", ""))), None)
+    sums = next((a for a in assets if a.get("name", "").lower() == SUMS_NAME.lower()), None)
+    import verify as V
     return dict(version=ver, notes=clean_notes(rel.get("body") or ""), page=rel.get("html_url", ""),
                 url=asset["browser_download_url"] if asset else "", size=asset.get("size", 0) if asset else 0,
-                kind="setup" if installed else "portable")
+                kind="setup" if installed else "portable", name=asset.get("name", "") if asset else "",
+                sha256=V.digest_of(asset), sums_url=sums["browser_download_url"] if sums else "")
 
 
 def check(log=lambda *_: None):
@@ -166,20 +176,75 @@ def check(log=lambda *_: None):
     return from_release(rel, L.is_installed())
 
 
+def download_dir() -> str:
+    """Куди класти оновлення. OptimaX працює з правами адміністратора, тож файл, який вона запустить, не повинен
+    лежати там, де його може підмінити будь-яка програма користувача (%TEMP%). Папку в ProgramData, створену
+    адміністратором, звичайні програми лише читають."""
+    if E.IS_WIN and not E.DRY_RUN and E.is_admin():
+        d = os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "OptimaX", "updates")
+    else:
+        d = os.path.join(tempfile.gettempdir(), "OptimaX-updates")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def fetch_text(url: str, limit: int = 1 << 16) -> str:
+    """Невеликий текстовий файл (SHA256SUMS.txt): Python, а якщо він не довіряє сертифікату — PowerShell."""
+    try:
+        with _open(url, 20) as r:
+            return r.read(limit).decode("utf-8", "replace")
+    except Exception:
+        if not E.IS_WIN:
+            raise
+    script = ("[Net.ServicePointManager]::SecurityProtocol=[Net.ServicePointManager]::SecurityProtocol -bor 3072;"
+              f"(Invoke-WebRequest -UseBasicParsing -TimeoutSec 20 -UserAgent {_ps_quote(UA)} -Uri {_ps_quote(url)}).Content")
+    rc, out = E.ps(script, 40, ro=True)
+    if rc != 0 or not out.strip():
+        raise RuntimeError(f"{SUMS_NAME}: download failed")
+    return out
+
+
+def expected_sha256(info: dict, log=lambda *_: None) -> str:
+    """Очікувана сума файлу оновлення з GitHub (digest) і SHA256SUMS.txt релізу; якщо є обидві — мусять збігтися."""
+    import verify as V
+    name = info.get("name") or urllib.parse.unquote(info["url"].rsplit("/", 1)[-1])
+    sums = None
+    sums_url = info.get("sums_url") or ""
+    if not sums_url and "/releases/download/" in (info.get("url") or ""):  # той самий реліз, поруч із файлом
+        sums_url = info["url"].rsplit("/", 1)[0] + "/" + SUMS_NAME
+    if sums_url:
+        try:
+            sums = fetch_text(sums_url)
+        except Exception as e:  # без файлу сум лишається digest із GitHub API (якщо він є)
+            log(f"  · {SUMS_NAME}: {type(e).__name__}: {str(e)[:100]}")
+    return V.expected_hash(name, info.get("sha256") or "", sums)
+
+
+_VERIFIED: dict = {}  # шлях -> перевірена сума: launch() звіряє файл ще раз безпосередньо перед запуском
+
+
 def download(info: dict, log, progress=None) -> str:
+    import verify as V
     if not E.IS_WIN or E.DRY_RUN:
         for i in range(10):
             if progress:
                 progress(i, 10, tr("upd.downloading", mb=f"{info.get('size', 0) / 2**20 * i / 10:.0f}"))
             time.sleep(0.01)
         log("  [dry-run] " + tr("upd.downloaded"))
+        log("  [dry-run] " + tr("vf.ok", sig=tr("vf.sig.unknown")))
         return ""
+    expected = expected_sha256(info, log)  # до завантаження: без суми файл однаково не запустимо
     name = urllib.parse.unquote(info["url"].rsplit("/", 1)[-1])
-    dest = os.path.join(tempfile.gettempdir(), name)
+    dest = os.path.join(download_dir(), name)
     total = info.get("size") or 0
+    for old in (dest, dest + ".part"):  # чужий файл із таким ім'ям (створений заздалегідь) не дописуємо — видаляємо
+        try:
+            os.remove(old)
+        except FileNotFoundError:
+            pass
     try:
         got = 0
-        with _open(info["url"], 60) as r, open(dest + ".part", "wb") as f:
+        with _open(info["url"], 60) as r, open(dest + ".part", "xb") as f:
             total = total or int(r.headers.get("Content-Length") or 0)
             while True:
                 if E.CANCEL.is_set():
@@ -212,14 +277,39 @@ def download(info: dict, log, progress=None) -> str:
             raise
     if total and os.path.getsize(dest + ".part") != total:
         raise RuntimeError(tr("fps.bad_download"))
-    os.replace(dest + ".part", dest)
     log(tr("upd.downloaded"))
+    log(tr("vf.checking"))
+    try:
+        res = V.check_file(dest + ".part", expected, name=name)
+    except V.VerifyError:
+        try:
+            os.remove(dest + ".part")  # файл, що не пройшов перевірку, не лишаємо на диску
+        except OSError:
+            pass
+        raise
+    os.replace(dest + ".part", dest)
+    _VERIFIED[dest] = res["sha256"]
+    log(tr("vf.ok", sig=tr(f"vf.sig.{res['signature']}") + (f" ({res['signer']})" if res.get("signer") else "")))
     return dest
 
 
+LAST_ERROR = ""
+
+
 def launch(path: str, kind: str) -> bool:
-    """Запускає інсталятор у тихому режимі (він сам закриє OptimaX і запустить нову версію)."""
+    """Запускає інсталятор у тихому режимі (він сам закриє OptimaX і запустить нову версію).
+    Перед запуском файл перевіряється ще раз: сума та підпис мають бути тими самими, що й після завантаження."""
+    global LAST_ERROR
+    LAST_ERROR = ""
     if not path or not E.IS_WIN or E.DRY_RUN:
+        return False
+    import verify as V
+    try:
+        if path not in _VERIFIED:
+            raise V.VerifyError("vf.no_hash", name=os.path.basename(path))
+        V.check_file(path, _VERIFIED[path], name=os.path.basename(path))
+    except (V.VerifyError, OSError) as e:
+        LAST_ERROR = str(e)
         return False
     if kind == "setup":
         subprocess.Popen([path, "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/UPDATE=1"],

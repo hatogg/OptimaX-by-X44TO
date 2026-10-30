@@ -1013,6 +1013,10 @@ class BackupRow(QFrame):
         t = E.BY_ID.get(tid)
         if (t and t.reboot) or tid.startswith("msi:"):
             top.addWidget(badge(tr("b.reboot"), "muted"))
+        if entry.get("partial"):  # відкат пройшов не повністю — кроки, що лишилися, можна повторити
+            pb = badge(tr("bk.partial"), "warn")
+            pb.setToolTip(tr("bk.partial_d"))
+            top.addWidget(pb)
         top.addStretch()
         v.addLayout(top)
         when = datetime.fromtimestamp(entry.get("ts", 0)).strftime("%d.%m.%Y, %H:%M")
@@ -1110,6 +1114,25 @@ class BackupPage(QWidget):
         rch.addStretch()
         rcv.addLayout(rch)
         v.addWidget(rc)
+        # знімок початкових налаштувань: запасний відкат, якщо журнал загубився
+        bc = card()
+        bcv = vbox(bc, (22, 18, 22, 18), 8)
+        bcv.addWidget(label(tr("bl.title"), "h2"))
+        bcv.addWidget(label(tr("bl.card_d"), "desc", wrap=True))
+        self.bl_state = label("", "muted", wrap=True)
+        bcv.addWidget(self.bl_state)
+        self.bl_box = vbox(spacing=2)
+        bcv.addLayout(self.bl_box)
+        bch = hbox(spacing=8)
+        self.btn_blcheck = button(tr("bl.check"), None, self.check_baseline)
+        bch.addWidget(self.btn_blcheck)
+        self.btn_blrestore = button(tr("bl.restore"), "primary", self.restore_baseline)
+        self.btn_blrestore.hide()
+        bch.addWidget(self.btn_blrestore)
+        bch.addStretch()
+        bcv.addLayout(bch)
+        v.addWidget(bc)
+        self.orphans = []
         v.addWidget(label(tr("bk.journal"), "h2"))
         v.addWidget(label(tr("bk.journal_d"), "desc", wrap=True))
         self.list_card = card()
@@ -1179,6 +1202,7 @@ class BackupPage(QWidget):
     def reload(self):
         self.reload_guard()
         self.sync_rescue()
+        self.sync_baseline()
         keep = {r.tid for r in self.rows if r.check.isChecked()}
         clear_layout(self.list_lay)
         self.rows = []
@@ -1217,6 +1241,50 @@ class BackupPage(QWidget):
     def undo_single(self, row: BackupRow):
         self.main.run_quick(row.title, lambda log, p: E.undo_ids([row.tid], log), busy=row.btn,
                             ok_msg=tr("bk.undone", what=row.title))
+
+    # ── знімок початкових налаштувань ──
+    def sync_baseline(self):
+        import baseline as BL
+        st = BL.state()
+        if st["exists"]:
+            when = datetime.fromtimestamp(st["ts"]).strftime("%d.%m.%Y %H:%M")
+            self.bl_state.setText(tr("bl.state", when=when, n=st["n"]))
+        else:
+            self.bl_state.setText(tr("bl.none"))
+        self.btn_blcheck.setEnabled(st["exists"])
+
+    def check_baseline(self):
+        import baseline as BL
+        self.main.run_quick(tr("bl.title"), lambda log, p: {"orphans": BL.orphans()}, busy=self.btn_blcheck,
+                            silent=True, on_done=self._baseline_checked)
+
+    def _baseline_checked(self, res):
+        self.orphans = (res or {}).get("orphans") or [] if isinstance(res, dict) else []
+        clear_layout(self.bl_box)
+        titles = list(dict.fromkeys(E.entry_title(t) for o in self.orphans for t in o["tweaks"][:1]))
+        for title in titles[:8]:
+            r = hbox(margins=(0, 2, 0, 2), spacing=10)
+            r.addWidget(dot(T["warn"], 8), 0, Qt.AlignmentFlag.AlignVCenter)
+            r.addWidget(label(title, "rowTitle"), 1)
+            self.bl_box.addLayout(r)
+        if len(titles) > 8:
+            self.bl_box.addWidget(label(tr("bl.more", n=len(titles) - 8), "muted"))
+        self.btn_blrestore.setVisible(bool(self.orphans))
+        self.btn_blrestore.setText(tr("bl.restore_n", n=len(self.orphans)))
+        self.main.toast(tr("bl.found", n=len(self.orphans)) if self.orphans else tr("bl.clean"),
+                        "warn" if self.orphans else "ok")
+
+    def restore_baseline(self):
+        import baseline as BL
+        items = list(self.orphans)
+        if not items or not Ask.ask(self, tr("bl.restore"), tr("bl.restore_q", n=len(items)), tr("bl.restore"),
+                                    "danger"):
+            return
+        RunDialog(self.main, tr("bl.title"), lambda log, prog: BL.restore(items, log, prog)).exec()
+        self.orphans = []
+        clear_layout(self.bl_box)
+        self.btn_blrestore.hide()
+        self.main.refresh_all()
 
     def open_rstrui(self):
         if E.DRY_RUN or not E.IS_WIN:
