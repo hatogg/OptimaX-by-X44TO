@@ -77,6 +77,9 @@ def test_render_path_from_loaded_libraries():
     zink = [m for m in mesa if m[0] not in ("d3d12.dll", "dxil.dll", "nvwgf2umx.dll")] + \
         [("vulkan-1.dll", sysd + r"\vulkan-1.dll"), ("nvoglv64.dll", "x\\nvoglv64.dll")]
     assert GI.render_path(zink, game)["layer"] == "mesa-zink"
+    soft = [m for m in mesa if m[0] not in ("d3d12.dll", "dxil.dll", "nvwgf2umx.dll")]
+    p = GI.render_path(soft, game)
+    assert p["layer"] == "mesa-soft" and GI.path_verdict(p) == "warp", "Mesa without D3D12 / Vulkan = llvmpipe on the CPU"
     both = [("g.exe", "g.exe"), ("d3d11.dll", sysd + r"\d3d11.dll"), ("nvwgf2umx.dll", "a"), ("igd10iumd64.dll", "b")]
     assert GI.path_verdict(GI.render_path(both, game)) == "", "two drivers — the counters decide"
     warp = [("g.exe", "g.exe"), ("d3d11.dll", sysd + r"\d3d11.dll"), ("d3d10warp.dll", "w")]
@@ -103,7 +106,12 @@ def test_pcie_link_under_load():
                  pcie_rx=250 * 1024)] * 5
     ev = GD.pcie_eval(load)
     assert ev["load_gen"] == 1 and ev["load_width"] == 4 and ev["link_mbps"] == 1000 and ev["share"] == 85
-    keys = [f["key"] for f in GD.pcie_findings(ev, {"mining_gpu": "P106-100"}, fps=60)]
+    real = GD.screen_size
+    GD.screen_size = lambda: (1920, 1080)  # на CI-машині Windows свій екран — розрахунок не має від нього залежати
+    try:
+        keys = [f["key"] for f in GD.pcie_findings(ev, {"mining_gpu": "P106-100"}, fps=60)]
+    finally:
+        GD.screen_size = real
     assert keys[:2] == ["pcie_narrow", "pcie_full"] and "pcie_copy" in keys, keys
     assert GD.frame_copy_mbps(1920, 1080, 60) == 475
 
@@ -240,6 +248,7 @@ def test_compatibility_is_checked_before_any_change():
     r = fake()
     assert r["compat"] == {"classic": [], "arena": ["anticheat"], "racer_dx11": [], "racer_dx9": ["arch"]}
     assert r["compat_novk"] == ["no_vulkan"] and r["plan_novk"] == [["dxvk", ["no_vulkan"]]]
+    assert r["compat_nogpu"] == {"dxvk": ["no_gpu"], "mesa": ["no_gpu"]}, "P106 unavailable — no layers"
     assert r["arena_auto"] == {"blocked": [["dxvk", ["anticheat"]]], "files": [], "pref": None, "mode": "auto"}, \
         "no DLL next to an anti-cheat game, and DirectX 9 without DXVK is not assigned"
 
@@ -291,3 +300,47 @@ def test_release_packs_the_same_dxvk_libraries_the_app_expects():
     import release as REL
     assert tuple(REL.DXVK_FILES) == tuple(MG.DXVK_FILES)
     assert {n for s in MG.DXVK_SETS.values() for n in s} == set(MG.DXVK_FILES)
+
+
+# ── справжня Windows (CI windows-2022 / 2025: WARP і Hyper-V Video) ──
+def test_dxgi_d3d12_vulkan_probe_on_real_windows():
+    """Перевірка в окремому процесі: COM-виклики DXGI / D3D12 і Vulkan через ctypes не падають і дають адаптери."""
+    if not IS_WIN:
+        skip("real DXGI / Vulkan exist only on Windows")
+    import re
+    out = os.path.join(tempfile.mkdtemp(prefix="oxprobe_"), "probe.json")
+    p = subprocess.run([sys.executable, os.path.join(ROOT, "optimizer.py"), "--gpu-probe", f"--out={out}"], cwd=ROOT,
+                       capture_output=True, timeout=120)
+    assert p.returncode == 0 and os.path.exists(out), tail((p.stdout + p.stderr).decode("utf-8", "replace"))
+    with open(out, encoding="utf-8") as f:
+        data = json.load(f)
+    assert not [e for e in data["errors"] if e.startswith("dxgi")], data["errors"]
+    assert data["dxgi"], "DXGI always lists at least the Microsoft Basic Render Driver"
+    for a in data["dxgi"]:
+        assert {"name", "ven", "dev", "luid", "outputs", "dx12", "vram_mb", "software"} <= set(a), a
+        assert re.match(r"^0x[0-9A-F]{8}_0x[0-9A-F]{8}$", a["luid"]), a["luid"]
+        assert a["dx12"] in (True, False, None)
+    for d in data["vulkan"]:  # на віртуальних машинах Vulkan зазвичай немає — тоді список порожній
+        assert d["name"] and re.match(r"^\d+\.\d+\.\d+$", d["api"]), d
+    s = GI.summary(data)
+    assert set(s) >= {"gpu", "luid", "dx12", "vulkan", "display"}
+
+
+def test_modules_and_counters_of_a_real_process():
+    if not IS_WIN:
+        skip("process modules and GPU counters exist only on Windows")
+    import ctypes
+    ctypes.WinDLL("d3d11.dll")
+    mods = GI.process_modules(os.getpid())
+    names = {n for n, _ in mods}
+    assert "kernel32.dll" in names and "d3d11.dll" in names, sorted(names)[:30]
+    p = GI.render_path(mods, os.path.dirname(sys.executable))
+    assert "dx11" in p["apis"] and p["layer"] == "" and p["known"], p
+    mon = GI.RenderMonitor()
+    try:
+        s = mon.sample({os.getpid()}, True)
+    finally:
+        mon.close()
+    assert set(s) == {"fg", "eng", "vram", "shared"}
+    res = GI.check({os.path.basename(sys.executable)}, "0x00000000_0x00000000", seconds=2)
+    assert res["verdict"] in ("mining", "igpu", "warp", "idle", "none"), res

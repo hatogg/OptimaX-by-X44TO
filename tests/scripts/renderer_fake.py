@@ -109,6 +109,11 @@ F.CFG["gpu_probe"] = {"ts": 1, "dxgi": [dict(name="NVIDIA GeForce GTX 1060 6GB",
                       "vulkan": [], "errors": []}
 R["compat_novk"] = MG.compat(classic, "dxvk")
 R["plan_novk"] = MG.plan(classic, "auto")["blocked"]
+# майнінгова карта недоступна: DirectX бачить лише вбудовану
+F.CFG["gpu_probe"] = {"ts": 1, "dxgi": [dict(name="Intel(R) HD Graphics 4000", ven=0x8086, dev=0x162, outputs=1,
+                                             luid="0x00000000_0x0000C2E1", dx12=False, vram_mb=32)],
+                      "vulkan": [], "errors": []}
+R["compat_nogpu"] = {"dxvk": MG.compat(classic, "dxvk"), "mesa": MG.compat(quake, "mesa")}
 F.CFG["gpu_probe"] = None
 
 # ── Auto для DirectX 9 (x86): лише d3d9 / d3d8 x86, exe — на карту ──

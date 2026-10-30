@@ -1007,10 +1007,11 @@ def record_check(g: dict, res: dict) -> dict:
 
 
 def probe_summary() -> dict:
+    """Що показала перевірка DirectX / Vulkan ({} — її ще не було). probed — перевірка була."""
     import gpuinfo as GI
     import features as F
     pr = F.CFG["gpu_probe"]
-    return GI.summary(pr) if isinstance(pr, dict) else {}
+    return dict(GI.summary(pr), probed=True) if isinstance(pr, dict) and "dxgi" in pr else {}
 
 
 def compat(g: dict, kind: str, apis: tuple = None) -> list:
@@ -1039,7 +1040,9 @@ def compat(g: dict, kind: str, apis: tuple = None) -> list:
     elif any(a not in info["arch"] for _, a in targets):
         out.append("no_layer")
     pr = probe_summary()
-    if pr.get("gpu"):  # перевірка DirectX / Vulkan уже була — зважаємо на неї (без неї не забороняємо)
+    if pr.get("probed") and not pr.get("gpu"):
+        out.append("no_gpu")  # DirectX не бачить майнінгову карту (драйвер, карта вимкнена) — шар нічого не дасть
+    elif pr.get("gpu"):  # перевірка DirectX / Vulkan уже була — зважаємо на неї (без неї не забороняємо)
         if (kind == "dxvk" or (kind == "mesa" and gl_driver() == "zink")) and not pr.get("vulkan"):
             out.append("no_vulkan")
         if kind == "mesa" and gl_driver() == "d3d12" and pr.get("dx12") is False:

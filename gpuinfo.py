@@ -422,7 +422,12 @@ def render_path(mods: list, game_dir: str = "") -> dict:
     apis = [a for a, dlls in API_DLLS if any(d in names for d in dlls)]
     layer = ""
     if any(local(n) for n in LAYER_MARKERS["mesa"] if n in names):
-        layer = "mesa-zink" if "vulkan-1.dll" in names and "dxil.dll" not in names else "mesa-d3d12"
+        if "d3d12.dll" in names:
+            layer = "mesa-d3d12"
+        elif "vulkan-1.dll" in names:
+            layer = "mesa-zink"
+        else:
+            layer = "mesa-soft"  # ні DirectX 12, ні Vulkan: Mesa малює процесором (llvmpipe)
     elif any(local(n) for n in LAYER_MARKERS["dxvk"] if n in names) and "vulkan-1.dll" in names:
         layer = "dxvk"
     drivers: dict = {}
@@ -439,6 +444,8 @@ def path_verdict(path: dict, mining_vendor: str = "nvidia") -> str:
     others = {v for v in drv if v != mining_vendor}
     if not path.get("known"):
         return ""
+    if path.get("layer") == "mesa-soft":
+        return "warp"
     if mining_vendor in drv and not others:
         return "mining"
     if others and mining_vendor not in drv:
@@ -459,6 +466,8 @@ def describe_path(path: dict) -> str:
         parts.append("Mesa → DirectX 12")
     elif layer == "mesa-zink":
         parts.append("Mesa Zink → Vulkan")
+    elif layer == "mesa-soft":
+        parts.append("Mesa llvmpipe (CPU)")
     drv = ", ".join({"nvidia": "NVIDIA", "intel": "Intel", "amd": "AMD", "warp": "WARP"}[v]
                     for v in sorted(path.get("drivers") or {}))
     return " → ".join(parts) + (f" · {tr('gr.driver')}: {drv}" if drv else "")

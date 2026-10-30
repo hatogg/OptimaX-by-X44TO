@@ -69,6 +69,12 @@ STRINGS = {
     "mg.why.no_vulkan": ("Vulkan на майнінговій карті не знайдено — DXVK і Zink без нього не працюють",
                          "Vulkan на майнинговой карте не найден — DXVK и Zink без него не работают",
                          "no Vulkan on the mining card — DXVK and Zink cannot work without it"),
+    "mg.why.no_gpu": ("DirectX не бачить майнінгову карту (драйвер не встановлено, карту вимкнено або стандартний драйвер "
+                      "вимкнув 3D) — див. Universal GPU Renderer",
+                      "DirectX не видит майнинговую карту (драйвер не установлен, карта отключена или стандартный "
+                      "драйвер отключил 3D) — см. Universal GPU Renderer",
+                      "DirectX does not see the mining card (no driver, card disabled, or the stock driver disabled "
+                      "3D) — see Universal GPU Renderer"),
     "mg.why.no_d3d12": ("карта не підтримала DirectX 12 — Mesa d3d12 не запуститься (спробуйте Zink)",
                         "карта не поддержала DirectX 12 — Mesa d3d12 не запустится (попробуйте Zink)",
                         "the card did not accept DirectX 12 — Mesa d3d12 will not start (try Zink)"),
@@ -112,9 +118,12 @@ STRINGS = {
     "gr.v.igpu": ("Гра малює НЕ на {gpu}: на майнінговій карті 3D-роботи немає — малює вбудована графіка.",
                   "Игра рисует НЕ на {gpu}: на майнинговой карте 3D-работы нет — рисует встроенная графика.",
                   "The game does NOT render on the {gpu}: no 3D work on the mining card — the integrated GPU renders."),
-    "gr.v.warp": ("Гра малює програмно (Microsoft Basic Render / WARP) — процесором, а не відеокартою.",
-                  "Игра рисует программно (Microsoft Basic Render / WARP) — процессором, а не видеокартой.",
-                  "The game renders in software (Microsoft Basic Render / WARP) — on the CPU, not a GPU."),
+    "gr.v.warp": ("Гра малює програмно (Microsoft Basic Render / WARP або Mesa llvmpipe) — процесором, а не "
+                  "відеокартою. Для Mesa: поверніть DirectX 12 замість Zink або вимкніть Mesa для гри.",
+                  "Игра рисует программно (Microsoft Basic Render / WARP или Mesa llvmpipe) — процессором, а не "
+                  "видеокартой. Для Mesa: верните DirectX 12 вместо Zink или выключите Mesa для игры.",
+                  "The game renders in software (Microsoft Basic Render / WARP or Mesa llvmpipe) — on the CPU, not a "
+                  "GPU. For Mesa: switch back from Zink to DirectX 12 or turn Mesa off for the game."),
     "gr.v.idle": ("Гра згорнута або нічого не малює — розгорніть її й перевірте ще раз.",
                   "Игра свёрнута или ничего не рисует — разверните её и проверьте ещё раз.",
                   "The game is minimised or not drawing — bring it to the front and check again."),
@@ -681,4 +690,10 @@ STRINGS = {
     "hist.when": ("Коли", "Когда", "When"),
     "hist.game": ("Гра", "Игра", "Game"),
     "hist.limit": ("Обмеження", "Ограничение", "Limit"),
+    "rep.gpu": ("Universal GPU Renderer", "Universal GPU Renderer", "Universal GPU Renderer"),
+    "rep.gpu_probe": ("Карта: {gpu}, драйвер {driver}, DirectX 12: {dx12}, Vulkan: {vk}, монітор: {display}",
+                      "Карта: {gpu}, драйвер {driver}, DirectX 12: {dx12}, Vulkan: {vk}, монитор: {display}",
+                      "Card: {gpu}, driver {driver}, DirectX 12: {dx12}, Vulkan: {vk}, monitor: {display}"),
+    "rep.gpu_game": ("{game}: режим «{mode}», перевірка: {verdict}", "{game}: режим «{mode}», проверка: {verdict}",
+                     "{game}: “{mode}” mode, check: {verdict}"),
 }

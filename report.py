@@ -59,6 +59,20 @@ def sections(hw: dict, checks: list, analysis: dict) -> list:
         lines = [f"{tr('rep.game')}: {_exe_name(d.get('game')) or '—'}"]
         lines += [tr(f"diag.f.{x['key']}.t", **x.get("kw", {})) for x in d.get("findings", [])]
         out.append((tr("rep.diag"), lines))
+    pr = F.CFG["gpu_probe"]
+    profs = (F.CFG["mining"] or {}).get("profiles") or {}
+    if isinstance(pr, dict) and (pr.get("dxgi") or profs):  # Universal GPU Renderer: що бачать API й режими ігор
+        import gpuinfo as GI
+        s = GI.summary(pr)
+        lines = [tr("rep.gpu_probe", gpu=s.get("gpu") or "—", driver=s.get("driver") or "?",
+                    dx12=tr("gr.yes") if s.get("dx12") else tr("gr.no"), vk=s.get("vk_api") or tr("gr.no"),
+                    display=s.get("display") or "—")]
+        for p in list(profs.values())[:20]:
+            last = (p.get("checks") or [{}])[-1]
+            lines.append(tr("rep.gpu_game", game=p.get("name") or "?", mode=tr(f"mg.mode.{p.get('mode') or 'native'}"),
+                            verdict=tr(f"diag.render.{last['verdict']}") if last.get("verdict") in
+                            ("mining", "igpu", "warp") else "—"))
+        out.append((tr("rep.gpu"), lines))
     tests = F.CFG["fps_tests"] or {}
     if tests:
         lines = []
