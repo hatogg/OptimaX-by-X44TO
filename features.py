@@ -237,6 +237,11 @@ def game_tweak(path: str, opt: str) -> E.Tweak:
 def set_game_option(path: str, opt: str, on: bool, log) -> dict:
     t = game_tweak(path, opt)
     if on:
+        mined = "gpu:" + path.lower()  # mining.gpu_id: exe уже призначено на майнінгову карту тим самим значенням
+        if opt == "dgpu" and E.JOURNAL.has(mined):
+            # значення переходить під «Мої ігри»: інакше відкат майнінгових призначень видалив би його, а потім
+            # відкат цієї гри повернув би «GpuPreference=2;» без жодного запису в журналі
+            E.undo_ids([mined], log)
         return E.apply_tweaks([t], log, header=False)
     E.undo_ids([t.id], log)
     return {"ok": 1}

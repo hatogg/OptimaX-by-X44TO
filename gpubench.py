@@ -690,14 +690,19 @@ def load_mesa(folder: str) -> bool:
     """Mesa (mining.py) замість системної opengl32.dll — до того, як Qt її завантажить. Qt просить «opengl32.dll» за
     іменем, а Windows віддає вже завантажений модуль з таким іменем, звідки б він не був. Так тест OpenGL малює
     майнінгова карта: Mesa перекладає OpenGL на DirectX 12 і бере адаптер із MESA_D3D12_DEFAULT_ADAPTER_NAME.
-    dxil.dll (підпис шейдерів DirectX 12) драйвер d3d12 теж просить за іменем — тому й її завантажуємо заздалегідь."""
-    if not E.IS_WIN or not folder or not os.path.isfile(os.path.join(folder, "opengl32.dll")):
+    dxil.dll (підпис шейдерів DirectX 12) драйвер d3d12 теж просить за іменем — тому й її завантажуємо заздалегідь.
+    folder — папка версії Mesa (mesa.json, x64\\, x86\\): вантажимо лише бібліотеки нашої розрядності, звірені із
+    сумами з mesa.json, — процес тесту працює з правами адміністратора."""
+    if not E.IS_WIN or not folder:
+        return False
+    import mining as MG
+    files = MG.verified_files(folder, "x64" if ctypes.sizeof(ctypes.c_void_p) == 8 else "x86")
+    if not files:
         return False
     try:
         for name in ("dxil.dll", "libglapi.dll", "libgallium_wgl.dll", "opengl32.dll"):
-            path = os.path.join(folder, name)
-            if os.path.isfile(path):
-                _MESA_LIBS.append(ctypes.WinDLL(path))
+            if name in files:
+                _MESA_LIBS.append(ctypes.WinDLL(files[name]))
         return True
     except OSError:
         return False

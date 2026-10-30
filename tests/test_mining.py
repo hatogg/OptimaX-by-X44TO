@@ -27,7 +27,12 @@ def test_pe_imports_regular_and_delay_load():
     p32 = os.path.join(d, "b.exe")
     with open(p32, "wb") as f:
         f.write(make_pe(["kernel32.dll", "d3d9.dll"], pe32=True))
-    assert MG.pe_imports(p32) == {"kernel32.dll", "d3d9.dll"}
+    assert MG.pe_info(p32) == ("x86", {"kernel32.dll", "d3d9.dll"})
+    assert MG.pe_info(p)[0] == "x64"
+    arm = os.path.join(d, "c.exe")
+    with open(arm, "wb") as f:
+        f.write(make_pe(["opengl32.dll"], machine=0xAA64))
+    assert MG.pe_info(arm) == ("", {"opengl32.dll"})
 
 
 def test_pe_imports_never_raises_on_junk():
@@ -48,9 +53,13 @@ def test_api_classification():
     assert MG.api_of(write_pe(os.path.join(d, "both.exe"), "d3d9.dll", "d3d11.dll")) == "other"
     assert MG.api_of(write_pe(os.path.join(d, "gl.exe"), "kernel32.dll", "opengl32.dll")) == "gl"
     assert MG.api_of(write_pe(os.path.join(d, "dx11.exe"), "d3d11.dll", "dxgi.dll")) == "other"
-    # рушій вантажить d3d9 сам (Source: shaderapidx9.dll) — exe без DX10+ поруч із такою бібліотекою теж DX9
-    stub = write_pe(os.path.join(d, "hl2.exe"), "kernel32.dll")
-    assert MG.api_of(stub, ("shaderapidx9.dll", "engine.dll")) == "dx9"
+    # рушій вантажить d3d9 сам: Source — hl2.exe у корені, shaderapidx9.dll у bin\\ (або bin\\x64\\)
+    src = _tmp()
+    stub = write_pe(os.path.join(src, "hl2.exe"), "kernel32.dll")
+    assert MG.api_of(stub, MG.engine_dlls(src)) == "other"
+    os.makedirs(os.path.join(src, "bin", "x64"))
+    open(os.path.join(src, "bin", "x64", "shaderapidx9.dll"), "wb").close()
+    assert MG.api_of(stub, MG.engine_dlls(src)) == "dx9"
     assert MG.api_of(stub, ("UnityPlayer.dll",)) == "other"
 
 
@@ -134,45 +143,67 @@ def fake_report() -> dict:
 
 def test_discovery_skips_redistributables_and_installers():
     r = fake_report()
-    assert r["games"] == ["Old Game", "Test Game"], "Steamworks Redistributables is not a game"
-    assert r["exes"] == ["bin/glview.exe:gl", "bin/win64/game.exe:other", "launcher.exe:other"]
+    assert r["games"] == ["Half-Life 2", "Old Game", "Test Game"], "Steamworks Redistributables is not a game"
+    assert r["exes"] == ["arm/glarm.exe:gl:", "bin/glview.exe:gl:x64", "bin/win64/game.exe:other:x64",
+                         "bin32/gl32.exe:gl:x86", "launcher.exe:other:x64"], "a library path with [] must be found"
     assert r["old_api"] == ["dx9"]
+    assert r["source_api"] == ["dx9"], "Source engine: hl2.exe in the root, shaderapidx9.dll in bin\\"
 
 
 def test_games_go_to_the_mining_card_but_not_dx9_or_users_choice():
     r = fake_report()
-    assert r["pref_after"] == {"dx11": "GpuPreference=2;", "gl": "GpuPreference=2;", "launcher": "GpuPreference=1;",
-                               "dx9": None}
-    assert r["assign1"] == {"assigned": 2, "already": 0, "kept": 1, "dx9": 1}
-    assert r["assign2"] == {"assigned": 0, "already": 2, "kept": 1, "dx9": 1}, "a second run changes nothing"
-    assert r["status"]["on"] == 2 and r["status"]["kept"] == 1 and r["status"]["gl"] == 1
+    assert r["pref_after"] == {"dx11": "GpuPreference=2;", "gl": "GpuPreference=2;", "gl32": "GpuPreference=2;",
+                               "launcher": "GpuPreference=1;", "dx9": None, "hl2": None}
+    assert r["assign1"] == {"assigned": 4, "already": 0, "kept": 1, "dx9": 2}
+    assert r["assign2"] == {"assigned": 0, "already": 4, "kept": 1, "dx9": 2}, "a second run changes nothing"
+    assert r["status"]["on"] == 4 and r["status"]["kept"] == 1 and r["status"]["gl"] == 3
+    assert r["status"]["gl_na"] == 1, "an ARM64 OpenGL exe has no Mesa"
 
 
-def test_mesa_archive_is_verified():
+def test_one_change_at_a_time():
+    r = fake_report()
+    assert r["busy"] == {"busy": True}, "while another mining change runs, assign must not touch the journal"
+    assert r["parallel"] == ["busy", "ran"]
+
+
+def test_mesa_archive_and_installed_files_are_verified():
     r = fake_report()
     assert r["tampered"] == "rejected" and r["mesa_after_bad"] is None
-    assert r["mesa"] == {"version": "26.2.0", "files": ["dxil.dll", "libgallium_wgl.dll", "opengl32.dll"],
-                         "evil": False}
+    assert r["dotdot"] == "rejected" and r["root_alive"], "a version of '..' must never wipe ProgramData\\OptimaX"
+    lib = ["dxil.dll", "libgallium_wgl.dll", "opengl32.dll"]
+    assert r["mesa"] == {"version": "26.2.0", "arch": {"x64": lib, "x86": lib}}
     assert r["bench_mesa"], "the GPU test must use the installed Mesa on a mining card"
+    assert r["planted"] == "26.2.0", "a planted 'newer' Mesa without matching hashes must be ignored"
+    assert r["tampered_installed"] is None, "a library changed after unpacking — the whole version is distrusted"
 
 
-def test_mesa_in_game_folder_keeps_the_games_own_file():
+def test_mesa_matches_the_exe_bitness_and_keeps_the_games_own_file():
     r = fake_report()
+    assert r["targets"] == ["bin32:x86", "bin:x64"]
     e = r["enable"]
-    assert e["ok"] == 2 and e["env"] == "NVIDIA" and e["opengl32"] == "mesa opengl32" and e["bak"] and e["dxil"]
-    assert e["status"]
-    assert any(ln.startswith("if exist") and " move /y " in ln for ln in r["rescue"]), r["rescue"]
-    assert sum(" del /f /q " in ln for ln in r["rescue"]) == 3
+    assert e["opengl32"] == "mesa x64 opengl32.dll" and e["opengl32_x86"] == "mesa x86 opengl32.dll"
+    assert not e["arm"] and e["ok"] == 3 and e["env"] == "NVIDIA" and e["bak"] and e["dxil"] and e["status"]
+    assert r["rescue"] == {"lines": 3, "ps": 3, "hash": True, "bak": 1}, r["rescue"]
     d = r["disable"]
-    assert d == {"opengl32": "the game's own opengl32", "bak": False, "gallium": False, "env": None, "ids": []}
+    assert d == {"opengl32": "the game's own opengl32", "bak": False, "gallium": False, "x86": False, "env": None,
+                 "ids": []}
 
 
 def test_revert_all_leaves_files_the_game_replaced():
     r = fake_report()["revert"]
-    assert r["undone"] == 4 and r["partial"] == 0 and r["left"] == []
+    assert r["undone"] == 6 and r["partial"] == 0 and r["left"] == []
     assert r["gallium"] == "updated by the game" and r["noted"], "a file the game updated must not be deleted"
-    assert r["opengl32"] == "the game's own opengl32" and not r["dxil"]
-    assert r["pref"] == {"dx11": None, "gl": None, "launcher": "GpuPreference=1;"} and r["env"] is None
+    assert r["opengl32"] == "updated opengl32 by the game" and not r["bak_left"], "no orphaned .optimax-bak"
+    assert not r["dxil"]
+    assert r["pref"] == {"dx11": "GpuPreference=2;", "gl": None, "gl32": None, "launcher": "GpuPreference=1;"}
+    assert r["env"] is None
+
+
+def test_my_games_takes_over_an_assigned_exe():
+    r = fake_report()
+    assert r["handover"] == {"mine": True, "gpu": False, "pref": "GpuPreference=2;"}
+    assert r["revert"]["pref"]["dx11"] == "GpuPreference=2;", "Revert all must not remove what My games set"
+    assert r["handover_off"] is None, "turning it off in My games returns the original (no value)"
 
 
 # ── GPU-тест ──
@@ -191,3 +222,24 @@ def test_load_mesa_is_a_noop_without_mesa():
     import gpubench as GB
     assert GB.load_mesa("") is False
     assert GB.load_mesa(_tmp()) is False
+
+
+def test_verified_files_checks_every_library():
+    import hashlib
+    d = _tmp()
+    os.makedirs(os.path.join(d, "x64"))
+    data = {"opengl32.dll": b"a", "libgallium_wgl.dll": b"b"}
+    for n, b in data.items():
+        with open(os.path.join(d, "x64", n), "wb") as f:
+            f.write(b)
+    with open(os.path.join(d, "x64", "dxil.dll"), "wb") as f:  # не в маніфесті — не вантажимо
+        f.write(b"unlisted")
+    man = {"files": {f"x64/{n}": hashlib.sha256(b).hexdigest() for n, b in data.items()}}
+    with open(os.path.join(d, "mesa.json"), "w") as f:
+        json.dump(man, f)
+    got = MG.verified_files(d, "x64")
+    assert sorted(got) == ["libgallium_wgl.dll", "opengl32.dll"]
+    assert MG.verified_files(d, "x86") == {}
+    with open(os.path.join(d, "x64", "opengl32.dll"), "ab") as f:
+        f.write(b"!")
+    assert MG.verified_files(d, "x64") == {}

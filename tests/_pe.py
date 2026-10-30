@@ -2,7 +2,7 @@
 import struct
 
 
-def make_pe(imports=(), delay=(), pe32=False) -> bytes:
+def make_pe(imports=(), delay=(), pe32=False, machine=None) -> bytes:
     """exe з таблицею імпорту (DLL у `imports`) і таблицею відкладеного імпорту (`delay`)."""
     e_lfanew = 0x80
     opt_size = 224 if pe32 else 240
@@ -30,7 +30,7 @@ def make_pe(imports=(), delay=(), pe32=False) -> bytes:
     struct.pack_into("<I", head, 0x3C, e_lfanew)
     head[e_lfanew:e_lfanew + 4] = b"PE\0\0"
     coff = e_lfanew + 4
-    struct.pack_into("<HHIIIHH", head, coff, 0x14C if pe32 else 0x8664, 1, 0, 0, 0, opt_size, 0x22)
+    struct.pack_into("<HHIIIHH", head, coff, machine or (0x14C if pe32 else 0x8664), 1, 0, 0, 0, opt_size, 0x22)
     opt = coff + 20
     struct.pack_into("<H", head, opt, 0x10B if pe32 else 0x20B)
     dd = opt + (96 if pe32 else 112)
@@ -43,7 +43,7 @@ def make_pe(imports=(), delay=(), pe32=False) -> bytes:
     return bytes(head) + bytes(body)
 
 
-def write_pe(path: str, *imports, delay=()) -> str:
+def write_pe(path: str, *imports, delay=(), pe32=False, machine=None) -> str:
     with open(path, "wb") as f:
-        f.write(make_pe(imports, delay))
+        f.write(make_pe(imports, delay, pe32, machine))
     return path

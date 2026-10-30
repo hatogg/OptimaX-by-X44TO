@@ -215,6 +215,30 @@ def _reg_lines(rec: dict) -> list:
 GONE_OK = ("reg delete ", "bcdedit /deletevalue ")
 
 
+def _psq(s: str) -> str:
+    return "'" + str(s).replace("'", "''") + "'"
+
+
+def _ps_line(code: str) -> str:
+    b64 = base64.b64encode((E.PS_PREFIX + code).encode("utf-16-le")).decode("ascii")
+    return f"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {b64}"
+
+
+def _file_undo_ps(rec: dict) -> str:
+    """Те саме, що engine._undo_file: файл, який гра встигла замінити своїм, лишаємо; помилка (гра запущена й тримає
+    бібліотеку) — ненульовий код, тож крок потрапить у failed.txt, а не в done.txt."""
+    p, b, sha = _psq(rec["p"]), _psq(rec.get("bak") or ""), _psq(str(rec.get("sha") or "").upper())
+    return ("$ErrorActionPreference='Stop';"
+            f"$p={p};$b={b};$h={sha};"
+            "Remove-Item -LiteralPath ($p+'.optimax-tmp') -Force -ErrorAction SilentlyContinue;"
+            "if (Test-Path -LiteralPath $p) {"
+            " if ($h -and (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash -ne $h) {"
+            "  if ($b -and (Test-Path -LiteralPath $b)) { Remove-Item -LiteralPath $b -Force }; exit 0 };"
+            " Remove-Item -LiteralPath $p -Force };"
+            "if ($b -and (Test-Path -LiteralPath $b)) { Move-Item -LiteralPath $b -Destination $p -Force };"
+            "exit 0")
+
+
 def undo_lines(rec: dict) -> list:
     """Команди .cmd для одного запису відкату з журналу."""
     t = rec.get("t")
@@ -238,12 +262,7 @@ def undo_lines(rec: dict) -> list:
         verb = "-setdcvalueindex" if rec.get("m") == "dc" else "-setacvalueindex"
         return [f"powercfg {verb} {rec['g']} {rec['s']} {rec['st']} {rec['old']}", f"powercfg -setactive {rec['g']}"]
     if t == "file":  # копія, яку OptimaX поклала поруч із грою (Mesa), і файл, що лежав там раніше
-        p = _q(rec["p"])
-        lines = [f'if exist "{p}" del /f /q "{p}"']
-        if rec.get("bak"):
-            b = _q(rec["bak"])
-            lines.append(f'if exist "{b}" move /y "{b}" "{p}"')
-        return lines
+        return [_ps_line(_file_undo_ps(rec))]
     return []  # live: оновлення Провідника — в кінці; решта діє після перезавантаження
 
 

@@ -7,8 +7,8 @@ OptimaX — допоміжний скрипт збірки релізу.
     python packaging/release.py buildinfo            — buildinfo.py: репозиторій оновлень (DEFAULT_REPO або OPTIMAX_UPDATE_REPO),
                                                        коміт і дата збірки (у CI беруться з GitHub Actions)
     python packaging/release.py checksums <файли…>   — SHA256SUMS.txt для релізу
-    python packaging/release.py mesa <папка>         — OptimaX-Mesa-<версія>-x64.zip для майнінгових карт (mining.py):
-                                                       x64-бібліотеки з релізу pal1000/mesa-dist-win + mesa.json
+    python packaging/release.py mesa <папка>         — OptimaX-Mesa-<версія>.zip для майнінгових карт (mining.py):
+                                                       x64- і x86-бібліотеки з релізу pal1000/mesa-dist-win + mesa.json
 
 Версія береться лише з engine.py (VERSION = "..."), тож змінювати її треба в одному місці.
 """
@@ -167,6 +167,7 @@ MESA_REPO = "pal1000/mesa-dist-win"
 MESA_ASSET = re.compile(r"^mesa3d-([\d.]+)-release-msvc\.7z$", re.I)
 MESA_FILES = ("opengl32.dll", "libgallium_wgl.dll", "libglapi.dll", "dxil.dll")  # як у mining.MESA_FILES
 MESA_REQUIRED = ("opengl32.dll", "libgallium_wgl.dll")
+MESA_ARCHES = ("x64", "x86")  # бібліотеки тієї ж розрядності, що й exe гри
 
 
 def _get(url: str, api: bool = False):
@@ -212,32 +213,37 @@ def build_mesa(out_dir: str) -> str:
     digest = str(asset.get("digest") or "")
     if digest.lower().startswith("sha256:") and digest[7:].lower() != h.hexdigest():
         raise SystemExit(f"{asset['name']}: SHA-256 differs from the GitHub digest")
-    x64 = os.path.join(work, "x64")
-    subprocess.run([_seven_zip(), "e", arc, f"-o{x64}", "-y"] + [f"x64/{n}" for n in MESA_FILES],
+    out_dir_x = os.path.join(work, "out")
+    subprocess.run([_seven_zip(), "x", arc, f"-o{out_dir_x}", "-y"] + [f"{a}/{n}" for a in MESA_ARCHES for n in MESA_FILES],
                    check=False, stdout=subprocess.DEVNULL)
     files = {}
-    for n in MESA_FILES:
-        p = os.path.join(x64, n)
-        if os.path.isfile(p):
-            with open(p, "rb") as f:
-                files[n] = hashlib.sha256(f.read()).hexdigest()
-    missing = [n for n in MESA_REQUIRED if n not in files]
+    for a in MESA_ARCHES:
+        for n in MESA_FILES:
+            p = os.path.join(out_dir_x, a, n)
+            if os.path.isfile(p):
+                with open(p, "rb") as f:
+                    files[f"{a}/{n}"] = hashlib.sha256(f.read()).hexdigest()
+    missing = [f"x64/{n}" for n in MESA_REQUIRED if f"x64/{n}" not in files]
     if missing:
-        raise SystemExit(f"{asset['name']}: x64/{', '.join(missing)} not found")
-    if "dxil.dll" not in files:
-        print("::warning::Mesa: x64/dxil.dll is missing — the d3d12 driver may not start without it", file=sys.stderr)
+        raise SystemExit(f"{asset['name']}: {', '.join(missing)} not found")
+    for a in MESA_ARCHES:
+        if f"{a}/dxil.dll" not in files:
+            print(f"::warning::Mesa: {a}/dxil.dll is missing — the d3d12 driver may not start without it",
+                  file=sys.stderr)
+        if any(f"{a}/{n}" not in files for n in MESA_REQUIRED):
+            print(f"::warning::Mesa: no {a} build — OpenGL games of that bitness get no Mesa", file=sys.stderr)
     man = {"mesa": ver, "source": f"https://github.com/{MESA_REPO}/releases/tag/{rel.get('tag_name')}",
            "archive": asset["name"], "archive_sha256": h.hexdigest(), "files": files}
     os.makedirs(out_dir, exist_ok=True)
-    out = os.path.join(out_dir, f"OptimaX-Mesa-{ver}-x64.zip")
+    out = os.path.join(out_dir, f"OptimaX-Mesa-{ver}.zip")
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("mesa.json", json.dumps(man, indent=1))
         z.writestr("README.txt", f"Mesa {ver} (https://mesa3d.org, MIT license: https://docs.mesa3d.org/license.html)\n"
                                  f"built by {man['source']}\n"
                                  "OptimaX uses it on PCs with a mining graphics card (no video outputs) so that OpenGL "
                                  "games and the OptimaX GPU test render on that card via the d3d12 driver.\n")
-        for n in files:
-            z.write(os.path.join(x64, n), n)
+        for key in files:
+            z.write(os.path.join(out_dir_x, *key.split("/")), key)
     return out
 
 

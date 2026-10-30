@@ -190,6 +190,7 @@ jobs:
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          OPTIMAX_MESA_TAG: "26.2.0"  # закріплена версія: зміни в mesa-dist-win не мають ламати релізи OptimaX
         run: |
           $zip = python packaging/release.py mesa Output | Select-Object -Last 1
           if ($LASTEXITCODE) { exit $LASTEXITCODE }

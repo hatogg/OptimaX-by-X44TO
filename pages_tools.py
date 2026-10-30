@@ -133,7 +133,7 @@ class MiningGameRow(QFrame):
         tv.addWidget(self.status)
         h.addLayout(tv, 1)
         self.mesa_btn = button("", "ghost", lambda: card.toggle_mesa(self))
-        self.mesa_btn.setVisible(bool(MG.gl_folders(g)))
+        self.mesa_btn.setVisible(bool(MG.gl_targets(g)))
         h.addWidget(self.mesa_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         self.sync()
 
@@ -157,10 +157,12 @@ class MiningGameRow(QFrame):
                 parts.append(tr("mg.st.kept"))
             else:
                 parts.append(tr("mg.st.free"))
-            if st["gl"]:
+            if st["gl"] > st["gl_na"]:
                 parts.append(tr("mg.st.gl_on", gpu=gpu) if st["mesa"] else tr("mg.st.gl", gpu=gpu))
                 if not st["mesa"]:
                     color = "warn"
+            if st["gl_na"]:
+                parts.append(tr("mg.st.gl_na"))
             if st["dx9"]:
                 parts.append(tr("mg.st.dx9"))
         self.status.setText(" · ".join(parts))
@@ -226,7 +228,14 @@ class MiningCard(QFrame):
         m["auto"] = on
         F.CFG["mining"] = m
         if on:
+            MG.mark_scan(F.CFG)  # інакше фонова перевірка за мить запустила б той самий пошук удруге
             self.scan()
+
+    def _busy(self, res) -> bool:
+        if isinstance(res, dict) and res.get("busy"):
+            self.main.toast(tr("mg.busy").strip(), "warn")
+            return True
+        return False
 
     def sync_mesa(self):
         info = MG.mesa_info()
@@ -260,10 +269,13 @@ class MiningCard(QFrame):
         def job(log, p):
             games = MG.discover()
             res = MG.assign(log, hw, games)
-            res.update(list=games, scanned=True)
+            if not res.get("busy"):
+                res.update(list=games, scanned=True)
             return res
 
         def done(res):
+            if self._busy(res):
+                return
             self._listed(res)
             if isinstance(res, dict) and not res.get("error"):
                 self.main.toast(tr("mg.done", gpu=self.gpu, n=res.get("assigned", 0) + res.get("already", 0)))
@@ -272,8 +284,8 @@ class MiningCard(QFrame):
     def revert(self):
         if not Ask.ask(self, tr("mg.revert"), tr("mg.revert_q"), tr("mg.revert"), "danger"):
             return
-        self.main.run_quick(tr("mg.revert"), lambda log, p: MG.revert(log), busy=self.btn_revert,
-                            on_done=lambda _r: self.refresh_rows(), ok_msg=tr("mg.reverted"))
+        self.main.run_quick(tr("mg.revert"), lambda log, p: MG.revert(log), busy=self.btn_revert, silent=True,
+                            on_done=lambda r: self._busy(r) or (self.refresh_rows(), self.main.toast(tr("mg.reverted"))))
 
     def get_mesa(self):
         self.main.run_quick(tr("mg.mesa_get"), lambda log, p: MG.install_mesa(log, p), busy=self.btn_mesa,
@@ -281,9 +293,10 @@ class MiningCard(QFrame):
 
     def toggle_mesa(self, row: MiningGameRow):
         g = row.g
+        # після завершення оновлюємо всі рядки, а не цей: пошук міг тим часом перебудувати список і видалити його
         if MG.game_status(g)["mesa"]:
             self.main.run_quick(g["name"], lambda log, p: MG.disable_mesa(g, log), busy=row.mesa_btn,
-                                on_done=lambda _r: row.sync())
+                                on_done=lambda r: self._busy(r) or self.refresh_rows())
             return
         if not MG.mesa_info():
             self.main.toast(tr("mg.mesa_need"), "warn")
@@ -292,7 +305,7 @@ class MiningCard(QFrame):
             return
         hw = self.hw
         self.main.run_quick(g["name"], lambda log, p: MG.enable_mesa(g, log, hw), busy=row.mesa_btn,
-                            on_done=lambda _r: row.sync())
+                            on_done=lambda r: self._busy(r) or self.refresh_rows())
 
 
 class GamesPage(QWidget):

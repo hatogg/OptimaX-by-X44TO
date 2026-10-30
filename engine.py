@@ -823,9 +823,11 @@ def exec_op(op, ctx: Ctx) -> None:
         if DRY_RUN:
             log(f"  [dry-run] copy {os.path.basename(src)} → {dest}")
             return
+        tmp = dest + ".optimax-tmp"
+        if os.path.exists(tmp):  # залишок попередньої спроби, перерваної аварією
+            os.remove(tmp)
         if bak:
             os.replace(dest, bak)
-        tmp = dest + ".optimax-tmp"
         shutil.copyfile(src, tmp)
         os.replace(tmp, dest)
     elif k == "fn":
@@ -881,10 +883,16 @@ def _undo_record(rec: dict, log: Callable, deferred: set = None) -> None:
 
 def _undo_file(rec: dict, log: Callable) -> None:
     path, bak = rec["p"], rec.get("bak")
+    tmp = path + ".optimax-tmp"
+    if os.path.exists(tmp):
+        os.remove(tmp)
     if os.path.exists(path):
         if rec.get("sha") and file_sha256(path) != rec["sha"]:
-            # файл уже не наш (гра оновилася й поклала свій) — не чіпаємо його; нашу резервну копію лишаємо
+            # файл уже не наш: гра оновилася й поклала свій. Його не чіпаємо, а відкладена нами стара версія файлу
+            # гри більше не потрібна — прибираємо, щоб не лишалася в папці гри без жодного запису
             log(tr("e.file_changed", path=path))
+            if bak and os.path.exists(bak):
+                os.remove(bak)
             return
         os.remove(path)  # гра запущена й тримає бібліотеку — помилка, запис лишиться в журналі до наступної спроби
     if bak and os.path.exists(bak):

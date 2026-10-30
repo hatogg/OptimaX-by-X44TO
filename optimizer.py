@@ -439,8 +439,10 @@ class Main(QWidget):
         # частота екрана від живлення
         if self.hw and self.hw.get("battery"):
             self.rfp.tick(F.CFG["refresh_power"], LOG.write)
-        # майнінгова карта: нові ігри — на неї (раз на 15 хвилин, якщо ввімкнено)
-        if self.hw and MG.active(self.hw) and MG.auto_due(F.CFG):
+        # майнінгова карта: нові ігри — на неї (раз на 15 хвилин, якщо ввімкнено). Лише коли нічого іншого не
+        # працює: оптимізація, відкат чи розумна оптимізація пишуть той самий журнал відкату
+        if (self.hw and MG.active(self.hw) and MG.auto_due(F.CFG) and not self._workers and not MG.busy()
+                and QApplication.activeModalWidget() is None and not E.JOURNAL.op()):
             MG.mark_scan(F.CFG)
             hw = self.hw
             card = self.pages["games"].mining
@@ -448,7 +450,8 @@ class Main(QWidget):
             def job(log, p):
                 games = MG.discover()
                 res = MG.assign(log, hw, games)
-                res.update(list=games, scanned=True)
+                if not res.get("busy"):
+                    res.update(list=games, scanned=True)
                 return res
             self.run_quick(tr("mg.title", gpu=MG.model(hw)), job, silent=True,
                            on_done=lambda r: card._listed(r) if card else None)

@@ -9,19 +9,23 @@ OptimaX — ігри на майнінговій відеокарті (P106 / P1
   знаходить встановлені ігри (Steam, Epic, GOG, Ubisoft і «Мої ігри») і призначає кожен їхній exe — з відкатом через
   журнал. Значення, яке вже хтось задав (користувач у «Графіці» чи «Мої ігри»), не чіпаємо.
 • DirectX 9 і Adobe AIR. На пропатчених драйверах такі ігри на майнінговій карті можуть давати синій екран
-  (dxgmms1.sys), тож лишаємо їх на вбудованій графіці.
+  (dxgmms1.sys), тож лишаємо їх на вбудованій графіці. DirectX 9 видно з таблиці імпорту exe або з бібліотек рушія
+  поруч (Source: bin\\shaderapidx9.dll).
 • OpenGL. Налаштування «Графіка» Windows на OpenGL не діє: вікно малює та карта, що виводить картинку. Обхід —
   Mesa (pal1000/mesa-dist-win, драйвер d3d12: OpenGL поверх DirectX 12) у папці гри та змінна
-  MESA_D3D12_DEFAULT_ADAPTER_NAME=NVIDIA, за якою Mesa обирає карту. Лише за згодою, для кожної гри окремо: онлайн-ігри
-  з античитом можуть не пустити гру з чужою opengl32.dll.
+  MESA_D3D12_DEFAULT_ADAPTER_NAME=NVIDIA, за якою Mesa обирає карту. Бібліотеки тієї самої розрядності, що й exe
+  (x64 чи x86). Лише за згодою, для кожної гри окремо: онлайн-ігри з античитом можуть не пустити гру з чужою
+  opengl32.dll.
 
-Mesa не входить в інсталятор (десятки мегабайтів): CI перепаковує збірку mesa-dist-win у OptimaX-Mesa-<версія>-x64.zip
-і викладає її в реліз OptimaX поруч із SHA256SUMS.txt. Програма завантажує архів лише після перевірки суми й
-розпаковує в ProgramData (туди звичайні програми не пишуть), звідки копіює бібліотеки в папки ігор і звідки їх
-вантажить GPU-тест OptimaX, щоб малювати на майнінговій карті.
+Mesa не входить в інсталятор (десятки мегабайтів): CI перепаковує збірку mesa-dist-win у OptimaX-Mesa-<версія>.zip
+(x64\\ і x86\\ + mesa.json із сумами) і викладає її в реліз OptimaX поруч із SHA256SUMS.txt. Програма завантажує
+архів лише після перевірки суми й розпаковує в ProgramData\\OptimaX\\mesa, доступ до якої лишає тільки
+адміністраторам і SYSTEM (у ProgramData за замовчуванням будь-хто може створювати файли). Перед кожним копіюванням у
+папку гри й перед завантаженням у GPU-тест бібліотеки звіряються із сумами з mesa.json.
 """
 from __future__ import annotations
 
+import functools
 import glob
 import hashlib
 import json
@@ -29,6 +33,7 @@ import ntpath
 import os
 import re
 import shutil
+import threading
 import time
 import zipfile
 
@@ -46,8 +51,27 @@ ENV_KEY = r"HKCU\Environment"
 ENV_ID = "mining:mesa_env"
 MESA_FILES = ("opengl32.dll", "libgallium_wgl.dll", "libglapi.dll", "dxil.dll")
 MESA_REQUIRED = ("opengl32.dll", "libgallium_wgl.dll")
-MESA_ASSET_RE = re.compile(r"^OptimaX-Mesa-([\d.]+)-x64\.zip$", re.I)
+MESA_ARCHES = ("x64", "x86")
+MACHINES = {0x8664: "x64", 0x14C: "x86"}  # ARM64 та інші — без Mesa
+MESA_ASSET_RE = re.compile(r"^OptimaX-Mesa-(\d+(?:\.\d+)*)\.zip$", re.I)
+VERSION_RE = re.compile(r"^\d+(?:\.\d+){0,3}$")
 DEMO_MESA = "26.2.0"
+
+_LOCK = threading.Lock()  # одна зміна за раз: кнопки, фонова перевірка й Mesa пишуть той самий журнал відкату
+
+
+def _exclusive(fn):
+    @functools.wraps(fn)
+    def run(*a, **kw):
+        if not _LOCK.acquire(blocking=False):
+            log = next((x for x in a if callable(x)), kw.get("log")) or (lambda *_: None)
+            log(tr("mg.busy"))
+            return {"busy": True}
+        try:
+            return fn(*a, **kw)
+        finally:
+            _LOCK.release()
+    return run
 
 
 def _dir(p: str) -> str:
@@ -71,7 +95,7 @@ def model(hw: dict) -> str:
     return (hw or {}).get("mining_gpu") or "GPU"
 
 
-# ───────────────────────── exe: що він імпортує ─────────────────────────
+# ───────────────────────── exe: розрядність і що він імпортує ─────────────────────────
 def _u16(b: bytes, o: int) -> int:
     return int.from_bytes(b[o:o + 2], "little")
 
@@ -80,18 +104,19 @@ def _u32(b: bytes, o: int) -> int:
     return int.from_bytes(b[o:o + 4], "little")
 
 
-def pe_imports(path: str) -> set:
-    """Імена DLL із таблиць імпорту exe (звичайної й відкладеної), у нижньому регістрі. Порожньо — не PE або не
-    вдалося прочитати. Читаємо лише заголовки й самі таблиці, а не весь файл: exe ігор бувають по сотні мегабайтів."""
+def pe_info(path: str) -> tuple:
+    """-> (машина: "x64" | "x86" | "" — інша чи не PE, імена DLL із таблиць імпорту — звичайної й відкладеної, у
+    нижньому регістрі). Читаємо лише заголовки й самі таблиці, а не весь файл: exe ігор бувають по сотні мегабайтів."""
     try:
         with open(path, "rb") as f:
             head = f.read(1 << 16)
             if head[:2] != b"MZ" or len(head) < 0x40:
-                return set()
+                return "", set()
             pe = _u32(head, 0x3C)
             if pe + 264 > len(head) or head[pe:pe + 4] != b"PE\0\0":
-                return set()
+                return "", set()
             coff = pe + 4
+            machine = MACHINES.get(_u16(head, coff), "")
             nsec, opt_size = _u16(head, coff + 2), _u16(head, coff + 16)
             opt = coff + 20
             magic = _u16(head, opt)
@@ -100,7 +125,7 @@ def pe_imports(path: str) -> set:
             elif magic == 0x10B:
                 dd = opt + 96
             else:
-                return set()
+                return machine, set()
             ndd = _u32(head, dd - 4)
             secs = []
             for i in range(min(nsec, 96)):
@@ -148,25 +173,48 @@ def pe_imports(path: str) -> set:
                     if _u32(blob, i) & 1 and _u32(blob, i + 4):
                         out.add(name(_u32(blob, i + 4)))
             out.discard("")
-            return out
+            return machine, out
     except (OSError, ValueError, IndexError):
-        return set()
+        return "", set()
+
+
+def pe_imports(path: str) -> set:
+    return pe_info(path)[1]
 
 
 DX10_PLUS = {"d3d10.dll", "d3d10_1.dll", "d3d11.dll", "d3d12.dll", "dxgi.dll"}
 DX9_DLL = re.compile(r"(d3d9|dx9)", re.I)  # shaderapidx9.dll, rendersystem_dx9.dll… — рушій вантажить d3d9 сам
+ENGINE_DIRS = ("", "bin", os.path.join("bin", "x64"), os.path.join("bin", "win64"))  # Source: hl2.exe + bin\*.dll
+
+
+def engine_dlls(folder: str) -> tuple:
+    """Бібліотеки рушія поруч з exe і в його bin\\ (так лежать ігри на Source: hl2.exe, csgo.exe, left4dead2.exe)."""
+    out = []
+    for sub in ENGINE_DIRS:
+        try:
+            out += [f for f in os.listdir(os.path.join(folder, sub)) if f.lower().endswith(".dll")]
+        except OSError:
+            pass
+    return tuple(out)
+
+
+def classify(path: str, sibling_dlls: tuple = ()) -> dict:
+    """-> {path, api, arch}. api: dx9 — DirectX 9 (на майнінговій карті ризик синього екрана); gl — OpenGL;
+    other — решта (DX10+, Vulkan…). arch: x64 / x86 / "" — для якої Mesa підходить exe."""
+    arch, imps = pe_info(path)
+    if "d3d9.dll" in imps and not imps & DX10_PLUS:
+        api = "dx9"
+    elif "opengl32.dll" in imps:
+        api = "gl"
+    elif not imps & DX10_PLUS and any(DX9_DLL.search(d) for d in sibling_dlls):
+        api = "dx9"
+    else:
+        api = "other"
+    return dict(path=path, api=api, arch=arch)
 
 
 def api_of(path: str, sibling_dlls: tuple = ()) -> str:
-    """dx9 — DirectX 9 (на майнінговій карті ризик синього екрана); gl — OpenGL; other — решта (DX10+, Vulkan…)."""
-    imps = pe_imports(path)
-    if "d3d9.dll" in imps and not imps & DX10_PLUS:
-        return "dx9"
-    if "opengl32.dll" in imps:
-        return "gl"
-    if not imps & DX10_PLUS and any(DX9_DLL.search(d) for d in sibling_dlls):
-        return "dx9"
-    return "other"
+    return classify(path, sibling_dlls)["api"]
 
 
 # ───────────────────────── Steam: формат VDF ─────────────────────────
@@ -237,7 +285,8 @@ def steam_games(root: str = None) -> list:
         if lib.lower() in seen:
             continue
         seen.add(lib.lower())
-        for acf in sorted(glob.glob(os.path.join(lib, "steamapps", "appmanifest_*.acf"))):
+        pattern = os.path.join(glob.escape(os.path.join(lib, "steamapps")), "appmanifest_*.acf")  # «D:\Games [SSD]»
+        for acf in sorted(glob.glob(pattern)):
             st = vdf_parse(_read(acf, 1 << 20)).get("appstate") or {}
             appid, name, inst = str(st.get("appid") or ""), st.get("name") or "", st.get("installdir") or ""
             if not inst or appid in STEAM_SKIP_IDS or STEAM_SKIP_NAME.search(name):
@@ -252,7 +301,7 @@ def epic_games(folder: str = None) -> list:
     folder = folder or os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "Epic", "EpicGamesLauncher",
                                     "Data", "Manifests")
     out = []
-    for item in sorted(glob.glob(os.path.join(folder, "*.item"))):
+    for item in sorted(glob.glob(os.path.join(glob.escape(folder), "*.item"))):
         try:
             m = json.loads(_read(item, 1 << 20))
         except ValueError:
@@ -317,20 +366,26 @@ SKIP_EXE = re.compile(
 
 def scan_exes(folder: str) -> list:
     """exe гри в папці (до MAX_DEPTH рівнів), без інсталяторів, перерозподілюваних пакетів і звітів про збої.
-    -> [{path, api}] — спершу ближчі до кореня."""
+    -> [{path, api, arch}] — спершу ближчі до кореня."""
     found = []
     root_depth = folder.rstrip("\\/").count(os.sep)
     for dp, dns, fns in os.walk(folder):
         depth = dp.rstrip("\\/").count(os.sep) - root_depth
         dns[:] = sorted(d for d in dns if d.lower() not in SKIP_DIRS and depth < MAX_DEPTH)
-        dlls = tuple(f for f in fns if f.lower().endswith(".dll"))
         for fn in sorted(fns):
             if fn.lower().endswith(".exe") and not SKIP_EXE.match(fn):
-                found.append((depth, os.path.join(dp, fn), dlls))
+                found.append((depth, os.path.join(dp, fn)))
         if len(found) > MAX_EXES * 4:
             break
     found.sort(key=lambda x: (x[0], x[1].lower()))
-    return [dict(path=p, api=api_of(p, dlls)) for _, p, dlls in found[:MAX_EXES]]
+    dlls: dict = {}
+    out = []
+    for _, p in found[:MAX_EXES]:
+        d = os.path.dirname(p)
+        if d not in dlls:
+            dlls[d] = engine_dlls(d)
+        out.append(classify(p, dlls[d]))
+    return out
 
 
 def _risky_folder(folder: str) -> str:
@@ -341,7 +396,7 @@ def _risky_folder(folder: str) -> str:
 
 
 def discover() -> list:
-    """Встановлені ігри з exe й тим, що вони використовують. -> [{name, store, dir, exes: [{path, api}], risk}]"""
+    """Встановлені ігри з exe й тим, що вони використовують. -> [{name, store, dir, exes: [{path, api, arch}], risk}]"""
     if not E.IS_WIN:
         return demo_games()
     games, seen = [], set()
@@ -356,12 +411,12 @@ def discover() -> list:
                 continue
             seen.add(key)
             if "exes" in g:
-                g["exes"] = [dict(path=p, api=api_of(p)) for p in g["exes"]]
+                g["exes"] = [classify(p, engine_dlls(os.path.dirname(p))) for p in g["exes"]]
             else:
                 g["exes"] = scan_exes(g["dir"])
                 main = g.get("main") or ""
                 if main and os.path.isfile(main) and not any(x["path"].lower() == main.lower() for x in g["exes"]):
-                    g["exes"].insert(0, dict(path=main, api=api_of(main)))
+                    g["exes"].insert(0, classify(main, engine_dlls(os.path.dirname(main))))
             g["risk"] = _risky_folder(g["dir"])
             if g["exes"]:
                 games.append(g)
@@ -372,16 +427,17 @@ def demo_games() -> list:
     root = r"C:\Program Files (x86)\Steam\steamapps\common"
     return [
         dict(name="Counter-Strike 2", store="steam", dir=root + r"\Counter-Strike Global Offensive", risk="",
-             exes=[dict(path=root + r"\Counter-Strike Global Offensive\game\bin\win64\cs2.exe", api="other")]),
+             exes=[dict(path=root + r"\Counter-Strike Global Offensive\game\bin\win64\cs2.exe", api="other",
+                        arch="x64")]),
         dict(name="Fortnite", store="epic", dir=r"C:\Program Files\Epic Games\Fortnite", risk="",
              exes=[dict(path=r"C:\Program Files\Epic Games\Fortnite\FortniteGame\Binaries\Win64\FortniteClient-Win64-"
-                             r"Shipping.exe", api="other"),
+                             r"Shipping.exe", api="other", arch="x64"),
                    dict(path=r"C:\Program Files\Epic Games\Fortnite\FortniteGame\Binaries\Win64\FortniteLauncher.exe",
-                        api="other")]),
+                        api="other", arch="x64")]),
         dict(name="Half-Life", store="steam", dir=root + r"\Half-Life", risk="",
-             exes=[dict(path=root + r"\Half-Life\hl.exe", api="gl")]),
+             exes=[dict(path=root + r"\Half-Life\hl.exe", api="gl", arch="x86")]),
         dict(name="Grand Theft Auto: San Andreas", store="steam", dir=root + r"\Grand Theft Auto San Andreas",
-             risk="", exes=[dict(path=root + r"\Grand Theft Auto San Andreas\gta_sa.exe", api="dx9")]),
+             risk="", exes=[dict(path=root + r"\Grand Theft Auto San Andreas\gta_sa.exe", api="dx9", arch="x86")]),
     ]
 
 
@@ -408,16 +464,36 @@ def gpu_tweak(game: str, exe: str, gpu: str) -> E.Tweak:
     return t
 
 
+def gl_targets(g: dict) -> list:
+    """Куди класти Mesa: [(папка exe, розрядність)] для OpenGL-exe x64 / x86 (бібліотеки — поруч з exe, тієї ж
+    розрядності: 64-бітна opengl32.dll поруч із 32-бітною грою не дасть їй запуститися)."""
+    out = []
+    if g.get("risk"):
+        return out
+    for x in g["exes"]:
+        if x["api"] == "gl" and x.get("arch") in MESA_ARCHES:
+            d = _dir(x["path"])
+            if d.lower() not in (o[0].lower() for o in out):
+                out.append((d, x["arch"]))
+    return out
+
+
+def gl_folders(g: dict) -> list:
+    return [d for d, _ in gl_targets(g)]
+
+
 def game_status(g: dict) -> dict:
     """Підсумок для рядка гри: on — скільки exe малює майнінгова карта; kept — вибір користувача; dx9 — лишено на
-    вбудованій; gl — є OpenGL; mesa — Mesa вже в усіх папках з OpenGL-exe."""
-    st = dict(on=0, kept=0, free=0, dx9=0, gl=0, total=len(g["exes"]))
+    вбудованій; gl — OpenGL-exe; gl_na — OpenGL-exe, для якого немає Mesa (ARM64…); mesa — Mesa вже в усіх папках."""
+    st = dict(on=0, kept=0, free=0, dx9=0, gl=0, gl_na=0, total=len(g["exes"]))
     for x in g["exes"]:
         if g.get("risk") or x["api"] == "dx9":
             st["dx9"] += 1
             continue
         if x["api"] == "gl":
             st["gl"] += 1
+            if x.get("arch") not in MESA_ARCHES:
+                st["gl_na"] += 1
         s = exe_state(x["path"])
         st["on" if s == "ours" else "kept" if s == "user" else "free"] += 1
     folders = gl_folders(g)
@@ -425,6 +501,7 @@ def game_status(g: dict) -> dict:
     return st
 
 
+@_exclusive
 def assign(log, hw: dict, games: list = None) -> dict:
     """Призначає всі ще не призначені exe ігор (крім DirectX 9 / Adobe AIR) на майнінгову карту."""
     gpu = model(hw)
@@ -458,6 +535,7 @@ def our_ids() -> list:
     return [tid for tid in E.JOURNAL.newest_first() if tid.startswith(("gpu:", "glmesa:", "mining:"))]
 
 
+@_exclusive
 def revert(log) -> dict:
     ids = our_ids()
     if not ids:
@@ -477,64 +555,120 @@ def mark_scan(cfg) -> None:
     cfg["mining"] = m
 
 
+def busy() -> bool:
+    return _LOCK.locked()
+
+
 # ───────────────────────── Mesa: OpenGL на майнінговій карті ─────────────────────────
 def mesa_root() -> str:
-    """Як і оновлення: OptimaX з правами адміністратора копіює ці бібліотеки в папки ігор і вантажить у GPU-тест,
-    тож вони лежать там, куди звичайні програми писати не можуть."""
+    """OptimaX з правами адміністратора копіює ці бібліотеки в папки ігор і вантажить у GPU-тест — тож вони лежать
+    у ProgramData, і доступ до папки лишаємо тільки адміністраторам і SYSTEM (за замовчуванням у підпапках
+    ProgramData будь-який користувач може створювати файли й папки — підкинути свою «Mesa»)."""
     if E.IS_WIN and not E.DRY_RUN and E.is_admin():
         return os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "OptimaX", "mesa")
     return os.path.join(E.DATA_DIR, "mesa")
+
+
+def _secure(path: str, log=lambda *_: None) -> None:
+    os.makedirs(path, exist_ok=True)
+    if E.IS_WIN and not E.DRY_RUN and E.is_admin():
+        E.run(["icacls", path, "/inheritance:r", "/grant:r", "*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F",
+               "*S-1-5-32-545:(OI)(CI)RX"], 20, log)
 
 
 def _vt(v: str) -> tuple:
     return tuple(int(x) for x in re.findall(r"\d+", v or ""))
 
 
+_HASHES: dict = {}  # шлях -> (розмір, mtime, sha256): mesa_info викликається часто, а бібліотеки — десятки мегабайтів
+
+
+def _sha(path: str) -> str:
+    st = os.stat(path)
+    key = (st.st_size, st.st_mtime_ns)
+    got = _HASHES.get(path)
+    if got and got[:2] == key:
+        return got[2]
+    h = E.file_sha256(path)
+    _HASHES[path] = (*key, h)
+    return h
+
+
+def verified_files(folder: str, arch: str) -> dict:
+    """Бібліотеки Mesa розрядності arch з папки версії, звірені із сумами з її mesa.json: {ім'я: шлях}. Будь-яка
+    невідповідність (файл підмінено, зіпсовано) — {} : такій Mesa не довіряємо зовсім."""
+    try:
+        with open(os.path.join(folder, "mesa.json"), encoding="utf-8") as f:
+            man = json.load(f)
+        files = man.get("files") or {}
+        out = {}
+        for n in MESA_FILES:
+            sha = files.get(f"{arch}/{n}")
+            if not sha:
+                continue
+            p = os.path.join(folder, arch, n)
+            if _sha(p) != str(sha).lower():
+                return {}
+            out[n] = p
+        return out if all(n in out for n in MESA_REQUIRED) else {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
 def mesa_info() -> dict:
-    """Розпакована Mesa: {version, dir, files: {ім'я: sha256}} або None."""
+    """Розпакована й перевірена Mesa: {version, dir, arch: {"x64": {ім'я: шлях}, "x86": {…}}} або None."""
     best = None
-    for man in glob.glob(os.path.join(mesa_root(), "*", "mesa.json")):
+    for man in glob.glob(os.path.join(glob.escape(mesa_root()), "*", "mesa.json")):
+        folder = os.path.dirname(man)
+        ver = os.path.basename(folder)
+        if not VERSION_RE.match(ver):
+            continue  # недорозпакована (*.part) чи чужа папка
         try:
             with open(man, encoding="utf-8") as f:
-                m = json.load(f)
-        except (OSError, ValueError):
+                listed = {k.split("/")[0] for k in (json.load(f).get("files") or {})}
+        except (OSError, ValueError, AttributeError):
             continue
-        folder = os.path.dirname(man)
-        files = {k.lower(): v for k, v in (m.get("files") or {}).items()
-                 if k.lower() in MESA_FILES and os.path.isfile(os.path.join(folder, k))}
-        if not all(f in files for f in MESA_REQUIRED):
-            continue
-        ver = str(m.get("mesa") or os.path.basename(folder))
-        if best is None or _vt(ver) > _vt(best["version"]):
-            best = dict(version=ver, dir=folder, files=files)
+        arches = {a: v for a in MESA_ARCHES if a in listed and (v := verified_files(folder, a))}
+        if len(arches) != len(listed & set(MESA_ARCHES)):
+            continue  # хоч один файл не збігся із сумою — цій версії не довіряємо зовсім
+        if arches and (best is None or _vt(ver) > _vt(best["version"])):
+            best = dict(version=ver, dir=folder, arch=arches)
     return best
 
 
 def install_zip(path: str, log) -> dict:
-    """Розпаковує перевірений архів OptimaX-Mesa-*.zip: лише відомі бібліотеки, кожна — за сумою з mesa.json."""
+    """Розпаковує перевірений архів OptimaX-Mesa-*.zip: лише відомі бібліотеки (x64/…, x86/…), кожна — за сумою з
+    mesa.json усередині архіву."""
+    allowed = {f"{a}/{n}" for a in MESA_ARCHES for n in MESA_FILES}
     with zipfile.ZipFile(path) as z:
         man = json.loads(z.read("mesa.json").decode("utf-8"))
-        version = re.sub(r"[^\d.]", "", str(man.get("mesa") or "")) or "0"
-        dest = os.path.join(mesa_root(), version)
+        version = str(man.get("mesa") or "")
+        if not VERSION_RE.match(version):
+            raise RuntimeError(tr("mg.mesa_bad", name="mesa.json"))
+        root = mesa_root()
+        _secure(root, log)
+        dest = os.path.join(root, version)
         tmp = dest + ".part"
         shutil.rmtree(tmp, ignore_errors=True)
-        os.makedirs(tmp)
         files = {}
         for name, sha in (man.get("files") or {}).items():
-            if name.lower() not in MESA_FILES:  # лише плоскі відомі імена: ні шляхів, ні сторонніх файлів
+            key = name.replace("\\", "/").lower()
+            if key not in allowed:  # лише відомі імена: ні шляхів за межі папки, ні сторонніх файлів
                 continue
             data = z.read(name)
             if hashlib.sha256(data).hexdigest() != str(sha).lower():
                 shutil.rmtree(tmp, ignore_errors=True)
                 raise RuntimeError(tr("mg.mesa_bad", name=name))
-            with open(os.path.join(tmp, name.lower()), "wb") as f:
+            arch, n = key.split("/")
+            os.makedirs(os.path.join(tmp, arch), exist_ok=True)
+            with open(os.path.join(tmp, arch, n), "wb") as f:
                 f.write(data)
-            files[name.lower()] = str(sha).lower()
-    if not all(f in files for f in MESA_REQUIRED):
-        shutil.rmtree(tmp, ignore_errors=True)
-        raise RuntimeError(tr("mg.mesa_bad", name=", ".join(MESA_REQUIRED)))
+            files[key] = str(sha).lower()
     with open(os.path.join(tmp, "mesa.json"), "w", encoding="utf-8") as f:
         json.dump(dict(man, files=files), f, indent=1)
+    if not any(verified_files(tmp, a) for a in MESA_ARCHES):
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise RuntimeError(tr("mg.mesa_bad", name=", ".join(MESA_REQUIRED)))
     shutil.rmtree(dest, ignore_errors=True)
     os.replace(tmp, dest)
     log(tr("mg.mesa_ready", v=version))
@@ -579,28 +713,18 @@ def install_mesa(log, progress=None) -> dict:
 
 def _demo_mesa(log) -> dict:
     dest = os.path.join(mesa_root(), DEMO_MESA)
-    os.makedirs(dest, exist_ok=True)
     files = {}
-    for n in ("opengl32.dll", "libgallium_wgl.dll", "dxil.dll"):
-        data = f"demo {n}".encode()
-        with open(os.path.join(dest, n), "wb") as f:
-            f.write(data)
-        files[n] = hashlib.sha256(data).hexdigest()
+    for arch in MESA_ARCHES:
+        os.makedirs(os.path.join(dest, arch), exist_ok=True)
+        for n in ("opengl32.dll", "libgallium_wgl.dll", "dxil.dll"):
+            data = f"demo {arch} {n}".encode()
+            with open(os.path.join(dest, arch, n), "wb") as f:
+                f.write(data)
+            files[f"{arch}/{n}"] = hashlib.sha256(data).hexdigest()
     with open(os.path.join(dest, "mesa.json"), "w", encoding="utf-8") as f:
         json.dump(dict(mesa=DEMO_MESA, files=files), f)
     log("  [dry-run] " + tr("mg.mesa_ready", v=DEMO_MESA))
     return mesa_info()
-
-
-def gl_folders(g: dict) -> list:
-    """Папки з OpenGL-exe гри (бібліотеки Mesa кладуться саме туди, поруч з exe)."""
-    out = []
-    for x in g["exes"]:
-        if x["api"] == "gl" and not g.get("risk"):
-            d = _dir(x["path"])
-            if d.lower() not in (o.lower() for o in out):
-                out.append(d)
-    return out
 
 
 def env_tweak() -> E.Tweak:
@@ -609,21 +733,24 @@ def env_tweak() -> E.Tweak:
     return t
 
 
-def mesa_tweak(game: str, folder: str, info: dict) -> E.Tweak:
-    ops = [E.FILE(os.path.join(info["dir"], n), _join(folder, n)) for n in MESA_FILES if n in info["files"]]
+def mesa_tweak(game: str, folder: str, files: dict) -> E.Tweak:
+    """files: {ім'я: шлях} — щойно звірені із сумами (verified_files)."""
+    ops = [E.FILE(files[n], _join(folder, n)) for n in MESA_FILES if n in files]
     t = E.Tweak(mesa_id(folder), "game", ops)
     t._title = tr("mg.t_mesa", game=game, folder=_base(folder) or folder)
     return t
 
 
+@_exclusive
 def enable_mesa(g: dict, log, hw: dict) -> dict:
-    """OpenGL-гру — на майнінгову карту через Mesa: бібліотеки в папку гри, змінна з назвою карти, і сам exe — на
-    «Високу продуктивність» (за цим Windows теж ставить карту першою для DirectX 12, на якому працює Mesa)."""
-    info = mesa_info()
+    """OpenGL-гру — на майнінгову карту через Mesa: бібліотеки потрібної розрядності в папку гри, змінна з назвою
+    карти, і сам exe — на «Високу продуктивність» (за цим Windows теж ставить карту першою для DirectX 12)."""
+    info = mesa_info()  # саме тут суми звіряються ще раз — безпосередньо перед копіюванням
     if not info:
         return {"ok": 0, "error": "no_mesa"}
     items = [] if E.JOURNAL.has(ENV_ID) else [env_tweak()]
-    items += [mesa_tweak(g["name"], f, info) for f in gl_folders(g) if not E.JOURNAL.has(mesa_id(f))]
+    items += [mesa_tweak(g["name"], d, info["arch"][a]) for d, a in gl_targets(g)
+              if a in info["arch"] and not E.JOURNAL.has(mesa_id(d))]
     items += [gpu_tweak(g["name"], x["path"], model(hw)) for x in g["exes"]
               if x["api"] == "gl" and exe_state(x["path"]) == "free"]
     if not items:
@@ -633,6 +760,7 @@ def enable_mesa(g: dict, log, hw: dict) -> dict:
     return res
 
 
+@_exclusive
 def disable_mesa(g: dict, log) -> dict:
     ids = [mesa_id(f) for f in gl_folders(g) if E.JOURNAL.has(mesa_id(f))]
     res = E.undo_ids(ids, log, by="mining") if ids else {"undone": 0}
@@ -642,8 +770,8 @@ def disable_mesa(g: dict, log) -> dict:
 
 
 def bench_mesa(hw: dict) -> str:
-    """Папка Mesa для GPU-тесту OptimaX (він на OpenGL) — щоб тест малювала майнінгова карта, а не вбудована."""
+    """Папка версії Mesa для GPU-тесту OptimaX (він на OpenGL, x64) — щоб тест малювала майнінгова карта."""
     if not active(hw) or not E.IS_WIN:
         return ""
     info = mesa_info()
-    return info["dir"] if info else ""
+    return info["dir"] if info and "x64" in info["arch"] else ""
