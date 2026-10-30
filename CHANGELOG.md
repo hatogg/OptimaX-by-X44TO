@@ -2,7 +2,9 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
-## [Unreleased]
+## [6.4.2] — 2026-10-30
+
+GPU-тест без обмеження FPS частотою монітора.
 
 ### Змінено
 
@@ -17,7 +19,7 @@
 <details>
 <summary>English</summary>
 
-**The fullscreen GPU test is no longer capped at 60 FPS.** Windows presented the fullscreen test window bypassing composition, and the driver synced frames to the monitor refresh rate even though the test turns vsync off: 100+ FPS in a window, exactly 60 in fullscreen. The window now stays composited (a 1 px border, as Qt recommends), so fullscreen FPS matches windowed. Qt also waited 5 ms before every next frame (which the Windows timer could stretch further), holding back fast GPUs even in a window; the next frame now starts right away. Scores of the fixed test are not compared with older runs, neither in the history nor on the before/after card, so the fix does not look like an optimization gain; the first run after the update is the new baseline. The “How to game on a mining card” tip no longer says FPS is capped by the integrated graphics refresh rate or suggests capping it with RTSS.
+The GPU test without an FPS cap at the monitor refresh rate. **The fullscreen GPU test is no longer capped at 60 FPS.** Windows presented the fullscreen test window bypassing composition, and the driver synced frames to the monitor refresh rate even though the test turns vsync off: 100+ FPS in a window, exactly 60 in fullscreen. The window now stays composited (a 1 px border, as Qt recommends), so fullscreen FPS matches windowed. Qt also waited 5 ms before every next frame (which the Windows timer could stretch further), holding back fast GPUs even in a window; the next frame now starts right away. Scores of the fixed test are not compared with older runs, neither in the history nor on the before/after card, so the fix does not look like an optimization gain; the first run after the update is the new baseline. The “How to game on a mining card” tip no longer says FPS is capped by the integrated graphics refresh rate or suggests capping it with RTSS.
 
 </details>
 
@@ -253,6 +255,7 @@ A safety review of the whole tweak catalogue: ready-made profiles and the wizard
 
 </details>
 
+[6.4.2]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.4.2
 [6.4.1]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.4.1
 [6.4]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.4
 [6.3.5]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.3.5
