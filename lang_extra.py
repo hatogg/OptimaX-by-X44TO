@@ -895,26 +895,29 @@ STRINGS = {
                              "HDMI/DisplayPort cable there and restart the game."),
     "hint.mining.t": ("Як грати на майнінговій карті", "Как играть на майнинговой карте", "How to game on a mining card"),
     "hint.mining.d": ("1. Монітор лишайте в материнській платі — у карти немає виходів, картинку виводить вбудована "
-                      "графіка.\n2. Параметри → Система → Дисплей → Графіка: для кожної гри оберіть «Висока "
-                      "продуктивність» — майнінгову карту.\n3. Драйвер — лише пропатчений (dartraiden/NVIDIA-patcher): "
+                      "графіка.\n2. Ігри треба призначити на майнінгову карту. OptimaX робить це сама: «Ігри» → «Ігри на "
+                      "{model}» → «Знайти й призначити ігри» (вручну — Параметри → Система → Дисплей → Графіка → "
+                      "«Висока продуктивність»).\n3. Драйвер — лише пропатчений (dartraiden/NVIDIA-patcher): "
                       "звичайний з nvidia.com вимкне 3D. Забороніть Windows Update оновлювати драйвери.\n4. Старі ігри "
                       "(DirectX 9, Adobe AIR) на такій карті можуть давати синій екран у dxgmms1.sys — запускайте "
-                      "їх на вбудованій графіці.\n5. Міряйте FPS у самій грі (PresentMon): "
-                      "GPU-тест OptimaX малює вбудована графіка.",
+                      "їх на вбудованій графіці.\n5. OpenGL-ігри (і GPU-тест OptimaX) Windows на майнінгову карту не "
+                      "перемикає — для них є Mesa в тому ж розділі «Ігри».",
                       "1. Монитор оставляйте в материнской плате — у карты нет выходов, картинку выводит встроенная "
-                      "графика.\n2. Параметры → Система → Дисплей → Графика: для каждой игры выберите «Высокая "
-                      "производительность» — майнинговую карту.\n3. Драйвер — только пропатченный "
+                      "графика.\n2. Игры нужно назначить на майнинговую карту. OptimaX делает это сама: «Игры» → «Игры на "
+                      "{model}» → «Найти и назначить игры» (вручную — Параметры → Система → Дисплей → Графика → "
+                      "«Высокая производительность»).\n3. Драйвер — только пропатченный "
                       "(dartraiden/NVIDIA-patcher): обычный с nvidia.com отключит 3D. Запретите Windows Update "
                       "обновлять драйверы.\n4. Старые игры (DirectX 9, Adobe AIR) на такой карте могут давать синий "
-                      "экран в dxgmms1.sys — запускайте их на встроенной графике.\n5. Меряйте FPS в самой игре "
-                      "(PresentMon): GPU-тест OptimaX рисует встроенная графика.",
+                      "экран в dxgmms1.sys — запускайте их на встроенной графике.\n5. OpenGL-игры (и GPU-тест OptimaX) "
+                      "Windows на майнинговую карту не переключает — для них есть Mesa в том же разделе «Игры».",
                       "1. Keep the monitor in the motherboard — the card has no outputs, the integrated graphics "
-                      "display the picture.\n2. Settings → System → Display → Graphics: set each game to “High "
-                      "performance” — the mining card.\n3. Use only the patched driver (dartraiden/NVIDIA-patcher): "
+                      "display the picture.\n2. Games must be assigned to the mining card. OptimaX does it for you: Games → "
+                      "Games on the {model} → Find and assign games (by hand: Settings → System → Display → Graphics → "
+                      "High performance).\n3. Use only the patched driver (dartraiden/NVIDIA-patcher): "
                       "the regular one from nvidia.com disables 3D. Stop Windows Update from updating drivers.\n"
                       "4. Old games (DirectX 9, Adobe AIR) can blue-screen in dxgmms1.sys on such a card — run them "
-                      "on the integrated graphics.\n5. Measure FPS in the game "
-                      "itself (PresentMon): the OptimaX GPU test renders on the integrated graphics."),
+                      "on the integrated graphics.\n5. Windows can't move OpenGL games (or the OptimaX GPU "
+                      "test) to the mining card — use Mesa in the same Games section."),
     "hint.pcie.t": ("Як повернути повну швидкість PCIe", "Как вернуть полную скорость PCIe", "How to restore full PCIe speed"),
     "hint.pcie.d": ("1. Поставте відеокарту у верхній довгий слот, найближчий до процесора.\n2. Якщо є райзер — "
                     "спробуйте без нього.\n3. Вийміть карту, протріть контакти й вставте до клацання.\n4. У BIOS "

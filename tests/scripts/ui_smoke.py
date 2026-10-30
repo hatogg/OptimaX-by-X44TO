@@ -14,6 +14,7 @@ import optimizer as O  # noqa: E402
 import engine as E  # noqa: E402
 import features as F  # noqa: E402
 import gpubench as GB  # noqa: E402
+import mining as MG  # noqa: E402
 import sharecard as SC  # noqa: E402
 import smart_ui as SM  # noqa: E402
 import ui_kit as UK  # noqa: E402
@@ -98,6 +99,32 @@ for key in list(w.nav_keys):
     pump(timeout=0.15)
     shot(w, f"page-{key}")
 steps["pages"] = len(w.nav_keys)
+
+# майнінгова карта без відеовиходів: розділ на сторінці «Ігри» — пошук і призначення ігор, Mesa для OpenGL, відкат
+mc = w.pages["games"].mining
+steps["mining_card"] = mc is not None
+if mc is not None:
+    w.go("games")
+    pump(lambda: len(mc.rows) > 0, 30)
+    mc.scan()
+    pump(lambda: mc.btn_scan.isEnabled() and any(t.startswith("gpu:") for t in MG.our_ids()), 60)
+    pump(timeout=0.3)
+    shot(w, "mining-scanned")
+    mc.get_mesa()
+    pump(lambda: MG.mesa_info() is not None and mc.btn_mesa.text() == UK.tr("mg.mesa_got"), 30)
+    gl_row = next((r for r in mc.rows if MG.gl_folders(r.g)), None)
+    if gl_row:
+        mc.toggle_mesa(gl_row)
+        pump(lambda: MG.game_status(gl_row.g)["mesa"] and gl_row.mesa_btn.isEnabled(), 30)
+    pump(timeout=0.3)
+    shot(w, "mining-mesa")
+    steps["mining"] = {"rows": len(mc.rows), "gpu": sum(t.startswith("gpu:") for t in MG.our_ids()),
+                       "mesa": bool(gl_row and MG.game_status(gl_row.g)["mesa"]),
+                       "texts": [r.status.text() for r in mc.rows],
+                       "bench_note": w.pages["bench"].mesa_note.text()}
+    mc.revert()
+    pump(lambda: not MG.our_ids() and mc.btn_revert.isEnabled(), 60)
+    steps["mining"]["left"] = len(MG.our_ids())
 
 # режими оптимізації: план під демо-залізо → перегляд змін (для «Ігрового» — із замірами)
 w.open_modes()

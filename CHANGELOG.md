@@ -2,6 +2,27 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [Unreleased]
+
+Ігри на майнінговій відеокарті: OptimaX сама переносить їх із вбудованої графіки на P106 / P104 / CMP.
+
+### Додано
+
+- **Ігри на P106-100** (з'являється на сторінці «Ігри», якщо в ПК майнінгова карта без відеовиходів). OptimaX знаходить встановлені ігри (Steam, Epic, GOG, Ubisoft і «Мої ігри») і призначає кожен їхній exe на майнінгову карту — як «Висока продуктивність» у налаштуваннях «Графіка» Windows, тільки для всіх ігор одразу й з відкатом. Ваш власний вибір у «Графіці» не перезаписується. Ігри на DirectX 9 і Adobe AIR лишаються на вбудованій графіці (на майнінгових картах вони дають синій екран). Перемикач «Автоматично призначати нові ігри» перевіряє нові ігри раз на 15 хвилин.
+- **OpenGL через Mesa.** На OpenGL налаштування «Графіка» Windows не діє, тож такі ігри малювала вбудована графіка. Тепер для кожної OpenGL-гри можна ввімкнути Mesa: вона перекладає OpenGL на DirectX 12, і гру малює майнінгова карта. Mesa завантажується одним натисканням з релізу OptimaX (з перевіркою суми), бібліотеки кладуться в папку гри, а файл, що лежав там раніше, відкладається й повертається відкатом (і через OptimaX-Rescue.cmd).
+- **GPU-тест і розумна оптимізація на майнінговій карті.** Коли Mesa завантажена, тест малює P106, а не вбудована графіка. Бали з Mesa порівнюються лише з балами з Mesa.
+
+### Змінено
+
+- Підказка «Як грати на майнінговій карті» веде до нового розділу замість ручного налаштування кожної гри.
+
+<details>
+<summary>English</summary>
+
+Games on a mining graphics card: OptimaX moves them from the integrated graphics to the P106 / P104 / CMP by itself. **Games on the P106-100** (on the Games page when the PC has a mining card without video outputs): OptimaX finds installed games (Steam, Epic, GOG, Ubisoft and My games) and assigns each of their exe files to the mining card — like “High performance” in Windows Graphics settings, but for every game at once and with rollback. Your own Graphics choice is never overwritten. DirectX 9 and Adobe AIR games stay on the integrated graphics (they blue-screen on mining cards). The “Assign new games automatically” switch checks for new games every 15 minutes. **OpenGL via Mesa:** Windows Graphics settings don't apply to OpenGL, so such games used to render on the integrated graphics. Now Mesa can be enabled per OpenGL game: it translates OpenGL to DirectX 12 and the mining card renders the game. Mesa downloads in one click from the OptimaX release (checksum verified), the libraries go into the game folder, and any file already there is set aside and restored by rollback (and by OptimaX-Rescue.cmd). **GPU test and smart optimization on the mining card:** with Mesa downloaded the test renders on the P106 instead of the integrated graphics; Mesa scores are compared only with other Mesa scores. The “How to game on a mining card” tip now points to the new section.
+
+</details>
+
 ## [6.4.2] — 2026-10-30
 
 GPU-тест без обмеження FPS частотою монітора.

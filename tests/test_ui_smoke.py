@@ -25,3 +25,23 @@ def test_main_window(demo, lang):
     assert st["smart"]["measures"] >= 3
     assert st["card"] == [1200, 675]
     assert "ShareDialog" in r["dialogs"] and "SmartDialog" in r["dialogs"]
+
+
+def test_mining_card():
+    """Майнінгова P106-100 (демо): розділ «Ігри на P106-100» — пошук і призначення ігор, Mesa для OpenGL-гри,
+    примітка в GPU-тесті й повний відкат."""
+    if not has_qt():
+        skip("PyQt6 is not installed")
+    if IS_WIN:
+        skip("demo hardware exists only outside Windows")
+    rc, out, r = run_script("ui_smoke.py", "uk", demo="mining", timeout=1500)
+    assert rc == 0 and r, tail(out, 80)
+    assert not r["errors"], "\n".join(r["errors"])
+    assert not r["raw"], r["raw"]
+    st = r["steps"]
+    assert st["mining_card"], "a mining card must get its own section on the Games page"
+    m = st["mining"]
+    assert m["rows"] == 4 and m["gpu"] == 4 and m["mesa"], m
+    assert any("DirectX 9" in t for t in m["texts"]) and any("Mesa" in t for t in m["texts"]), m["texts"]
+    assert "P106-100" in m["bench_note"], m["bench_note"]
+    assert m["left"] == 0, "Revert all must remove every mining change"

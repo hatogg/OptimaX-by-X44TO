@@ -76,6 +76,9 @@ jobs:
           printf '\n---\n\n**Файли · Files:** `OptimaX-Setup-%s.exe` — інсталятор · installer, `OptimaX-%s-portable.exe` — без встановлення · portable, `OptimaX-Rescue.cmd` — аварійний відкат · emergency rollback. Контрольні суми · checksums: `SHA256SUMS.txt`.\n' "$v" "$v" >> notes.md
           # з тегу — реліз саме з нього; з кнопки — тег створюється тут, на перевіреному коміті
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then where=(--verify-tag); else where=(--target "$GITHUB_SHA"); fi
+          # Mesa для майнінгових карт (mining.py): програма завантажує її з релізу лише на ПК з такою картою
+          mesa=(dist/OptimaX-Mesa-*.zip)
+          [ -e "${mesa[0]}" ] || mesa=()
           gh release create "$TAG" "${where[@]}" --title "OptimaX $v" --notes-file notes.md \
             "dist/OptimaX-Setup-$v.exe" "dist/OptimaX-$v-portable.exe" dist/OptimaX-Rescue.cmd \
-            dist/SHA256SUMS.txt "OptimaX-$v-winget-manifests.zip"
+            dist/SHA256SUMS.txt "OptimaX-$v-winget-manifests.zip" "${mesa[@]}"

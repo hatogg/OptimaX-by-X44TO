@@ -223,7 +223,8 @@ def expected_sha256(info: dict, log=lambda *_: None) -> str:
 _VERIFIED: dict = {}  # шлях -> перевірена сума: launch() звіряє файл ще раз безпосередньо перед запуском
 
 
-def download(info: dict, log, progress=None) -> str:
+def download(info: dict, log, progress=None, publisher=None) -> str:
+    """publisher: чий підпис вимагати (None — як у самої OptimaX; "" — лише сума, для архівів без підпису)."""
     import verify as V
     if not E.IS_WIN or E.DRY_RUN:
         for i in range(10):
@@ -280,7 +281,7 @@ def download(info: dict, log, progress=None) -> str:
     log(tr("upd.downloaded"))
     log(tr("vf.checking"))
     try:
-        res = V.check_file(dest + ".part", expected, name=name)
+        res = V.check_file(dest + ".part", expected, publisher=publisher, name=name)
     except V.VerifyError:
         try:
             os.remove(dest + ".part")  # файл, що не пройшов перевірку, не лишаємо на диску

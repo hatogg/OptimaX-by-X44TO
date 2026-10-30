@@ -17,6 +17,7 @@ import abtest as AB
 import engine as E
 import features as F
 import gpubench as GB
+import mining as MG
 import rescue as RS
 from i18n import tr
 from ui_kit import (T, label, button, vbox, hbox, badge, style_badge, Ask, Worker, LOG, append_log, make_font,
@@ -197,7 +198,8 @@ class SmartDialog(QDialog):
             self._measure_game()
             return
         try:
-            self.run = GB.start("ab", "bench", quality="ab", seconds=GB.AB_SECONDS)
+            self.run = GB.start("ab", "bench", quality="ab", seconds=GB.AB_SECONDS,
+                                mesa=MG.bench_mesa(self.main.hw or {}))
         except Exception as e:
             self._fail(str(e))
             return

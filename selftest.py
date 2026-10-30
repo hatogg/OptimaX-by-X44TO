@@ -23,6 +23,7 @@ import traceback
 MODULES = ("engine", "features", "guard", "hardware", "hwnative", "hotkeys", "lifecycle", "monitor", "power", "report",
            "updater", "apps", "netlab", "fpstest", "benchtools", "adblock", "rescue", "abtest", "i18n",
            "lang_ui", "lang_engine", "lang_tweaks", "lang_extra", "lang_setup", "lang_lab", "lang_safe", "lang_v64",
+           "lang_mining", "mining",
            "gpubench", "ui_kit", "pages_optimize", "pages_tools", "pages_extra", "pages_lab", "smart_ui",
            "sharecard", "verify", "baseline", "modes")
 UI_TIMEOUT = 120  # секунд на визначення заліза у вікні

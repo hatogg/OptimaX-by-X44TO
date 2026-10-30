@@ -231,6 +231,15 @@ DEMO_HW = {
                  disks=[("0", "KINGSTON SA400S37240G", "SSD", "SATA", "Healthy", 240, 61, 39, ["C"])],
                  pci=[("NVIDIA GeForce GTX 1660 SUPER", 4, 16, 3, 3, 256)], topo={},
                  thermal=dict(zone=52, passive=100, perf=100, gpu=None)),
+    # майнінгова P106-100 без відеовиходів: монітор у материнській платі, картинку виводить HD 4000
+    "mining": dict(cpu="Intel(R) Core(TM) i5-3570 CPU @ 3.40GHz", cores=4, threads=4, mhz=3400, p_cores=4, e_cores=0,
+                   gpus=[("Intel(R) HD Graphics 4000", 2.0, "2015-11-10"), ("NVIDIA P106-100", 6.0, "2023-04-12")],
+                   ram=[(8, 1600, 1600, 24)] * 2, chassis=[3], disk=("SSD", "SATA", "Kingston A400"), battery=False,
+                   lid=False, aoac=False, refresh=(60, 60), vbs=0, os=("Windows 10 Pro", "19045"), vendor="ASRock",
+                   wifi=False, ethernet=True, display_gpu="Intel(R) HD Graphics 4000",
+                   disks=[("0", "KINGSTON SA400S37480G", "SSD", "SATA", "Healthy", 480, 18, 35, ["C"])],
+                   pci=[("NVIDIA P106-100", 1, 16, 1, 3, 256)], topo={},
+                   thermal=dict(zone=48, passive=100, perf=100, gpu=None)),
 }
 
 

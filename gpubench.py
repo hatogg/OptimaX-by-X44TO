@@ -683,6 +683,26 @@ def _write(path: str, data: dict) -> None:
         pass
 
 
+_MESA_LIBS = []  # підвантажені бібліотеки Mesa: тримаємо посилання, доки живе процес тесту
+
+
+def load_mesa(folder: str) -> bool:
+    """Mesa (mining.py) замість системної opengl32.dll — до того, як Qt її завантажить. Qt просить «opengl32.dll» за
+    іменем, а Windows віддає вже завантажений модуль з таким іменем, звідки б він не був. Так тест OpenGL малює
+    майнінгова карта: Mesa перекладає OpenGL на DirectX 12 і бере адаптер із MESA_D3D12_DEFAULT_ADAPTER_NAME.
+    dxil.dll (підпис шейдерів DirectX 12) драйвер d3d12 теж просить за іменем — тому й її завантажуємо заздалегідь."""
+    if not E.IS_WIN or not folder or not os.path.isfile(os.path.join(folder, "opengl32.dll")):
+        return False
+    try:
+        for name in ("dxil.dll", "libglapi.dll", "libgallium_wgl.dll", "opengl32.dll"):
+            path = os.path.join(folder, name)
+            if os.path.isfile(path):
+                _MESA_LIBS.append(ctypes.WinDLL(path))
+        return True
+    except OSError:
+        return False
+
+
 def keep_composited(hwnd: int) -> bool:
     """Повноекранне OpenGL-вікно Windows виводить в обхід композиції DWM (монопольний показ), і там драйвер
     синхронізує кадри з частотою монітора, хоч ми й просимо swapInterval(0): у вікні 100+ FPS, на весь екран — 60.
@@ -710,7 +730,9 @@ def keep_composited(hwnd: int) -> bool:
 
 
 def run_child(argv) -> int:
-    """Точка входу процесу тесту: OptimaX.exe --gpu-bench --preset=1080p --mode=bench|stress --minutes=N --out=…"""
+    """Точка входу процесу тесту: OptimaX.exe --gpu-bench --preset=1080p --mode=bench|stress --minutes=N --out=…
+    [--mesa=<папка Mesa>] — малювати через Mesa на майнінговій карті (до імпорту Qt, див. load_mesa)."""
+    mesa = load_mesa(_arg(argv, "mesa", ""))
     from PyQt6.QtCore import Qt, QTimer, QRectF
     from PyQt6.QtGui import QGuiApplication, QSurfaceFormat, QPainter, QColor, QFont, QIcon
     from PyQt6.QtOpenGL import QOpenGLWindow
@@ -738,7 +760,7 @@ def run_child(argv) -> int:
     app = QGuiApplication(sys.argv)
     nv = Nvml()
     state = dict(state="starting", preset=preset, mode=mode, minutes=minutes, duration=duration, t=0.0, fps=0.0,
-                 frames=0, errors=0, checks=0, sensors={}, series_fps=[], series_temp=[], series_clock=[])
+                 frames=0, errors=0, checks=0, sensors={}, series_fps=[], series_temp=[], series_clock=[], mesa=mesa)
     _write(out, state)
 
     def font(pt: int, bold: bool = False) -> QFont:
@@ -854,7 +876,8 @@ def run_child(argv) -> int:
                 p.setPen(QColor("#E8ECF6"))
                 p.setFont(font(11, True))
                 p.drawText(QRectF(30, 24, wide - 20, 22), f"OptimaX GPU Test · {preset} · "
-                           f"{tr('gb.mode_bench') if mode == 'bench' else tr('gb.mode_stress')}")
+                           f"{tr('gb.mode_bench') if mode == 'bench' else tr('gb.mode_stress')}"
+                           + (" · Mesa" if mesa else ""))
                 p.setFont(font(10))
                 for i, (text, color) in enumerate(rows):
                     p.setPen(QColor(color))
@@ -897,6 +920,8 @@ def run_child(argv) -> int:
                        renderer=state.get("renderer"), errors=state["errors"], checks=state["checks"], **st)
             if state.get("idle_gpu"):
                 res["idle_gpu"] = state["idle_gpu"]
+            if mesa:
+                res["mesa"] = True
             res["score"] = int(round(st["avg"] * SCORE_K)) if how == "done" and mode == "bench" else None
             if self.temps:
                 res["temp_max"] = max(self.temps)
@@ -978,7 +1003,7 @@ class Run:
     """Запущений тест: читає прогрес із файлу, який пише процес тесту."""
 
     def __init__(self, preset: str, mode: str, minutes: int, fullscreen: bool = False, quality: str = "bench",
-                 seconds: int = 0):
+                 seconds: int = 0, mesa: str = ""):
         import i18n
         self.preset, self.mode, self.minutes = preset, mode, minutes
         self.out = os.path.join(tempfile.gettempdir(), f"optimax-gpubench-{os.getpid()}-{int(time.time() * 1000)}.json")
@@ -987,8 +1012,14 @@ class Run:
                                 f"--seconds={seconds}"]
         if fullscreen:
             cmd.append("--fullscreen")
+        env = None
+        if mesa:  # Mesa сама обере адаптер за назвою: вбудована графіка (часто без DirectX 12) їй не підходить
+            import mining as MG
+            cmd.append(f"--mesa={mesa}")
+            env = dict(os.environ)
+            env.setdefault(MG.ADAPTER_VAR, MG.ADAPTER_NAME)
         here = None if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
-        self.proc = subprocess.Popen(cmd, cwd=here)
+        self.proc = subprocess.Popen(cmd, cwd=here, env=env)
         self.started = time.time()
         self.stopped = False
 
@@ -1030,9 +1061,10 @@ class Run:
                 pass
 
 
-DEMO_FPS = {"gaming": 214.0, "laptop": 96.0, "old": 31.0, "x3d": 251.0, "xeon": 122.0}
+DEMO_FPS = {"gaming": 214.0, "laptop": 96.0, "old": 31.0, "x3d": 251.0, "xeon": 122.0, "mining": 88.0}
 DEMO_GPU = {"gaming": "NVIDIA GeForce RTX 4070", "laptop": "NVIDIA GeForce RTX 4060 Laptop GPU",
-            "old": "AMD Radeon RX 570 Series", "x3d": "AMD Radeon RX 7900 XT", "xeon": "NVIDIA GeForce RTX 3060"}
+            "old": "AMD Radeon RX 570 Series", "x3d": "AMD Radeon RX 7900 XT", "xeon": "NVIDIA GeForce RTX 3060",
+            "mining": "NVIDIA P106-100"}
 DEMO_SCALE = {"1080p": 1.0, "1440p": 0.58, "4k": 0.27, "ab": 1.65}
 # Демо-модель для розумної оптимізації: на ноутбуці максимальний план живлення перегріває процесор
 # і відеокарта скидає частоти — OptimaX має це знайти. Решта змін продуктивності дають трохи приросту.
@@ -1062,8 +1094,9 @@ class DemoRun:
     SPEED = 40.0
 
     def __init__(self, preset: str, mode: str, minutes: int, fullscreen: bool = False, crash: bool = False,
-                 quality: str = "bench", seconds: int = 0):
+                 quality: str = "bench", seconds: int = 0, mesa: str = ""):
         self.preset, self.mode, self.minutes = preset, mode, minutes
+        self.mesa = bool(mesa)
         self.duration = seconds or (BENCH_SECONDS if mode == "bench" else minutes * 60)
         self.started = time.time()
         self.crash = crash
@@ -1107,6 +1140,8 @@ class DemoRun:
             res = dict(state="done", preset=self.preset, mode=self.mode, minutes=self.minutes if self.mode == "stress" else 0,
                        dur=n, gpu=st["gpu"], gl="4.6.0", errors=0, checks=st["checks"], **stt)
             res["score"] = int(round(stt["avg"] * SCORE_K)) if self.mode == "bench" else None
+            if self.mesa:
+                res["mesa"] = True
             if self.nv:
                 res.update(temp_max=max(t for t in temp if t is not None), clock_avg=2595, clock_min=2490,
                            power_max=196.0)
@@ -1129,10 +1164,11 @@ class DemoRun:
         pass
 
 
-def start(preset: str, mode: str, minutes: int = 5, fullscreen: bool = False, quality: str = "bench", seconds: int = 0):
+def start(preset: str, mode: str, minutes: int = 5, fullscreen: bool = False, quality: str = "bench", seconds: int = 0,
+          mesa: str = ""):
     if not E.IS_WIN:
-        return DemoRun(preset, mode, minutes, fullscreen, quality=quality, seconds=seconds)
-    return Run(preset, mode, minutes, fullscreen, quality=quality, seconds=seconds)
+        return DemoRun(preset, mode, minutes, fullscreen, quality=quality, seconds=seconds, mesa=mesa)
+    return Run(preset, mode, minutes, fullscreen, quality=quality, seconds=seconds, mesa=mesa)
 
 
 # ───────────────────────── історія результатів ─────────────────────────
@@ -1142,6 +1178,8 @@ def same_gpu(a: dict, b: dict) -> bool:
     if not (ga and gb):
         return True  # невідомо — як раніше
     if bool(a.get("idle_gpu")) != bool(b.get("idle_gpu")):
+        return False
+    if bool(a.get("mesa")) != bool(b.get("mesa")):  # OpenGL через Mesa повільніший за рідний драйвер
         return False
     return ga == gb
 

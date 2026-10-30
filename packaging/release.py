@@ -7,6 +7,8 @@ OptimaX — допоміжний скрипт збірки релізу.
     python packaging/release.py buildinfo            — buildinfo.py: репозиторій оновлень (DEFAULT_REPO або OPTIMAX_UPDATE_REPO),
                                                        коміт і дата збірки (у CI беруться з GitHub Actions)
     python packaging/release.py checksums <файли…>   — SHA256SUMS.txt для релізу
+    python packaging/release.py mesa <папка>         — OptimaX-Mesa-<версія>-x64.zip для майнінгових карт (mining.py):
+                                                       x64-бібліотеки з релізу pal1000/mesa-dist-win + mesa.json
 
 Версія береться лише з engine.py (VERSION = "..."), тож змінювати її треба в одному місці.
 """
@@ -161,6 +163,84 @@ def write_buildinfo() -> str:
     return path
 
 
+MESA_REPO = "pal1000/mesa-dist-win"
+MESA_ASSET = re.compile(r"^mesa3d-([\d.]+)-release-msvc\.7z$", re.I)
+MESA_FILES = ("opengl32.dll", "libgallium_wgl.dll", "libglapi.dll", "dxil.dll")  # як у mining.MESA_FILES
+MESA_REQUIRED = ("opengl32.dll", "libgallium_wgl.dll")
+
+
+def _get(url: str, api: bool = False):
+    import urllib.request
+    headers = {"User-Agent": "OptimaX-build"}
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if api:
+        headers["Accept"] = "application/vnd.github+json"
+        if token:  # без токена API GitHub на спільних раннерах швидко впирається в ліміт запитів
+            headers["Authorization"] = f"Bearer {token}"
+    return urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=120)
+
+
+def _seven_zip() -> str:
+    import shutil
+    for p in (shutil.which("7z"), shutil.which("7za"), r"C:\Program Files\7-Zip\7z.exe"):
+        if p and os.path.exists(p):
+            return p
+    raise SystemExit("7-Zip not found (7z / 7za)")
+
+
+def build_mesa(out_dir: str) -> str:
+    """Перепаковує Mesa для майнінгових карт: драйвер d3d12 (OpenGL поверх DirectX 12) з релізу mesa-dist-win.
+    OPTIMAX_MESA_TAG=<тег> — конкретний реліз (за замовчуванням останній). Сума архіву звіряється з digest GitHub."""
+    import json
+    import subprocess
+    import tempfile
+    import zipfile
+    tag = os.environ.get("OPTIMAX_MESA_TAG", "").strip()
+    with _get(f"https://api.github.com/repos/{MESA_REPO}/releases/" + (f"tags/{tag}" if tag else "latest"), True) as r:
+        rel = json.load(r)
+    asset = next((a for a in rel.get("assets") or [] if MESA_ASSET.match(a.get("name") or "")), None)
+    if not asset:
+        raise SystemExit(f"{MESA_REPO} {rel.get('tag_name')}: no *-release-msvc.7z asset")
+    ver = MESA_ASSET.match(asset["name"]).group(1)
+    work = tempfile.mkdtemp(prefix="mesa_")
+    arc = os.path.join(work, asset["name"])
+    h = hashlib.sha256()
+    with _get(asset["browser_download_url"]) as r, open(arc, "wb") as f:
+        for chunk in iter(lambda: r.read(1 << 20), b""):
+            h.update(chunk)
+            f.write(chunk)
+    digest = str(asset.get("digest") or "")
+    if digest.lower().startswith("sha256:") and digest[7:].lower() != h.hexdigest():
+        raise SystemExit(f"{asset['name']}: SHA-256 differs from the GitHub digest")
+    x64 = os.path.join(work, "x64")
+    subprocess.run([_seven_zip(), "e", arc, f"-o{x64}", "-y"] + [f"x64/{n}" for n in MESA_FILES],
+                   check=False, stdout=subprocess.DEVNULL)
+    files = {}
+    for n in MESA_FILES:
+        p = os.path.join(x64, n)
+        if os.path.isfile(p):
+            with open(p, "rb") as f:
+                files[n] = hashlib.sha256(f.read()).hexdigest()
+    missing = [n for n in MESA_REQUIRED if n not in files]
+    if missing:
+        raise SystemExit(f"{asset['name']}: x64/{', '.join(missing)} not found")
+    if "dxil.dll" not in files:
+        print("::warning::Mesa: x64/dxil.dll is missing — the d3d12 driver may not start without it", file=sys.stderr)
+    man = {"mesa": ver, "source": f"https://github.com/{MESA_REPO}/releases/tag/{rel.get('tag_name')}",
+           "archive": asset["name"], "archive_sha256": h.hexdigest(), "files": files}
+    os.makedirs(out_dir, exist_ok=True)
+    out = os.path.join(out_dir, f"OptimaX-Mesa-{ver}-x64.zip")
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("mesa.json", json.dumps(man, indent=1))
+        z.writestr("README.txt", f"Mesa {ver} (https://mesa3d.org, MIT license: https://docs.mesa3d.org/license.html)\n"
+                                 f"built by {man['source']}\n"
+                                 "OptimaX uses it on PCs with a mining graphics card (no video outputs) so that OpenGL "
+                                 "games and the OptimaX GPU test render on that card via the d3d12 driver.\n")
+        for n in files:
+            z.write(os.path.join(x64, n), n)
+    return out
+
+
 def write_checksums(paths) -> str:
     out = os.path.join(ROOT, "Output", "SHA256SUMS.txt")
     os.makedirs(os.path.dirname(out), exist_ok=True)
@@ -186,6 +266,8 @@ if __name__ == "__main__":
         print(write_buildinfo())
     elif cmd == "checksums" and len(sys.argv) > 2:
         print(write_checksums(sys.argv[2:]))
+    elif cmd == "mesa" and len(sys.argv) > 2:
+        print(build_mesa(sys.argv[2]))
     else:
         print(__doc__)
         sys.exit(1)

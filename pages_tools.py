@@ -21,6 +21,7 @@ import hardware as H
 import hotkeys as HK
 import i18n
 import lifecycle as L
+import mining as MG
 import power as PW
 import report as RP
 import updater as U
@@ -111,6 +112,189 @@ class GameRow(QFrame):
         self.chips["cores"].setToolTip(tr(f"games.opt.cores.tip.{mode}") if mode else tr("games.opt.cores.na"))
 
 
+class MiningGameRow(QFrame):
+    """Гра в розділі «Ігри на майнінговій карті»: що з нею зроблено, а для OpenGL — перемикач Mesa."""
+
+    def __init__(self, g: dict, card):
+        super().__init__()
+        self.g, self.card = g, card
+        self.setObjectName("row")
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        h = hbox(self, (14, 9, 14, 9), 10)
+        self.dot = dot(T["mute"], 9)
+        h.addWidget(self.dot, 0, Qt.AlignmentFlag.AlignTop)
+        tv = vbox(spacing=1)
+        top = hbox(spacing=8)
+        top.addWidget(label(g["name"], "rowTitle"))
+        top.addWidget(badge(tr(f"mg.store.{g['store']}"), "muted"))
+        top.addStretch()
+        tv.addLayout(top)
+        self.status = label("", "desc", wrap=True)
+        tv.addWidget(self.status)
+        h.addLayout(tv, 1)
+        self.mesa_btn = button("", "ghost", lambda: card.toggle_mesa(self))
+        self.mesa_btn.setVisible(bool(MG.gl_folders(g)))
+        h.addWidget(self.mesa_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.sync()
+
+    def sync(self):
+        gpu = self.card.gpu
+        st = MG.game_status(self.g)
+        parts, color = [], "mute"
+        usable = st["total"] - st["dx9"]
+        if st["dx9"] == st["total"]:
+            parts.append(tr("mg.st.dx9"))
+            color = "warn"
+        else:
+            if st["on"] and not st["free"]:
+                parts.append(tr("mg.st.on", gpu=gpu) if st["on"] == usable else
+                             tr("mg.st.part", gpu=gpu, n=st["on"], total=usable))
+                color = "ok"
+            elif st["on"]:
+                parts.append(tr("mg.st.part", gpu=gpu, n=st["on"], total=usable))
+                color = "ok"
+            elif st["kept"] and not st["free"]:
+                parts.append(tr("mg.st.kept"))
+            else:
+                parts.append(tr("mg.st.free"))
+            if st["gl"]:
+                parts.append(tr("mg.st.gl_on", gpu=gpu) if st["mesa"] else tr("mg.st.gl", gpu=gpu))
+                if not st["mesa"]:
+                    color = "warn"
+            if st["dx9"]:
+                parts.append(tr("mg.st.dx9"))
+        self.status.setText(" · ".join(parts))
+        self.dot.setStyleSheet(f"background:{T[color]};border-radius:4px;")
+        self.mesa_btn.setText(tr("mg.mesa_off_btn") if st["mesa"] else tr("mg.mesa_on_btn"))
+
+
+class MiningCard(QFrame):
+    """Майнінгова карта без відеовиходів (P106/P104/CMP): ігри — на неї, OpenGL — через Mesa (mining.py)."""
+
+    def __init__(self, main, hw: dict):
+        super().__init__()
+        self.main, self.hw = main, hw
+        self.gpu = MG.model(hw)
+        self.rows = []
+        self.setObjectName("card")
+        v = vbox(self, (8, 14, 8, 10), 4)
+        head = vbox(margins=(14, 0, 14, 6), spacing=2)
+        head.addWidget(label(tr("mg.title", gpu=self.gpu), "h2"))
+        head.addWidget(label(tr("mg.sub", gpu=self.gpu), "desc", wrap=True))
+        v.addLayout(head)
+        r = hbox(margins=(14, 4, 14, 4), spacing=10)
+        self.auto_sw = Switch()
+        self.auto_sw.set_quiet(bool((F.CFG["mining"] or {}).get("auto")))
+        self.auto_sw.clicked.connect(self._auto)
+        r.addWidget(self.auto_sw, 0, Qt.AlignmentFlag.AlignTop)
+        tv = vbox(spacing=1)
+        tv.addWidget(label(tr("mg.auto"), "rowTitle"))
+        tv.addWidget(label(tr("mg.auto_d"), "desc", wrap=True))
+        r.addLayout(tv, 1)
+        v.addLayout(r)
+        b = hbox(margins=(14, 6, 14, 6), spacing=8)
+        self.btn_scan = button(tr("mg.scan"), "primary", self.scan)
+        b.addWidget(self.btn_scan)
+        self.btn_revert = button(tr("mg.revert"), "ghost", self.revert)
+        b.addWidget(self.btn_revert)
+        b.addStretch()
+        v.addLayout(b)
+        self.list_box = vbox(spacing=2)
+        v.addLayout(self.list_box)
+        self.empty = label(tr("mg.empty"), "sub", wrap=True)
+        self.empty.setContentsMargins(14, 4, 14, 8)
+        v.addWidget(self.empty)
+        mw = QFrame()
+        mw.setObjectName("row")
+        mh = hbox(mw, (14, 10, 14, 10), 12)
+        mv = vbox(spacing=2)
+        mv.addWidget(label(tr("mg.mesa_t"), "rowTitle"))
+        mv.addWidget(label(tr("mg.mesa_d", gpu=self.gpu), "desc", wrap=True))
+        self.mesa_lbl = label("", "muted")
+        mv.addWidget(self.mesa_lbl)
+        mh.addLayout(mv, 1)
+        self.btn_mesa = button(tr("mg.mesa_get"), None, self.get_mesa)
+        mh.addWidget(self.btn_mesa, 0, Qt.AlignmentFlag.AlignVCenter)
+        v.addWidget(mw)
+        self.sync_mesa()
+        # стан без змін: які ігри є і що з ними вже зроблено (пошук іде у фоні — exe ігор бувають великі)
+        self.main.run_quick(tr("mg.title", gpu=self.gpu), lambda log, p: {"list": MG.discover()}, silent=True,
+                            on_done=self._listed)
+
+    def _auto(self, on: bool):
+        m = dict(F.CFG["mining"] or {})
+        m["auto"] = on
+        F.CFG["mining"] = m
+        if on:
+            self.scan()
+
+    def sync_mesa(self):
+        info = MG.mesa_info()
+        self.mesa_lbl.setText(tr("mg.mesa_have", v=info["version"]) if info else tr("mg.mesa_none"))
+        self.btn_mesa.setText(tr("mg.mesa_got") if info else tr("mg.mesa_get"))
+        self.btn_mesa.setEnabled(not info)
+
+    def _listed(self, res):
+        games = (res or {}).get("list") if isinstance(res, dict) else None
+        if games is None:
+            return
+        clear_layout(self.list_box)
+        self.rows = []
+        for g in games:
+            row = MiningGameRow(g, self)
+            self.list_box.addWidget(row)
+            self.rows.append(row)
+        self.empty.setText(tr("mg.empty") if games or not res.get("scanned") else tr("mg.none_found"))
+        self.empty.setVisible(not games)
+
+    def refresh_rows(self):
+        for row in self.rows:
+            try:
+                row.sync()
+            except RuntimeError:
+                pass
+
+    def scan(self):
+        hw = self.hw
+
+        def job(log, p):
+            games = MG.discover()
+            res = MG.assign(log, hw, games)
+            res.update(list=games, scanned=True)
+            return res
+
+        def done(res):
+            self._listed(res)
+            if isinstance(res, dict) and not res.get("error"):
+                self.main.toast(tr("mg.done", gpu=self.gpu, n=res.get("assigned", 0) + res.get("already", 0)))
+        self.main.run_quick(tr("mg.scan"), job, busy=self.btn_scan, on_done=done, silent=True)
+
+    def revert(self):
+        if not Ask.ask(self, tr("mg.revert"), tr("mg.revert_q"), tr("mg.revert"), "danger"):
+            return
+        self.main.run_quick(tr("mg.revert"), lambda log, p: MG.revert(log), busy=self.btn_revert,
+                            on_done=lambda _r: self.refresh_rows(), ok_msg=tr("mg.reverted"))
+
+    def get_mesa(self):
+        self.main.run_quick(tr("mg.mesa_get"), lambda log, p: MG.install_mesa(log, p), busy=self.btn_mesa,
+                            on_done=lambda _r: (self.sync_mesa(), self.main.pages["bench"].sync_mesa()))
+
+    def toggle_mesa(self, row: MiningGameRow):
+        g = row.g
+        if MG.game_status(g)["mesa"]:
+            self.main.run_quick(g["name"], lambda log, p: MG.disable_mesa(g, log), busy=row.mesa_btn,
+                                on_done=lambda _r: row.sync())
+            return
+        if not MG.mesa_info():
+            self.main.toast(tr("mg.mesa_need"), "warn")
+            return
+        if not Ask.ask(self, tr("mg.mesa_t"), tr("mg.mesa_q", game=g["name"]), tr("mg.mesa_on_btn")):
+            return
+        hw = self.hw
+        self.main.run_quick(g["name"], lambda log, p: MG.enable_mesa(g, log, hw), busy=row.mesa_btn,
+                            on_done=lambda _r: row.sync())
+
+
 class GamesPage(QWidget):
     def __init__(self, main):
         super().__init__()
@@ -153,6 +337,11 @@ class GamesPage(QWidget):
         brow.addStretch()
         bv.addLayout(brow)
         v.addWidget(bc)
+
+        # майнінгова карта без відеовиходів: розділ з'являється, щойно залізо визначено (set_hw)
+        self.mining = None
+        self.mining_box = vbox()
+        v.addLayout(self.mining_box)
 
         # мої ігри
         gc, gv = section_card(tr("games.my"), tr("games.my_d"))
@@ -220,6 +409,13 @@ class GamesPage(QWidget):
         self.rows = []
         self.reload()
         self.update_state()
+        if main.hw:
+            self._mining_card(main.hw)
+
+    def _mining_card(self, hw: dict):
+        if self.mining is None and MG.active(hw):
+            self.mining = MiningCard(self.main, hw)
+            self.mining_box.addWidget(self.mining)
 
     def _set_opt(self, key: str, on: bool):
         b = F.CFG["booster"]
@@ -263,6 +459,7 @@ class GamesPage(QWidget):
     def set_hw(self, hw: dict):
         for r in self.rows:
             r.set_hw(hw)
+        self._mining_card(hw)
 
     def add_file(self):
         path, _ = QFileDialog.getOpenFileName(self, tr("games.pick"), "", tr("games.filter"))

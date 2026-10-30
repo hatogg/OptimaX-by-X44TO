@@ -204,6 +204,8 @@ def _demo_sample(hw: dict, i: int) -> dict:
                     limit=100, vram_used=15.2, gpu_t=66, bg=("Discord.exe", 0.02)),
         "xeon": dict(cpu=41, core_max=99, gpu=58, avail_mb=6100, pages_in=30, disk=11, temp=55, passive=100,
                      limit=100, vram_used=5.9, gpu_t=74, bg=("steamwebhelper.exe", 0.04)),
+        "mining": dict(cpu=71, core_max=98, gpu=93, avail_mb=5200, pages_in=25, disk=8, temp=66, passive=100,
+                       limit=100, vram_used=4.8, gpu_t=69, bg=("steamwebhelper.exe", 0.05)),
     }.get(dev, {})
     j = lambda v, k=0.08: max(0.0, v * (1 + rnd.uniform(-k, k)))  # noqa: E731
     return dict(cpu=min(100.0, j(base["cpu"])), core_max=min(100.0, j(base["core_max"], 0.03)),

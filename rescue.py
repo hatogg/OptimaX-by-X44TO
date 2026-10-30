@@ -237,6 +237,13 @@ def undo_lines(rec: dict) -> list:
             return []
         verb = "-setdcvalueindex" if rec.get("m") == "dc" else "-setacvalueindex"
         return [f"powercfg {verb} {rec['g']} {rec['s']} {rec['st']} {rec['old']}", f"powercfg -setactive {rec['g']}"]
+    if t == "file":  # копія, яку OptimaX поклала поруч із грою (Mesa), і файл, що лежав там раніше
+        p = _q(rec["p"])
+        lines = [f'if exist "{p}" del /f /q "{p}"']
+        if rec.get("bak"):
+            b = _q(rec["bak"])
+            lines.append(f'if exist "{b}" move /y "{b}" "{p}"')
+        return lines
     return []  # live: оновлення Провідника — в кінці; решта діє після перезавантаження
 
 

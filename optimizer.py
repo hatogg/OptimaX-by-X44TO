@@ -40,6 +40,7 @@ import guard as G
 import hardware as H
 import hotkeys as HK
 import lifecycle as L
+import mining as MG
 import monitor as M
 import power as PW
 import adblock as AB
@@ -362,6 +363,7 @@ class Main(QWidget):
         self.pages["hardware"].set_hw(self.hw, self.checks)
         self.pages["laptop"].set_hw(self.hw)
         self.pages["games"].set_hw(self.hw)
+        self.pages["bench"].sync_mesa()
         self.pages["cleanup"].sync()
         self.pages["look"].sync()
         self.pages["network"].sync()
@@ -437,6 +439,19 @@ class Main(QWidget):
         # частота екрана від живлення
         if self.hw and self.hw.get("battery"):
             self.rfp.tick(F.CFG["refresh_power"], LOG.write)
+        # майнінгова карта: нові ігри — на неї (раз на 15 хвилин, якщо ввімкнено)
+        if self.hw and MG.active(self.hw) and MG.auto_due(F.CFG):
+            MG.mark_scan(F.CFG)
+            hw = self.hw
+            card = self.pages["games"].mining
+
+            def job(log, p):
+                games = MG.discover()
+                res = MG.assign(log, hw, games)
+                res.update(list=games, scanned=True)
+                return res
+            self.run_quick(tr("mg.title", gpu=MG.model(hw)), job, silent=True,
+                           on_done=lambda r: card._listed(r) if card else None)
 
     # ── дії ──
     def toggle_booster(self):
@@ -500,7 +515,7 @@ class Main(QWidget):
         elif kind == "page":
             self.go(val)
         elif kind == "hint":
-            Ask.info(self, tr(f"hint.{val}.t"), tr(f"hint.{val}.d"))
+            Ask.info(self, tr(f"hint.{val}.t"), tr(f"hint.{val}.d", model=MG.model(self.hw or {})))
         elif kind == "booster":
             b = F.CFG["booster"]
             b[val] = True

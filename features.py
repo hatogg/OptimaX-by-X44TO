@@ -48,6 +48,7 @@ DEFAULTS = {
     "smart_pref": {"provider": "gpu", "game": None},
     "tweak_evidence": {},  # що розумна оптимізація довела на цьому ПК: {id: {harm, help, none, ts}}
     "opt_mode": None,  # останній вибраний режим оптимізації
+    "mining": {"auto": False, "last_scan": 0},  # ігри на майнінговій карті (mining.py)
 }
 
 

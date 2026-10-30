@@ -716,6 +716,21 @@ def X(kind):
     return ("live", kind)
 
 
+def FILE(src, dest):
+    """Покласти копію src у dest (наприклад, бібліотеку поруч з exe гри). Відкат: прибрати нашу копію і повернути
+    файл, що лежав там раніше (його відкладено поруч як <ім'я>.optimax-bak)."""
+    return ("file", src, dest)
+
+
+def file_sha256(path: str) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def cmd_doc(text: str):
     """Опис дії для панелі «Що саме зміниться»."""
     def deco(fn):
@@ -792,6 +807,27 @@ def exec_op(op, ctx: Ctx) -> None:
         run(f"powercfg -setactive {g}", 10, log)
         if old is not None or DRY_RUN:
             ctx.undo.append({"t": "pw", "g": g, "s": sub, "st": setting, "old": old, "m": mode})
+    elif k == "file":
+        _, src, dest = op
+        sha = file_sha256(src)
+        bak = None
+        if os.path.exists(dest):
+            if file_sha256(dest) == sha:
+                return  # там уже такий самий файл — змінювати й повертати нічого
+            bak = dest + ".optimax-bak"
+            n = 1
+            while os.path.exists(bak):
+                n += 1
+                bak = f"{dest}.optimax-bak{n}"
+        ctx.undo.append({"t": "file", "p": dest, "sha": sha, "bak": bak})
+        if DRY_RUN:
+            log(f"  [dry-run] copy {os.path.basename(src)} → {dest}")
+            return
+        if bak:
+            os.replace(dest, bak)
+        tmp = dest + ".optimax-tmp"
+        shutil.copyfile(src, tmp)
+        os.replace(tmp, dest)
     elif k == "fn":
         op[1](ctx)
     elif k == "dyn":
@@ -839,6 +875,20 @@ def _undo_record(rec: dict, log: Callable, deferred: set = None) -> None:
             run(f"powercfg -setactive {rec['g']}", 10, log)
     elif t == "live":
         live_refresh(rec["k"], log)
+    elif t == "file":
+        _undo_file(rec, log)
+
+
+def _undo_file(rec: dict, log: Callable) -> None:
+    path, bak = rec["p"], rec.get("bak")
+    if os.path.exists(path):
+        if rec.get("sha") and file_sha256(path) != rec["sha"]:
+            # файл уже не наш (гра оновилася й поклала свій) — не чіпаємо його; нашу резервну копію лишаємо
+            log(tr("e.file_changed", path=path))
+            return
+        os.remove(path)  # гра запущена й тримає бібліотеку — помилка, запис лишиться в журналі до наступної спроби
+    if bak and os.path.exists(bak):
+        os.replace(bak, path)
 
 
 def _rollback(records: list, log: Callable, deferred: set = None) -> list:
@@ -938,6 +988,9 @@ def live_refresh(kind: str, log=None) -> None:
         elif kind == "broadcast":
             res = ctypes.c_ulong(0)
             u.SendMessageTimeoutW(0xFFFF, 0x001A, 0, "ImmersiveColorSet", 2, 3000, ctypes.byref(res))
+        elif kind == "env":  # змінні середовища користувача: Провідник і нові програми побачать їх без виходу
+            res = ctypes.c_ulong(0)
+            u.SendMessageTimeoutW(0xFFFF, 0x001A, 0, "Environment", 2, 3000, ctypes.byref(res))
         elif kind == "syscolor":
             _apply_syscolors()
         elif kind == "mouse":

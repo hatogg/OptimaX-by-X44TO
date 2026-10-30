@@ -14,6 +14,7 @@ Everything the program can do, from the first analysis to the emergency rollback
 - [Smart optimization](#smart-optimization)
 - [Emergency rollback](#emergency-rollback)
 - [Benchmarks](#benchmarks)
+- [Mining graphics card (P106, P104, CMP)](#mining-graphics-card-p106-p104-cmp)
 - [Ad blocker (like Pi-hole)](#ad-blocker-like-pi-hole)
 - [Result card](#result-card)
 - [Installation](#installation)
@@ -58,7 +59,7 @@ OptimaX won't let you turn on something that harms your particular hardware. For
 | --- | --- |
 | **Analysis** | Optimization and privacy levels, speed-up potential, weakest spot, your PC, build check, live readings, before and after with a card for social networks, notices from the settings guard, trial mode and emergency rollback |
 | **Optimization** | Wizard and Expert menu, 6 profiles, search, 16 sections, “What will change” for every item, colour-coded review before applying, trial mode, smart optimization |
-| **Games** | Game mode (services, background apps, memory, power, timer, Do Not Disturb, background balancer, auto mode); per game: priority, discrete GPU, no Fullscreen Optimizations, cores; an ISLC-style memory cleaner; 0.5 ms timer |
+| **Games** | Game mode (services, background apps, memory, power, timer, Do Not Disturb, background balancer, auto mode); per game: priority, discrete GPU, no Fullscreen Optimizations, cores; an ISLC-style memory cleaner; 0.5 ms timer; on a PC with a mining card — “Games on the P106” (every game on the card, OpenGL via Mesa) |
 | **Diagnostics** | Why is it lagging?, before/after FPS test with a graph, forum report |
 | **Benchmarks** | Smart optimization (an A/B test of changes on the GPU test or your game), OptimaX GPU test (1080p, 1440p, 4K), 5–60 minute stress test with a stability check and sensors, result history; FurMark 2 with an automatic result, Superposition, Cinebench, OCCT, CrystalDiskMark, 3DMark |
 | **Hardware** | Specifications, build check with fix buttons, MSI Mode for graphics, network and audio devices, GPU overclocking (a prompt for DeepSeek, MSI Afterburner) |
@@ -140,6 +141,15 @@ The **OptimaX GPU test** is a scene of its own: a neon city with the OptimaX log
 Every result is kept in the history with the percentage against the previous run of the same test and the number of OptimaX changes between them, so you can see what the optimization gave.
 
 **Other benchmarks** install through winget and start in one click: FurMark 2 (OptimaX runs the benchmark and reads the score, FPS and temperature), Unigine Superposition, Cinebench R23, OCCT, CrystalDiskMark and 3DMark (through Steam).
+
+## Mining graphics card (P106, P104, CMP)
+
+Mining cards (P106-090/100, P104-100/101, P102-100, CMP 30HX–170HX) have no video outputs: the monitor is plugged into the motherboard, the integrated graphics show the picture and, unless told otherwise, render the games too. When OptimaX sees such a card, the **Games** page gets a “Games on the P106-100” section (with your card's model):
+
+- **Find and assign games.** OptimaX finds installed games (Steam, Epic, GOG, Ubisoft and My games) and assigns every one of their exe files to the mining card — the same as “High performance” in Settings → System → Display → Graphics, but for all games at once. Your own choice in Graphics settings is never overwritten. Old DirectX 9 and Adobe AIR games stay on the integrated graphics: on mining cards with patched drivers they blue-screen. The “Assign new games automatically” switch checks for new games every 15 minutes.
+- **OpenGL via Mesa.** Windows Graphics settings don't apply to OpenGL — such games (and the OptimaX GPU test) render on whichever card shows the picture. The workaround is [Mesa](https://mesa3d.org): it translates OpenGL to DirectX 12, which Windows can hand to the mining card. Mesa downloads in one click from the OptimaX release (checked against SHA256SUMS.txt) and is enabled per game: the libraries go into the game folder, and any file that was already there is set aside and restored by rollback. Online games with anti-cheat may refuse to start with a foreign opengl32.dll — don't enable Mesa for those. Restart the launcher (Steam etc.) after enabling it.
+- **GPU test on the card.** With Mesa downloaded, the OptimaX GPU test and smart optimization render on the mining card instead of the integrated graphics. Mesa scores are compared only with other Mesa scores.
+- **Revert all** removes every assignment and the Mesa libraries; each change is also in the Backups journal and in OptimaX-Rescue.cmd.
 
 ## Ad blocker (like Pi-hole)
 

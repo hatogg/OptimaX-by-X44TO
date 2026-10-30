@@ -16,6 +16,7 @@ import benchtools as BT
 import engine as E
 import features as F
 import gpubench as GB
+import mining as MG
 from i18n import tr
 from pages_extra import page_body, log_strip, stat_cell, PickRow
 from ui_kit import (T, label, button, card, vbox, hbox, badge, style_badge, dot, scroller, page_header, clear_layout,
@@ -107,6 +108,9 @@ class BenchPage(QWidget):
         self.btn_run = button(tr("gb.start"), "primary", self.start)
         r2.addWidget(self.btn_run)
         hv.addLayout(r2)
+        self.mesa_note = label("", "desc", wrap=True)  # майнінгова карта: хто малюватиме тест (mining.py)
+        self.mesa_note.hide()
+        hv.addWidget(self.mesa_note)
         self.min_lbl.hide()
         self.seg_min.hide()
         self.prog = QWidget()
@@ -211,9 +215,20 @@ class BenchPage(QWidget):
 
     def on_show(self):
         self.smart.sync()
+        self.sync_mesa()
         if not self.loaded:
             self.loaded = True
             self.scan()
+
+    def sync_mesa(self):
+        """Майнінгова карта: тест на OpenGL малює вбудована графіка, якщо немає Mesa (mining.py)."""
+        hw = self.main.hw or {}
+        if not MG.active(hw):
+            self.mesa_note.hide()
+            return
+        gpu = MG.model(hw)
+        self.mesa_note.setText(tr("gb.mesa_on", gpu=gpu) if MG.mesa_info() else tr("gb.mesa_note", gpu=gpu))
+        self.mesa_note.show()
 
     # ── власний тест ──
     def _res(self, i: int):
@@ -239,7 +254,8 @@ class BenchPage(QWidget):
                                             "danger"):
             return
         try:
-            self.run = GB.start(self.preset, mode, minutes, self.sw_full.isChecked())
+            self.run = GB.start(self.preset, mode, minutes, self.sw_full.isChecked(),
+                                mesa=MG.bench_mesa(self.main.hw or {}))
         except Exception as e:
             Ask.info(self, tr("gb.err_t"), tr("gb.err_d", err=e))
             return

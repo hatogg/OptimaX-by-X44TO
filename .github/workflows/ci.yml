@@ -184,6 +184,35 @@ jobs:
         run: |
           $v = python packaging/release.py version
           "v=$v" | Add-Content $env:GITHUB_OUTPUT
+      - name: Mesa for mining cards (OpenGL on the card through DirectX 12)
+        id: mesa
+        continue-on-error: true  # сторонній реліз недоступний — програма без Mesa однаково збирається
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $zip = python packaging/release.py mesa Output | Select-Object -Last 1
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          "zip=$zip" | Add-Content $env:GITHUB_OUTPUT
+          "**Mesa**: $(Split-Path $zip -Leaf), $([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB" | Add-Content $env:GITHUB_STEP_SUMMARY
+      - name: GPU test through Mesa (the runner has no GPU — Mesa d3d12 on WARP)
+        if: ${{ steps.mesa.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "mesa"
+          Expand-Archive -Force "${{ steps.mesa.outputs.zip }}" $dir
+          $out = Join-Path $env:RUNNER_TEMP "gpubench-mesa.json"
+          $env:OPTIMAX_BENCH_FAST = "1"
+          $env:MESA_D3D12_DEFAULT_ADAPTER_NAME = "Microsoft Basic Render"
+          $exe = "Output\OptimaX-${{ steps.ver.outputs.v }}-portable.exe"
+          $a = @("--gpu-bench", "--preset=ab", "--mode=bench", "--quality=ab", "--seconds=3", "--mesa=`"$dir`"", "--out=`"$out`"")
+          $p = Start-Process $exe -ArgumentList $a -Wait -PassThru
+          $r = Get-Content $out -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json
+          "**GPU test via Mesa**: exit $($p.ExitCode), state $($r.state), renderer $($r.renderer), GL $($r.gl), mesa $($r.mesa), frames $($r.frames)" | Add-Content $env:GITHUB_STEP_SUMMARY
+          if (-not $r -or $r.state -ne "done" -or -not $r.mesa -or "$($r.renderer)" -notmatch "D3D12") {
+            Write-Output "::error::The GPU test did not render through Mesa d3d12: $($r | ConvertTo-Json -Compress -Depth 4)"
+            exit 1
+          }
       - name: Self-test of the portable exe (without a window, off-screen window, real window)
         id: portable
         shell: pwsh
@@ -214,7 +243,11 @@ jobs:
           }
           exit $code
       - name: Checksums
-        run: python packaging/release.py checksums "Output/OptimaX-Setup-${{ steps.ver.outputs.v }}.exe" "Output/OptimaX-${{ steps.ver.outputs.v }}-portable.exe"
+        shell: pwsh
+        run: |
+          $files = @("Output/OptimaX-Setup-${{ steps.ver.outputs.v }}.exe", "Output/OptimaX-${{ steps.ver.outputs.v }}-portable.exe")
+          $files += @(Get-ChildItem Output/OptimaX-Mesa-*.zip -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+          python packaging/release.py checksums @files
       - uses: actions/upload-artifact@v7
         with:
           name: optimax-build
@@ -222,6 +255,7 @@ jobs:
             Output/OptimaX-Setup-*.exe
             Output/OptimaX-*-portable.exe
             Output/OptimaX-Rescue.cmd
+            Output/OptimaX-Mesa-*.zip
             Output/SHA256SUMS.txt
             Output/winget
           if-no-files-found: error
