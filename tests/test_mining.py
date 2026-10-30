@@ -49,10 +49,20 @@ def test_pe_imports_never_raises_on_junk():
 def test_api_classification():
     d = _tmp()
     assert MG.api_of(write_pe(os.path.join(d, "dx9.exe"), "kernel32.dll", "d3d9.dll")) == "dx9"
-    # гра, що вміє і DX9, і DX11, — не «стара»: її можна на майнінгову карту
-    assert MG.api_of(write_pe(os.path.join(d, "both.exe"), "d3d9.dll", "d3d11.dll")) == "other"
+    # гра, що вміє і DX9, і DX11, — не «стара»: її можна на майнінгову карту напряму (DirectX 11)
+    both = MG.classify(write_pe(os.path.join(d, "both.exe"), "d3d9.dll", "d3d11.dll"))
+    assert both["api"] == "dx11" and both["apis"] == ["dx9", "dx11"], both
     assert MG.api_of(write_pe(os.path.join(d, "gl.exe"), "kernel32.dll", "opengl32.dll")) == "gl"
-    assert MG.api_of(write_pe(os.path.join(d, "dx11.exe"), "d3d11.dll", "dxgi.dll")) == "other"
+    assert MG.api_of(write_pe(os.path.join(d, "dx11.exe"), "d3d11.dll", "dxgi.dll")) == "dx11"
+    assert MG.api_of(write_pe(os.path.join(d, "dx12.exe"), "d3d12.dll", "dxgi.dll")) == "dx12"
+    assert MG.api_of(write_pe(os.path.join(d, "dx10.exe"), "d3d10.dll", "dxgi.dll")) == "dx10"
+    assert MG.api_of(write_pe(os.path.join(d, "vk.exe"), "vulkan-1.dll")) == "vulkan"
+    assert MG.api_of(write_pe(os.path.join(d, "launcher.exe"), "kernel32.dll", "user32.dll")) == "other"
+    # Unity: exe — заглушка, API імпортує UnityPlayer.dll поруч
+    uni = _tmp()
+    stub_u = write_pe(os.path.join(uni, "Game.exe"), "kernel32.dll")
+    write_pe(os.path.join(uni, "UnityPlayer.dll"), "d3d11.dll", "dxgi.dll")
+    assert MG.classify(stub_u, (), MG.engine_imports(uni))["api"] == "dx11"
     # рушій вантажить d3d9 сам: Source — hl2.exe у корені, shaderapidx9.dll у bin\\ (або bin\\x64\\)
     src = _tmp()
     stub = write_pe(os.path.join(src, "hl2.exe"), "kernel32.dll")
@@ -144,7 +154,7 @@ def fake_report() -> dict:
 def test_discovery_skips_redistributables_and_installers():
     r = fake_report()
     assert r["games"] == ["Half-Life 2", "Old Game", "Test Game"], "Steamworks Redistributables is not a game"
-    assert r["exes"] == ["arm/glarm.exe:gl:", "bin/glview.exe:gl:x64", "bin/win64/game.exe:other:x64",
+    assert r["exes"] == ["arm/glarm.exe:gl:", "bin/glview.exe:gl:x64", "bin/win64/game.exe:dx11:x64",
                          "bin32/gl32.exe:gl:x86", "launcher.exe:other:x64"], "a library path with [] must be found"
     assert r["old_api"] == ["dx9"]
     assert r["source_api"] == ["dx9"], "Source engine: hl2.exe in the root, shaderapidx9.dll in bin\\"

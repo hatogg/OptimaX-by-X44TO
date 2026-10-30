@@ -18,7 +18,7 @@ import mining as MG  # noqa: E402
 import sharecard as SC  # noqa: E402
 import smart_ui as SM  # noqa: E402
 import ui_kit as UK  # noqa: E402
-from PyQt6.QtWidgets import QDialog, QFileDialog  # noqa: E402
+from PyQt6.QtWidgets import QDialog, QFileDialog, QMenu  # noqa: E402
 
 DEMO = os.environ.get("OPTIMAX_DEMO", "gaming")
 SHOTS = os.environ.get("OPTIMAX_TEST_SHOTS")
@@ -83,6 +83,8 @@ def auto_exec(dlg, *a):
 
 
 QDialog.exec = auto_exec
+menus = []
+QMenu.exec = lambda self, *a, **k: menus.append([x.text() for x in self.actions()])  # меню лише будуємо
 QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: ("", ""))
 QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: ("", ""))
 
@@ -114,23 +116,52 @@ if mc is not None:
         mc.get_layer(kind)
         pump(lambda: MG.layer_info(kind) is not None and mc.layer_btn[kind].text() == UK.tr("mg.got", what=MG.LAYER_NAMES[kind]), 30)
     gl_row = next((r for r in mc.rows if MG.gl_folders(r.g)), None)
-    if gl_row:
-        mc.toggle_mesa(gl_row)
-        pump(lambda: MG.game_status(gl_row.g)["mesa"] and gl_row.mesa_btn.isEnabled(), 30)
     dx_row = next((r for r in mc.rows if MG.layer_targets(r.g, "dxvk")), None)
-    if dx_row:
-        mc.toggle_layer(dx_row, "dxvk")
-        pump(lambda: MG.game_status(dx_row.g)["dxvk"] and dx_row.btns["dxvk"].isEnabled(), 30)
+    ac_row = next((r for r in mc.rows if r.g.get("anticheat")), None)
+    for row in (gl_row, dx_row):  # режим «Авто»: OpenGL — Mesa, DirectX 9 — DXVK
+        if row:
+            mc.mode_menu(row)
+            mc.choose_mode(row, "auto")
+            pump(lambda: row.btn_mode.isEnabled() and MG.current_mode(row.g) == "auto"
+                 and (MG.game_status(row.g)["mesa"] or MG.game_status(row.g)["dxvk"]), 30)
+    if ac_row:  # античит: DXVK у режимі DXVK не застосовується, причина — у плані
+        steps["anticheat_plan"] = MG.plan(ac_row.g, "dxvk")["blocked"]
+    if dx_row:  # перевірка рендерингу (демо) і меню «⋯»
+        mc.check_game(dx_row)
+        pump(lambda: bool(MG.profile(dx_row.g).get("checks")) and dx_row.btn_check.isEnabled(), 30)
+        mc.more_menu(dx_row)
+    mc.measure()
+    pump(lambda: mc.link_box.count() > 0 and mc.btn_measure.isEnabled(), 30)
+    pump(lambda: "МБ" in mc.sc_lbl.text() or "MB" in mc.sc_lbl.text(), 10)
     pump(timeout=0.3)
     shot(w, "mining-layers")
     steps["mining"] = {"rows": len(mc.rows), "gpu": sum(t.startswith("gpu:") for t in MG.our_ids()),
                        "mesa": bool(gl_row and MG.game_status(gl_row.g)["mesa"]),
                        "dxvk": bool(dx_row and MG.game_status(dx_row.g)["dxvk"]),
                        "texts": [r.status.text() for r in mc.rows],
+                       "checks": [r.check.text() for r in mc.rows],
+                       "checked": bool(dx_row and MG.profile(dx_row.g).get("checks")),
+                       "menus": len(menus), "link": mc.link_box.count(), "probe": mc.probe_lbl.text(),
+                       "shader": mc.sc_lbl.text(),
                        "bench_note": w.pages["bench"].mesa_note.text()}
     mc.revert()
     pump(lambda: not MG.our_ids() and mc.btn_revert.isEnabled(), 60)
     steps["mining"]["left"] = len(MG.our_ids())
+    # «Чому лагає?» на майнінговому ПК: на якій карті малює гра, кадри, PCIe, історія замірів
+    w.go("diagnose")
+    dp = w.pages["diagnose"]
+    dp.dur_i = 0
+    n_hist = len(F.CFG["diag_hist"] or [])
+    for _ in range(2):
+        dp.start_diag()
+        pump(lambda: len(F.CFG["diag_hist"] or []) > n_hist, 60)
+        n_hist = len(F.CFG["diag_hist"] or [])
+        pump(timeout=0.2)
+    shot(w, "mining-diag")
+    last = F.CFG["diag_last"] or {}
+    steps["mining_diag"] = {"keys": [f["key"] for f in last.get("findings") or []],
+                            "render": (last.get("render") or {}).get("verdict"), "fps": (last.get("frames") or {}).get("avg"),
+                            "hist": len(F.CFG["diag_hist"] or []), "hist_rows": dp.hist_grid.count()}
 
 # режими оптимізації: план під демо-залізо → перегляд змін (для «Ігрового» — із замірами)
 w.open_modes()

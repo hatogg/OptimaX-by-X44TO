@@ -15,7 +15,7 @@ if not defined PY (
     goto :fail
 )
 
-for %%F in (optimizer.py engine.py hardware.py hwnative.py features.py monitor.py fpstest.py netlab.py guard.py apps.py power.py report.py hotkeys.py lifecycle.py updater.py ui_kit.py pages_optimize.py pages_tools.py pages_extra.py i18n.py lang_ui.py lang_engine.py lang_tweaks.py lang_extra.py lang_setup.py lang_lab.py gpubench.py adblock.py benchtools.py pages_lab.py rescue.py abtest.py smart_ui.py sharecard.py lang_safe.py lang_v64.py lang_mining.py mining.py baseline.py verify.py modes.py selftest.py) do (
+for %%F in (optimizer.py engine.py hardware.py hwnative.py features.py monitor.py fpstest.py netlab.py guard.py apps.py power.py report.py hotkeys.py lifecycle.py updater.py ui_kit.py pages_optimize.py pages_tools.py pages_extra.py i18n.py lang_ui.py lang_engine.py lang_tweaks.py lang_extra.py lang_setup.py lang_lab.py gpubench.py adblock.py benchtools.py pages_lab.py rescue.py abtest.py smart_ui.py sharecard.py lang_safe.py lang_v64.py lang_mining.py lang_gpu.py mining.py gpuinfo.py gpudiag.py gamedb.py pages_mining.py baseline.py verify.py modes.py selftest.py) do (
     if not exist "%%F" (
         echo [ERROR] %%F not found next to this script.
         goto :fail
@@ -45,7 +45,7 @@ if errorlevel 1 (
 set "ARGS=--noconfirm --clean --windowed --uac-admin --noupx --name OptimaX"
 if exist icon.ico set "ARGS=!ARGS! --icon icon.ico"
 if exist version_info.txt set "ARGS=!ARGS! --version-file version_info.txt"
-for %%M in (lang_ui lang_engine lang_tweaks lang_extra lang_setup lang_lab lang_safe lang_v64 lang_mining mining baseline verify modes gpubench adblock benchtools rescue abtest smart_ui sharecard selftest buildinfo PyQt6.QtNetwork PyQt6.QtOpenGL) do set "ARGS=!ARGS! --hidden-import %%M"
+for %%M in (lang_ui lang_engine lang_tweaks lang_extra lang_setup lang_lab lang_safe lang_v64 lang_mining lang_gpu mining gpuinfo gpudiag gamedb pages_mining baseline verify modes gpubench adblock benchtools rescue abtest smart_ui sharecard selftest buildinfo PyQt6.QtNetwork PyQt6.QtOpenGL) do set "ARGS=!ARGS! --hidden-import %%M"
 for %%F in (icon.png bench.png msi.png deepsek.png restore.png) do (
     if exist "%%F" set "ARGS=!ARGS! --add-data "%%F;.""
 )

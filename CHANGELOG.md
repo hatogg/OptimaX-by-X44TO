@@ -2,6 +2,44 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [6.5] — 2026-10-31
+
+Universal GPU Renderer: ігри на майнінговій карті (P106 / P104 / CMP) — режим рендерингу для кожної гри, перевірка, на якій карті гра малює насправді, аналізатори драйвера, PCIe, пам'яті й кешу шейдерів.
+
+### Додано
+
+- **Режим рендерингу для кожної гри** (кнопка «Режим» у розділі «Ігри на P106»): «Авто» (DirectX 10–12 і Vulkan — напряму, DirectX 9 — через DXVK, OpenGL — через Mesa), «Напряму на карту», «DXVK» (і для DirectX 10 / 11), «OpenGL через Mesa» та «Оригінал» (OptimaX повертає все, що зробила для гри, і більше її не чіпає). Режим, результати перевірок і позначки «працює / не працює» зберігаються в профілі гри; профілі експортуються й імпортуються (JSON), «Видалити профіль» повертає оригінальний стан.
+- **Перевірка сумісності до змін.** Перед застосуванням видно, що саме зміниться. Шар кладеться лише якщо він завантажений і звірений із сумами, є exe потрібної розрядності, у грі немає античиту (EasyAntiCheat, BattlEye, XIGNCODE3, GameGuard, PunkBuster, Vanguard), а на карті є Vulkan (DXVK, Zink) чи DirectX 12 (Mesa d3d12). Для DirectX 9 — лише d3d9 / d3d8, для DirectX 10 / 11 — dxgi / d3d11 / d3d10core. Якщо щось не вдалося посеред зміни, гра повертається до попереднього режиму.
+- **Визначення API кожного exe**: DirectX 9 / 10 / 11 / 12, OpenGL, Vulkan — з таблиці імпорту exe і рушія (UnityPlayer.dll, shaderapidx9.dll у Source); розрядність x64 / x86.
+- **GPU Renderer Monitor — на якій карті гра малює насправді.** Кнопка «Перевірити» (і автоматично через 40 секунд після запуску гри) дивиться лічильники Windows «GPU Engine» процесу гри й те, драйвер якої карти гра завантажила (NVIDIA / Intel / AMD / WARP) і через що малює (DXVK, Mesa d3d12 / Zink, нативний DirectX, OpenGL, Vulkan). Для HD 4000 та інших драйверів WDDM 1.x, у яких лічильників немає, вирішує драйвер у процесі. «Висока продуктивність» у «Графіці» доказом не вважається.
+- **Перевірка DirectX і Vulkan** в окремому процесі (збій драйвера не закриє OptimaX): адаптери DXGI з виходами й відеопам'яттю, чи створюється DirectX 12 на кожному, пристрої Vulkan з версіями API й драйвера та LUID.
+- **P106 Driver Analyzer**: модель за PCI ID і назва від драйвера, версія драйвера, DirectX 12, Vulkan, карта з монітором; проблеми — DirectX не бачить карту (стандартний драйвер вимкнув 3D), немає Vulkan, вбудована графіка без драйвера.
+- **PCIe Link Analyzer і GPU Memory Analyzer** («Виміряти» з запущеною грою, а також у «Чому лагає?»): покоління й ширина PCIe під навантаженням проти можливих, трафік лінії, скільки займає передача кадрів на вбудовану графіку з монітором; заповнення відеопам'яті, вихід гри в спільну пам'ять, вільна RAM.
+- **Shader Cache Manager**: розмір кешів DirectX / NVIDIA / Intel / AMD / Mesa, порожні (пошкоджені) файли, зміна драйвера; очищення з резервною копією й відновлення.
+- **Game Compatibility Database**: відоме про рушій і API популярних ігор (рекомендований режим, античит, параметри запуску на кшталт `-vulkan` чи `-window-mode borderless`) і ваші результати — окремо. Ваші позначки мають перевагу.
+- **Zink**: OpenGL через Mesa можна перемкнути з DirectX 12 на Zink (Vulkan) — експериментально, для ігор, у яких Mesa ввімкнено.
+- **Нові ігри**: фоновий пошук повідомляє про нові встановлені ігри.
+- **«Чому лагає?» 2.0**: на якій карті малювала гра (DirectX 9 / OpenGL без шару, повноекранний режим — з кнопкою вибору режиму, без змін без підтвердження), кадри PresentMon усіх процесів паралельно із заміром (якщо PresentMon завантажено) і причини фризів (підкачка, диск, відеопам'ять, процесор, компіляція шейдерів), PCIe, пам'ять і драйвер карти NVIDIA, споживання й частота. **Історія замірів** (GPU Bottleneck History) з виявленням просідань FPS.
+- **Game Booster 2.0**: профілі «Мінімальна затримка» (усі перемикачі + високий пріоритет процесу гри на час режиму) і «Стабільний frametime» (без закриття фонових програм і зміни пріоритету) — загальні або для окремої гри; авторежим гри і для ігор зі Steam / Epic / GOG / Ubisoft без додавання в «Мої ігри».
+
+### Змінено
+
+- Твік «Вимкнути Fullscreen Optimizations» заблоковано на ПК з майнінговою картою: справжній повноекранний режим можливий лише на карті з монітором, і гра переходила на вбудовану графіку. Якщо його вже застосовано, розділ «Ігри на P106» пропонує повернути.
+- Архів DXVK у релізі містить і бібліотеки DirectX 10 / 11 (dxgi, d3d11, d3d10core). Встановлений раніше DXVK лише з DirectX 9 працює як і раніше; для режиму DXVK у DirectX 10 / 11 його можна завантажити ще раз.
+
+### Обмеження
+
+- DirectX 12 працює напряму: VKD3D-Proton не використовується. Системні DirectX / Vulkan / OpenGL-бібліотеки й драйвери Windows не змінюються — шари лише в папках ігор.
+- Zink на Windows експериментальний; DXVK і Mesa працюють не з кожною грою. Результат перевіряє «Перевірити», невдалий режим позначається й повертається.
+- Автоматичні тести перевіряють логіку на фальшивій Windows і в CI на Windows Server; на справжній P106-100 з HD 4000 цю версію перевірено не повністю.
+
+<details>
+<summary>English</summary>
+
+Universal GPU Renderer: games on a mining card (P106 / P104 / CMP) — a render mode per game, a check of which card really renders it, and driver, PCIe, memory and shader cache analyzers. **A render mode per game** (the Mode button in “Games on the P106”): Auto (DirectX 10–12 and Vulkan natively, DirectX 9 via DXVK, OpenGL via Mesa), Native GPU, DXVK (for DirectX 10 / 11 too), OpenGL translation, and Original (OptimaX reverts everything it did for the game and leaves it alone); mode, check results and “works / doesn't work” marks live in the game's profile, profiles export and import as JSON, and “Remove profile” restores the original state. **Compatibility is checked before any change** and the exact changes are shown: a layer is used only if it is downloaded and matches its checksums, the exe has the right bitness, the game has no anti-cheat (EasyAntiCheat, BattlEye, XIGNCODE3, GameGuard, PunkBuster, Vanguard) and the card has Vulkan (DXVK, Zink) or DirectX 12 (Mesa d3d12); DirectX 9 gets only d3d9 / d3d8, DirectX 10 / 11 — dxgi / d3d11 / d3d10core; if something fails midway the game returns to its previous mode. **API detection per exe** (DirectX 9 / 10 / 11 / 12, OpenGL, Vulkan, from the exe's and the engine's import tables) and bitness. **GPU Renderer Monitor** — the Check button (and automatically 40 seconds after a game starts) reads the Windows “GPU Engine” counters of the game's process and which GPU's driver the game loaded (NVIDIA / Intel / AMD / WARP) and what it renders through (DXVK, Mesa d3d12 / Zink, native DirectX, OpenGL, Vulkan); for HD 4000 and other WDDM 1.x drivers without counters the driver in the process decides; the Graphics “High performance” setting is never taken as proof. **DirectX and Vulkan probe** in a separate process. **P106 Driver Analyzer**, **PCIe Link Analyzer** and **GPU Memory Analyzer** (generation and width under load, link traffic, the frame copy to the integrated GPU, VRAM, spill to shared memory, free RAM), **Shader Cache Manager** (sizes, empty files, driver changes, clearing with a backup and restore), **Game Compatibility Database** (known engine / API facts and launch options, kept apart from your own results, which take precedence), **Zink** as an experimental alternative to Mesa's DirectX 12 driver, **new game notifications**. **Why lag? 2.0**: which card rendered the game (with a button to pick a mode; nothing changes without confirmation), PresentMon frames of all processes alongside the run and stutter causes (paging, disk, VRAM, CPU, shader compilation), PCIe, memory and NVIDIA driver findings, plus a **measurement history** with FPS regression detection. **Game Booster 2.0**: “Lowest latency” and “Stable frametime” profiles, global or per game, and auto game mode for Steam / Epic / GOG / Ubisoft games too. **Changed:** “Disable Fullscreen Optimizations” is blocked on mining-card PCs (exclusive fullscreen moved games to the integrated GPU), with an offer to revert it if applied; the DXVK release archive now includes the DirectX 10 / 11 libraries. **Limits:** DirectX 12 runs natively (no VKD3D-Proton); Windows system libraries and drivers are never changed; Zink is experimental and DXVK / Mesa don't work with every game, so results are verified with Check; automated tests cover the logic on a fake Windows and in CI on Windows Server — this version is not yet fully verified on a real P106-100 with HD 4000.
+
+</details>
+
 ## [6.4.3] — 2026-10-30
 
 Ігри на майнінговій відеокарті: OptimaX сама переносить їх із вбудованої графіки на P106 / P104 / CMP — і DirectX 10–12, і (через перекладачі) DirectX 9 та OpenGL.

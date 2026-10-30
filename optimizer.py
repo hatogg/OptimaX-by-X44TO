@@ -25,6 +25,9 @@ if __name__ == "__main__":
     if "--gpu-bench" in sys.argv:
         import gpubench
         sys.exit(gpubench.run_child(sys.argv))
+    if "--gpu-probe" in sys.argv:  # що бачать DirectX і Vulkan — окремим процесом, щоб збій драйвера не закрив програму
+        import gpuinfo
+        sys.exit(gpuinfo.probe_child(sys.argv))
     if any(a == "--selftest" or a.startswith("--selftest=") for a in sys.argv):
         import selftest  # самоперевірка збірки (CI): тимчасові налаштування й режим перегляду — до імпорту engine
         selftest.prepare(sys.argv)
@@ -114,6 +117,7 @@ class Main(QWidget):
         self._titled = False
         self.purges = 0
         self.auto_boost = False
+        self._render_seen = {}  # exe -> коли помітили запуск гри (None — уже перевірено)
         self.balancer = M.Balancer()
         self.cores = M.GameCores()
         self.rfp = PW.RefreshByPower()
@@ -405,13 +409,20 @@ class Main(QWidget):
 
     def _background_tick(self):
         # автоматичний режим гри
+        names = None
         if F.CFG["booster"].get("auto"):
             names = F.running_game_names()
-            wanted = {ntpath.basename(g["path"]).lower() for g in F.CFG["games"] or [] if g.get("boost")}
-            game_on = bool(names & wanted)
+            mine = {ntpath.basename(g["path"]).lower(): g["path"] for g in F.CFG["games"] or [] if g.get("boost")}
+            found = {}
+            if F.CFG["booster"].get("found"):  # Game Booster 2.0: і ігри, знайдені в Steam / Epic / GOG / Ubisoft
+                found = {n: n for n in (F.CFG["game_exes"] or {}).get("names") or []}
+            wanted = {**found, **mine}
+            running = sorted(names & set(wanted))
+            game_on = bool(running)
             if game_on and not F.BOOSTER.active:
                 self.auto_boost = True
-                self.run_quick(tr("g.title"), lambda log, p: F.BOOSTER.start(log), silent=True,
+                game = wanted[running[0]] if running[0] in mine else None
+                self.run_quick(tr("g.title"), lambda log, p: F.BOOSTER.start(log, game=game), silent=True,
                                on_done=lambda _r: (self.update_booster_ui(), self.toast(tr("g.auto_on"))))
             elif not game_on and F.BOOSTER.active and self.auto_boost:
                 self.auto_boost = False
@@ -449,12 +460,67 @@ class Main(QWidget):
 
             def job(log, p):
                 games = MG.discover()
+                fresh = MG.new_games(games)
                 res = MG.assign(log, hw, games)
                 if not res.get("busy"):
-                    res.update(list=games, scanned=True)
+                    res.update(list=games, scanned=True, fresh=[g["name"] for g in fresh])
+                F.remember_game_exes(games)
                 return res
-            self.run_quick(tr("mg.title", gpu=MG.model(hw)), job, silent=True,
-                           on_done=lambda r: card._listed(r) if card else None)
+
+            def done(r):
+                if card:
+                    card._listed(r)
+                fresh = (r or {}).get("fresh") if isinstance(r, dict) else None
+                if fresh:
+                    self.toast(tr("mg.new_games", n=len(fresh), names=", ".join(fresh[:3])))
+            self.run_quick(tr("mg.title", gpu=MG.model(hw)), job, silent=True, on_done=done)
+        elif (F.CFG["booster"].get("found") and F.game_exes_due() and not self._workers
+              and QApplication.activeModalWidget() is None):
+            F.mark_game_exes()
+            self.run_quick("games", lambda log, p: F.remember_game_exes(MG.discover()), silent=True)
+        # майнінгова карта: на якій карті насправді малює запущена гра (раз за запуск гри, через 40 с після старту)
+        if self.hw and MG.active(self.hw) and (F.CFG["mining"] or {}).get("check", True):
+            self._render_watch(names)
+
+    def _render_watch(self, names=None):
+        card = self.pages["games"].mining
+        games = card.games if card else []
+        if not games or self._workers or MG.busy():
+            return
+        names = names if names is not None else F.running_game_names()
+        now = time.time()
+        seen = self._render_seen
+        for n in list(seen):
+            if n not in names:
+                seen.pop(n, None)  # гру закрили — наступний запуск перевіримо знову
+        g = next((g for g in games for x in g["exes"] if ntpath.basename(x["path"]).lower() in names
+                  and x["api"] != "other"), None)
+        if not g:
+            return
+        exe = next(ntpath.basename(x["path"]).lower() for x in g["exes"] if ntpath.basename(x["path"]).lower() in names)
+        first = seen.setdefault(exe, now)
+        if first is None or now - first < 40:
+            return
+        seen[exe] = None  # перевірено в цьому запуску гри
+        hw = self.hw
+        exes = {ntpath.basename(x["path"]) for x in g["exes"]}
+
+        def job(log, p):
+            import gpuinfo as GI
+            luid = GI.summary(GI.probe()).get("luid") or ""
+            res = GI.check(exes, luid, 5, game_dir=g["dir"])
+            if res.get("verdict") in ("mining", "igpu", "warp"):
+                MG.record_check(g, res)
+            return res
+
+        def done(res):
+            if not isinstance(res, dict):
+                return
+            if card:
+                card.refresh_rows()
+            if res.get("verdict") in ("igpu", "warp"):
+                self.toast(tr("gr.auto_igpu", game=g["name"], gpu=MG.model(hw)), "warn")
+        self.run_quick("render", job, silent=True, on_done=done)
 
     # ── дії ──
     def toggle_booster(self):
@@ -519,6 +585,14 @@ class Main(QWidget):
             self.go(val)
         elif kind == "hint":
             Ask.info(self, tr(f"hint.{val}.t"), tr(f"hint.{val}.d", model=MG.model(self.hw or {})))
+        elif kind == "mining":  # «Чому лагає?»: гра малює не на майнінговій карті — до її рядка й вибору режиму
+            self.go("games")
+            card = self.pages["games"].mining
+            row = card.find_row(val) if card else None
+            if row:
+                card.mode_menu(row)
+            else:
+                Ask.info(self, tr("hint.mining.t"), tr("gr.not_listed", exe=val or "?"))
         elif kind == "booster":
             b = F.CFG["booster"]
             b[val] = True

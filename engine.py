@@ -30,7 +30,7 @@ from i18n import tr, tweak_text
 APP_NAME = "OptimaX"
 AUTHOR = "X44TO"
 APP_TITLE = f"{APP_NAME} by {AUTHOR}"
-VERSION = "6.4.3"
+VERSION = "6.5"
 IS_WIN = sys.platform == "win32"
 DRY_RUN = (not IS_WIN) or ("--dry-run" in sys.argv)
 DEMO = os.environ.get("OPTIMAX_DEMO", "gaming")  # демо-залізо поза Windows: gaming/laptop/old/x3d/xeon
@@ -1868,7 +1868,7 @@ tw("disable_xbox_gamebar", "gaming", [R(GCS, "GameDVR_Enabled", 0), R(POL + r"\G
    block_on=X3D)
 tw("fso_global", "gaming", [R(GCS, "GameDVR_FSEBehaviorMode", 2), R(GCS, "GameDVR_HonorUserFSEBehaviorMode", 1),
                             R(GCS, "GameDVR_FSEBehavior", 2), R(GCS, "GameDVR_DXGIHonorFSEWindowsCompatible", 1)],
-   p="FX", impact="medium")
+   p="FX", impact="medium", block_on=("mining_display",))  # справжній повноекранний режим — лише на карті з монітором
 tw("windowed_opt", "gaming", [D(dyn_windowed)], p="FMX", win11=True)
 tw("timer_resolution", "gaming", [R(r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\kernel",
                                     "GlobalTimerResolutionRequests", 1),

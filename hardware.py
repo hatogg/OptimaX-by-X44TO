@@ -297,6 +297,7 @@ def _finish(hw: dict) -> dict:
             mining.append(dict(name=n, model=model))
     hw["mining"] = mining
     hw["mining_gpu"] = mining[0]["model"] if mining else ""  # картинку виводить інша відеокарта — виходів у карти немає
+    hw["mining_display"] = hw["mining_gpu"]  # монітор — на іншій карті: справжній повноекранний режим веде гру туди
     return hw
 
 

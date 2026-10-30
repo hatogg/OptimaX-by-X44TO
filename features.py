@@ -22,7 +22,7 @@ DEFAULTS = {
     "tray_hint_shown": False,
     "games": [],  # [{path, prio, dgpu, fso, boost, cores}]
     "booster": {"services": True, "kill": True, "purge": True, "power": True, "timer": True, "auto": True,
-                "dnd": True, "balance": True},
+                "dnd": True, "balance": True, "profile": "custom", "found": False},
     "booster_state": None,
     "cleaner": {"enabled": False, "standby_mb": 1024, "free_mb": 1024},
     "timer_hold": False,
@@ -48,7 +48,11 @@ DEFAULTS = {
     "smart_pref": {"provider": "gpu", "game": None},
     "tweak_evidence": {},  # що розумна оптимізація довела на цьому ПК: {id: {harm, help, none, ts}}
     "opt_mode": None,  # останній вибраний режим оптимізації
-    "mining": {"auto": False, "last_scan": 0},  # ігри на майнінговій карті (mining.py)
+    "mining": {"auto": False, "last_scan": 0, "profiles": {}, "gl_driver": "d3d12", "seen": [], "check": True},
+    "shader_state": {},  # Shader Cache Manager: драйвер, з яким кеш перевіряли востаннє
+    "game_exes": None,  # {ts, names}: exe ігор зі Steam / Epic / GOG / Ubisoft — для автоматичного режиму гри
+    "gpu_probe": None,  # що бачать DirectX і Vulkan (gpuinfo.probe)
+    "diag_hist": [],  # історія «Чому лагає?»: що обмежувало FPS і на якій карті малювала гра
 }
 
 
@@ -101,6 +105,35 @@ def service_running(name: str) -> bool:
     return rc == 0 and "RUNNING" in out.upper()
 
 
+# Профілі режиму гри (Game Booster 2.0). Лише готові набори наявних перемикачів — нічого понад те, що режим гри вже
+# вміє й повертає після гри. latency — усе, що зменшує затримку, плюс високий пріоритет процесу гри на час режиму;
+# stable — рівний frametime без різких дій: фонові програми не закриваються, пріоритет гри не змінюється.
+BOOST_PROFILES = {
+    "latency": dict(power=True, services=True, kill=True, purge=True, timer=True, dnd=True, balance=True, prio=True),
+    "stable": dict(power=True, services=True, kill=False, purge=True, timer=True, dnd=True, balance=True, prio=False),
+}
+BOOST_KEYS = ("power", "services", "kill", "purge", "timer", "dnd", "balance")
+HIGH_PRIORITY = 0x80
+
+
+def boost_profile(game_path: str = None) -> str:
+    """Профіль гри (з «Моїх ігор»), інакше загальний: custom | latency | stable."""
+    if game_path:
+        g = next((g for g in CFG["games"] or [] if g["path"].lower() == game_path.lower()), None)
+        if g and g.get("profile") in BOOST_PROFILES:
+            return g["profile"]
+    p = (CFG["booster"] or {}).get("profile")
+    return p if p in BOOST_PROFILES else "custom"
+
+
+def boost_options(game_path: str = None) -> dict:
+    prof = boost_profile(game_path)
+    opt = dict(CFG["booster"] or {})
+    if prof in BOOST_PROFILES:
+        opt.update(BOOST_PROFILES[prof])
+    return opt
+
+
 class GameBooster:
     """Тимчасовий режим гри: усе, що змінено, повертається після вимкнення (навіть після збою)."""
 
@@ -111,12 +144,13 @@ class GameBooster:
     def active(self) -> bool:
         return bool(self.cfg["booster_state"])
 
-    def start(self, log) -> dict:
+    def start(self, log, game: str = None) -> dict:
+        """game — шлях exe гри, через яку режим увімкнувся автоматично (для її профілю)."""
         if self.active:
             return {"ok": True}
-        opt = self.cfg["booster"]
+        opt = boost_options(game) if self.cfg is CFG else self.cfg["booster"]
         state = {"ts": int(time.time()), "services": [], "onedrive": False, "plan": None, "timer": False,
-                 "dnd": None}
+                 "dnd": None, "profile": boost_profile(game), "game": game or "", "prio": []}
         self.cfg["booster_state"] = state  # одразу зберігаємо, щоб відновити після аварійного закриття
         log(tr("g.boost_on"))
         if opt.get("power"):
@@ -152,6 +186,16 @@ class GameBooster:
             state["dnd"] = cur[1] if cur else -1
             _set_toasts(0)
             log(tr("g.dnd"))
+        if opt.get("prio") and game:
+            import monitor as M
+            exe = os.path.basename(game.replace("\\", "/")).lower()
+            for pid, n in E.processes():
+                if (n or "").lower() == exe:
+                    old = M._get_priority(pid) if E.IS_WIN else 0x20
+                    if old and old != HIGH_PRIORITY and (not E.IS_WIN or M._set_priority(pid, HIGH_PRIORITY)):
+                        state["prio"].append([pid, n, old])
+            if state["prio"]:
+                log(tr("g.prio_high", n=len(state["prio"])))
         self.cfg["booster_state"] = state
         return {"ok": True}
 
@@ -173,6 +217,12 @@ class GameBooster:
             E.set_timer_resolution(False)
         if state.get("dnd") is not None:
             _set_toasts(None if state["dnd"] == -1 else state["dnd"])
+        if state.get("prio") and E.IS_WIN:
+            import monitor as M
+            alive = {pid: (n or "").lower() for pid, n in E.processes()}
+            for pid, name, old in state["prio"]:
+                if alive.get(pid) == (name or "").lower():  # той самий процес ще працює — повертаємо пріоритет
+                    M._set_priority(pid, old)
         self.cfg["booster_state"] = None
         log(tr("g.restored"))
         return {"ok": True}
@@ -302,6 +352,29 @@ def running_apps() -> list:
 
 def running_game_names() -> set:
     return {n.lower() for _, n in E.processes()}
+
+
+GAME_EXES_EVERY = 24 * 3600
+
+
+def remember_game_exes(games: list) -> dict:
+    """exe ігор, знайдених у Steam / Epic / GOG / Ubisoft (mining.discover), — для автоматичного режиму гри.
+    Допоміжні exe (лаунчери, античит) в mining.scan_exes уже відсіяні."""
+    import ntpath
+    names = sorted({ntpath.basename(x["path"]).lower() for g in games or [] for x in g.get("exes") or []
+                    if x.get("api") != "other"})
+    CFG["game_exes"] = {"ts": int(time.time()), "names": names[:500]}
+    return {"n": len(names)}
+
+
+def game_exes_due() -> bool:
+    return time.time() - float((CFG["game_exes"] or {}).get("ts") or 0) >= GAME_EXES_EVERY
+
+
+def mark_game_exes() -> None:
+    cur = dict(CFG["game_exes"] or {})
+    cur["ts"] = int(time.time())
+    CFG["game_exes"] = cur
 
 
 # ───────────────────────── автозавантаження ─────────────────────────

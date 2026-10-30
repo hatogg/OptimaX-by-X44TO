@@ -156,15 +156,21 @@ class ProcSampler:
         return res
 
 
-def foreground_process() -> str:
-    """Ім'я exe активного вікна."""
+def foreground_pid() -> int:
     if not E.IS_WIN:
-        return ""
+        return 0
     u = ctypes.windll.user32
     hwnd = u.GetForegroundWindow()
     pid = ctypes.c_ulong(0)
     u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-    path = E.process_path(pid.value) or ""
+    return pid.value
+
+
+def foreground_process() -> str:
+    """Ім'я exe активного вікна."""
+    if not E.IS_WIN:
+        return ""
+    path = E.process_path(foreground_pid()) or ""
     return path.replace("/", "\\").rsplit("\\", 1)[-1]
 
 
@@ -187,6 +193,10 @@ DIAG_ARRAY = {
     "vram": r"\GPU Adapter Memory(*)\Dedicated Usage",
     "temp": r"\Thermal Zone Information(*)\Temperature",
     "passive": r"\Thermal Zone Information(*)\% Passive Limit",
+    # по процесу: на якій карті малює гра і скільки пам'яті займає (лише драйвери WDDM 2.0+)
+    "eng": r"\GPU Engine(*)\Utilization Percentage",
+    "pmem": r"\GPU Process Memory(*)\Dedicated Usage",
+    "pshared": r"\GPU Process Memory(*)\Shared Usage",
 }
 
 
@@ -216,16 +226,58 @@ def _demo_sample(hw: dict, i: int) -> dict:
                 fg="cs2.exe", bg={base["bg"][0]: j(base["bg"][1], 0.2)})
 
 
+def _nvml():
+    if not E.IS_WIN:
+        return None
+    try:
+        import gpubench as GB
+        nv = GB.Nvml()
+        return nv if nv.ok() else None
+    except Exception:
+        return None
+
+
+def _demo_extra(hw: dict, seconds: int) -> dict:
+    """Поза Windows: заміри майнінгової карти (NVML, кадри, на якій карті малює гра) для демо «mining»."""
+    if E.DEMO != "mining":
+        return {}
+    import fpstest as FT
+    import gpuinfo as GI
+    rnd = random.Random(77)
+    nv = [dict(util=90 + rnd.randint(-5, 5), pcie_gen=1, pcie_width=4, pcie_max_gen=1, pcie_max_width=4,
+               pcie_tx=rnd.randint(380, 520) * 1024, pcie_rx=rnd.randint(260, 340) * 1024, vram_used=5600 + i * 8,
+               vram_total=6144, temp=69, power=112.0) for i in range(seconds)]
+    ft = FT._demo_frametimes(seconds)
+    render = dict(verdict="mining", mining_3d=91.0, other_3d=0.0, copy=22.0, vram_mb=5200, shared_mb=640,
+                  path=dict(GI.DEMO_PATH))
+    render["path_text"] = GI.describe_path(render["path"])
+    return dict(nvml=nv, frametimes=ft, render=render, frames_offset=0.5)
+
+
 def lag_diagnosis(hw: dict, seconds: int, log, progress, gpu_temp=None, game: str = None) -> dict:
-    """Збирає показники раз на секунду, поки ви граєте, і пояснює, що саме гальмує."""
+    """Збирає показники раз на секунду, поки ви граєте, і пояснює, що саме гальмує. Якщо є PresentMon — паралельно
+    записує кадри всіх процесів (потім лишаються кадри гри): фризи зіставляються з тим, що відбувалося тієї секунди.
+    На ПК з майнінговою картою ще й з'ясовує, на якій карті насправді малює гра (gpuinfo), і стан лінії PCIe (NVML)."""
+    import gpuinfo as GI
     hw = hw or {}
     q = Pdh(DIAG_SINGLE, DIAG_ARRAY) if E.IS_WIN else None
     sampler = ProcSampler() if E.IS_WIN else None
     if sampler:
         sampler.sample()
-    samples = []
+    nv = _nvml()
+    frames = None
+    try:
+        import fpstest as FT
+        if E.IS_WIN and FT.find_presentmon():
+            frames = FT.start_capture_all(seconds)
+    except Exception as e:
+        log(f"  PresentMon: {type(e).__name__}: {e}"[:200])
+    t0 = time.time()
+    samples, nv_samples = [], []
+    paths: dict = {}  # exe -> що показали бібліотеки процесу
     fg_count = Counter()
     bg_share = defaultdict(float)
+    prev_shared: dict = {}
     for i in range(seconds):
         if E.CANCEL.is_set():
             break
@@ -243,20 +295,48 @@ def lag_diagnosis(hw: dict, seconds: int, log, progress, gpu_temp=None, game: st
             cores = [v for k, v in (d.get("cores") or {}).items() if "_Total" not in k]
             zones = _zone_c(d.get("temp"))
             passive = [v for v in (d.get("passive") or {}).values() if 0 < v <= 100]
+            pid = foreground_pid()
+            fg = foreground_process()
             s = dict(cpu=min(100.0, d.get("cpu", 0.0)), core_max=min(100.0, max(cores) if cores else 0.0),
                      gpu=min(100.0, sum((d.get("gpu3d") or {}).values())), avail_mb=d.get("avail_mb", 0.0),
                      pages_in=d.get("pages_in", 0.0), disk=max(0.0, 100 - d.get("disk_idle", 100.0)),
                      temp=max(zones) if zones else None, passive=min(passive) if passive else None,
                      limit=d.get("limit"), vram_used=max((d.get("vram") or {0: 0}).values()) / 2**30,
-                     gpu_t=gpu_temp() if gpu_temp and i % 3 == 0 else None, fg=foreground_process(), bg={})
+                     gpu_t=gpu_temp() if gpu_temp and i % 3 == 0 else None, fg=fg, bg={})
+            if pid:
+                s["eng"] = GI.engine_split(d.get("eng"), {pid})
+                s["vram_p"] = GI.process_vram(d.get("pmem"), {pid})
+                sh = GI.process_vram(d.get("pshared"), {pid})
+                s["shared_p"] = sh
+                # приріст спільної пам'яті за секунду (МБ): ресурси переїжджають з відеопам'яті в оперативну
+                s["shared_d"] = max([(v - prev_shared.get(k, v)) / 2**20 for k, v in sh.items()] or [0.0])
+                prev_shared = sh
+                low = (fg or "").lower()
+                if low and low not in IGNORE_PROCS and (i == 3 or i % 15 == 0) and len(paths) < 8:
+                    try:
+                        path = GI.render_path(GI.process_modules(pid))
+                        if path.get("apis"):
+                            paths[low] = path
+                    except Exception:
+                        pass
             if i % 2 == 1 and sampler:
                 for _pid, (name, share) in sampler.sample().items():
                     s["bg"][name] = s["bg"].get(name, 0.0) + share
+        if nv:
+            try:
+                nv_samples.append(nv.read())
+            except Exception:
+                pass
         samples.append(s)
         if s.get("fg"):
             fg_count[s["fg"].lower()] += 1
     if q:
         q.close()
+    if nv:
+        try:
+            nv.close()
+        except Exception:
+            pass
     if progress:
         progress(seconds, seconds, tr("diag.analyzing"))
     game_exe = (game or "").lower() or next((n for n, _ in fg_count.most_common() if n not in IGNORE_PROCS), "")
@@ -265,7 +345,31 @@ def lag_diagnosis(hw: dict, seconds: int, log, progress, gpu_temp=None, game: st
             if name.lower() != game_exe and name.lower() not in IGNORE_PROCS:
                 bg_share[name] += share
     n_bg = max(1, len([s for s in samples if s.get("bg")]))
-    res = summarize(samples, hw, game_exe, {k: v / n_bg for k, v in bg_share.items()})
+    extra = _demo_extra(hw, len(samples)) if not E.IS_WIN else {"nvml": nv_samples}
+    if E.IS_WIN:
+        if frames:
+            try:
+                by_app = FT.finish_capture_all(frames)
+                extra["frametimes"] = by_app.get(game_exe) or []
+                extra["frames_offset"] = frames.get("t0", t0) - t0
+            except Exception as e:
+                log(f"  PresentMon: {type(e).__name__}: {e}"[:200])
+        if hw.get("mining_gpu") and game_exe:
+            try:
+                luid = GI.summary(GI.probe()).get("luid") or ""
+                mine = [dict(fg=True, eng=s.get("eng") or {}, vram=s.get("vram_p") or {}, shared=s.get("shared_p") or {})
+                        for s in samples if (s.get("fg") or "").lower() == game_exe and "eng" in s]
+                rd = GI.verdict(mine, luid) if mine and luid else {"verdict": "none"}
+                path = paths.get(game_exe) or {}
+                if path:
+                    rd["path"], rd["path_text"] = path, GI.describe_path(path)
+                    pv = GI.path_verdict(path)
+                    if pv in ("igpu", "warp") or (pv == "mining" and rd.get("verdict") in ("igpu", "none")):
+                        rd["verdict"] = pv
+                extra["render"] = rd
+            except Exception as e:
+                log(f"  GPU: {type(e).__name__}: {e}"[:200])
+    res = summarize(samples, hw, game_exe, {k: v / n_bg for k, v in bg_share.items()}, extra=extra)
     log(tr("diag.done_log", n=len(samples), game=game_exe or "—"))
     return res
 
@@ -317,8 +421,12 @@ def bottleneck(samples: list, hw: dict) -> dict:
     return {"main": main, "share": share, "shares": shares, "second": second}
 
 
-def summarize(samples: list, hw: dict, game_exe: str, bg: dict) -> dict:
-    """Перетворює заміри на висновки простими словами."""
+def summarize(samples: list, hw: dict, game_exe: str, bg: dict, extra: dict = None) -> dict:
+    """Перетворює заміри на висновки простими словами. extra — те, що вдалося виміряти понад лічильники Windows:
+    nvml (секундні показники карти NVIDIA), frametimes (кадри гри з PresentMon), render (на якій карті малює гра)."""
+    import gpudiag as GD
+    import fpstest as FT
+    extra = extra or {}
     if not samples:
         return {"findings": [], "stats": {}, "game": game_exe, "n": 0}
     av = {k: _avg([s.get(k) for s in samples]) for k in ("cpu", "core_max", "gpu", "avail_mb", "pages_in", "disk",
@@ -354,7 +462,38 @@ def summarize(samples: list, hw: dict, game_exe: str, bg: dict) -> dict:
         add("cpu_bound", "warn", ("page", "games"), gpu=round(gpu), cpu=round(cpu), core=round(core))
     elif gpu >= 95:
         add("gpu_bound", "info", None, gpu=round(gpu))
-    if not f:
+    # на якій карті насправді малює гра (майнінгова карта без виходів)
+    rd = extra.get("render") or {}
+    mining_gpu = hw.get("mining_gpu") or ""
+    if mining_gpu and rd.get("verdict") in ("igpu", "warp"):
+        apis = set((rd.get("path") or {}).get("apis") or [])
+        key = "render_warp" if rd["verdict"] == "warp" else "render_igpu_dx9" if "dx9" in apis else \
+            "render_igpu_gl" if "gl" in apis else "render_igpu"
+        add(key, "bad", ("mining", game_exe), gpu=mining_gpu, game=game_exe or "?", path=rd.get("path_text") or "?")
+    elif mining_gpu and rd.get("verdict") == "mining":
+        add("render_ok", "info", None, gpu=mining_gpu, path=rd.get("path_text") or "—",
+            d3=f"{rd.get('mining_3d', 0):.0f}")
+    # кадри: фризи та їхні причини
+    fstats = FT.stats(extra.get("frametimes") or []) if extra.get("frametimes") else {}
+    causes = GD.spike_causes(GD.spike_times(extra.get("frametimes") or []), samples, extra.get("frames_offset", 0.0)) \
+        if fstats else {}
+    for x in GD.stutter_findings(fstats, causes):
+        f.append(x)
+    # відеопам'ять, лінія PCIe і драйвер карти NVIDIA
+    nvs = extra.get("nvml") or []
+    for x in GD.memory_findings(nvs, rd, hw, av["avail_mb"]):
+        f.append(x)
+    pcie = GD.pcie_eval(nvs)
+    for x in GD.pcie_findings(pcie, hw, fstats.get("avg") or 0):
+        f.append(x)
+    if mining_gpu:
+        try:
+            import features as F
+            for x in GD.driver_findings(hw, F.CFG["gpu_probe"] or {}):
+                f.append(x)
+        except Exception:
+            pass
+    if not [x for x in f if x["key"] != "render_ok"]:
         add("none", "ok")
     order = {"bad": 0, "warn": 1, "info": 2, "ok": 3}
     f.sort(key=lambda x: order[x["level"]])
@@ -362,8 +501,16 @@ def summarize(samples: list, hw: dict, game_exe: str, bg: dict) -> dict:
     stats.update(temp_max=mx["temp"], gpu_t_max=mx["gpu_t"], vram_total=vram_total, ram_total=total_mb / 1024,
                  top_bg=sorted(((n, round(v * 100, 1)) for n, v in bg.items() if v >= 0.01),
                                key=lambda x: -x[1])[:5])
+    nv_last = nvs[-1] if nvs else {}
+    stats.update(gpu_power=nv_last.get("power"), gpu_clock=nv_last.get("clock"),
+                 nv_vram=nv_last.get("vram_used"), nv_vram_total=nv_last.get("vram_total"))
+    frames = {k: fstats.get(k) for k in ("avg", "low1", "low01", "stutters", "stutters_pm", "smooth", "series")} \
+        if fstats else {}
+    if frames:
+        frames["causes"] = causes
     return {"findings": f, "stats": stats, "game": game_exe, "n": len(samples), "ts": int(time.time()),
-            "bottleneck": bottleneck(samples, hw)}
+            "bottleneck": bottleneck(samples, hw), "frames": frames, "pcie": pcie,
+            "render": {k: rd.get(k) for k in ("verdict", "path_text", "mining_3d", "vram_mb", "shared_mb")} if rd else {}}
 
 
 # ───────────────────────── балансувальник фону ─────────────────────────

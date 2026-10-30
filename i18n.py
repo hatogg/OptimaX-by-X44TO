@@ -91,6 +91,7 @@ def _load() -> None:
     from lang_safe import STRINGS as safe
     from lang_v64 import STRINGS as v64
     from lang_mining import STRINGS as mining
+    from lang_gpu import STRINGS as gpu
     from lang_tweaks import TEXTS
     STR.update(eng)
     STR.update(ui)
@@ -100,6 +101,7 @@ def _load() -> None:
     STR.update(safe)
     STR.update(v64)
     STR.update(mining)
+    STR.update(gpu)
     TWEAK_TEXT.update(TEXTS)
 
 

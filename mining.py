@@ -181,6 +181,8 @@ def pe_imports(path: str) -> set:
 
 
 DX10_PLUS = {"d3d10.dll", "d3d10_1.dll", "d3d11.dll", "d3d12.dll", "dxgi.dll"}
+API_DLLS = (("dx9", {"d3d9.dll", "d3d8.dll"}), ("dx10", {"d3d10.dll", "d3d10_1.dll"}), ("dx11", {"d3d11.dll"}),
+            ("dx12", {"d3d12.dll"}), ("vulkan", {"vulkan-1.dll"}), ("gl", {"opengl32.dll"}))
 DX9_DLL = re.compile(r"(d3d9|dx9)", re.I)  # shaderapidx9.dll, rendersystem_dx9.dll… — рушій вантажить d3d9 сам
 ENGINE_DIRS = ("", "bin", os.path.join("bin", "x64"), os.path.join("bin", "win64"))  # Source: hl2.exe + bin\*.dll
 
@@ -196,19 +198,43 @@ def engine_dlls(folder: str) -> tuple:
     return tuple(out)
 
 
-def classify(path: str, sibling_dlls: tuple = ()) -> dict:
-    """-> {path, api, arch}. api: dx9 — DirectX 9 (на майнінговій карті ризик синього екрана); gl — OpenGL;
-    other — решта (DX10+, Vulkan…). arch: x64 / x86 / "" — для якої Mesa підходить exe."""
+ENGINE_LIBS = ("UnityPlayer.dll",)  # exe Unity — лише заглушка, графічні API імпортує ця бібліотека
+
+
+def engine_imports(folder: str) -> set:
+    out = set()
+    for n in ENGINE_LIBS:
+        p = os.path.join(folder, n)
+        if os.path.isfile(p):
+            out |= pe_imports(p)
+    return out
+
+
+def classify(path: str, sibling_dlls: tuple = (), engine: set = None) -> dict:
+    """-> {path, api, arch}. api: dx9 (DirectX 9 / 8), dx10, dx11, dx12, gl (OpenGL), vulkan, other — не вдалося
+    визначити (рушій вантажить API сам). arch: x64 / x86 / "" — для якої розрядності підходять шари."""
     arch, imps = pe_info(path)
+    allimps = imps | (engine or set())
     if imps & {"d3d9.dll", "d3d8.dll"} and not imps & DX10_PLUS:
         api = "dx9"  # DirectX 9 і 8: обидва бачать лише карту з монітором, обидва перекладає DXVK
     elif "opengl32.dll" in imps:
         api = "gl"
     elif not imps & DX10_PLUS and any(DX9_DLL.search(d) for d in sibling_dlls):
         api = "dx9"
+    elif "d3d11.dll" in allimps:
+        api = "dx11"
+    elif "d3d12.dll" in allimps:
+        api = "dx12"
+    elif allimps & {"d3d10.dll", "d3d10_1.dll"}:
+        api = "dx10"
+    elif "vulkan-1.dll" in allimps:
+        api = "vulkan"
+    elif "opengl32.dll" in allimps:
+        api = "gl"
     else:
         api = "other"
-    return dict(path=path, api=api, arch=arch)
+    found = [a for a, dlls in API_DLLS if allimps & dlls]
+    return dict(path=path, api=api, arch=arch, apis=found or [api])
 
 
 def api_of(path: str, sibling_dlls: tuple = ()) -> str:
@@ -377,12 +403,13 @@ def scan_exes(folder: str) -> list:
             break
     found.sort(key=lambda x: (x[0], x[1].lower()))
     dlls: dict = {}
+    eng: dict = {}
     out = []
     for _, p in found[:MAX_EXES]:
         d = os.path.dirname(p)
         if d not in dlls:
-            dlls[d] = engine_dlls(d)
-        out.append(classify(p, dlls[d]))
+            dlls[d], eng[d] = engine_dlls(d), engine_imports(d)
+        out.append(classify(p, dlls[d], eng[d]))
     return out
 
 
@@ -409,13 +436,16 @@ def discover() -> list:
                 continue
             seen.add(key)
             if "exes" in g:
-                g["exes"] = [classify(p, engine_dlls(os.path.dirname(p))) for p in g["exes"]]
+                g["exes"] = [classify(p, engine_dlls(os.path.dirname(p)), engine_imports(os.path.dirname(p)))
+                             for p in g["exes"]]
             else:
                 g["exes"] = scan_exes(g["dir"])
                 main = g.get("main") or ""
                 if main and os.path.isfile(main) and not any(x["path"].lower() == main.lower() for x in g["exes"]):
-                    g["exes"].insert(0, classify(main, engine_dlls(os.path.dirname(main))))
+                    g["exes"].insert(0, classify(main, engine_dlls(os.path.dirname(main)),
+                                                 engine_imports(os.path.dirname(main))))
             g["risk"] = _risky_folder(g["dir"])
+            g["anticheat"] = anticheat(g["dir"])
             if g["exes"]:
                 games.append(g)
     return sorted(games, key=lambda g: g["name"].lower())
@@ -425,11 +455,11 @@ def demo_games() -> list:
     root = r"C:\Program Files (x86)\Steam\steamapps\common"
     return [
         dict(name="Counter-Strike 2", store="steam", dir=root + r"\Counter-Strike Global Offensive", risk="",
-             exes=[dict(path=root + r"\Counter-Strike Global Offensive\game\bin\win64\cs2.exe", api="other",
+             exes=[dict(path=root + r"\Counter-Strike Global Offensive\game\bin\win64\cs2.exe", api="dx11",
                         arch="x64")]),
-        dict(name="Fortnite", store="epic", dir=r"C:\Program Files\Epic Games\Fortnite", risk="",
+        dict(name="Fortnite", store="epic", dir=r"C:\Program Files\Epic Games\Fortnite", risk="", anticheat="EasyAntiCheat",
              exes=[dict(path=r"C:\Program Files\Epic Games\Fortnite\FortniteGame\Binaries\Win64\FortniteClient-Win64-"
-                             r"Shipping.exe", api="other", arch="x64"),
+                             r"Shipping.exe", api="dx11", arch="x64", apis=["dx11", "dx12"]),
                    dict(path=r"C:\Program Files\Epic Games\Fortnite\FortniteGame\Binaries\Win64\FortniteLauncher.exe",
                         api="other", arch="x64")]),
         dict(name="Half-Life", store="steam", dir=root + r"\Half-Life", risk="",
@@ -467,13 +497,19 @@ LAYERS = {
     "mesa": dict(files=("opengl32.dll", "libgallium_wgl.dll", "libglapi.dll", "dxil.dll"),
                  required=("opengl32.dll", "libgallium_wgl.dll"), api="gl", prefix="glmesa:",
                  asset=re.compile(r"^OptimaX-Mesa-(\d+(?:\.\d+)*)\.zip$", re.I)),
-    "dxvk": dict(files=("d3d9.dll", "d3d8.dll"), required=("d3d9.dll",), api="dx9", prefix="dxvk:",
+    "dxvk": dict(files=("d3d9.dll", "d3d8.dll", "dxgi.dll", "d3d11.dll", "d3d10core.dll"), required=("d3d9.dll",),
+                 api="dx9", prefix="dxvk:",
                  asset=re.compile(r"^OptimaX-DXVK-(\d+(?:\.\d+)*)\.zip$", re.I)),
 }
 MESA_FILES, MESA_REQUIRED = LAYERS["mesa"]["files"], LAYERS["mesa"]["required"]
 DXVK_FILES, DXVK_REQUIRED = LAYERS["dxvk"]["files"], LAYERS["dxvk"]["required"]
 MESA_ASSET_RE = LAYERS["mesa"]["asset"]
 DEMO_VERSION = {"mesa": DEMO_MESA, "dxvk": "2.6.2"}
+# які бібліотеки DXVK потрібні грі на якому API: DirectX 9 / 8 — d3d9 (+ d3d8); DirectX 10 / 11 — dxgi + d3d11 + d3d10core
+DXVK_SETS = {"dx9": ("d3d9.dll", "d3d8.dll"), "dx10": ("dxgi.dll", "d3d11.dll", "d3d10core.dll"),
+             "dx11": ("dxgi.dll", "d3d11.dll", "d3d10core.dll")}
+DXVK_NEEDS = {"dx9": ("d3d9.dll",), "dx10": ("dxgi.dll", "d3d11.dll"), "dx11": ("dxgi.dll", "d3d11.dll")}
+DX_APIS = ("dx9", "dx10", "dx11")
 
 
 def layer_id(kind: str, folder: str) -> str:
@@ -484,16 +520,17 @@ def mesa_id(folder: str) -> str:
     return layer_id("mesa", folder)
 
 
-def layer_targets(g: dict, kind: str) -> list:
-    """Куди класти шар: [(папка exe, розрядність)] для exe з його API (gl — Mesa, dx9 — DXVK), x64 / x86. Бібліотеки —
-    поруч з exe і тієї ж розрядності: 64-бітна opengl32.dll чи d3d9.dll поруч із 32-бітною грою не дасть їй
-    запуститися. Для гри на Source exe лежить у корені, а d3d9 вантажить bin\\shaderapidx9.dll — Windows однаково шукає
-    d3d9.dll спершу поруч з exe."""
+def layer_targets(g: dict, kind: str, apis: tuple = None) -> list:
+    """Куди класти шар: [(папка exe, розрядність)] для exe з його API (gl — Mesa, dx9 — DXVK; apis — інший набір,
+    наприклад DXVK і для DirectX 10 / 11), x64 / x86. Бібліотеки — поруч з exe і тієї ж розрядності: 64-бітна
+    opengl32.dll чи d3d9.dll поруч із 32-бітною грою не дасть їй запуститися. Для гри на Source exe лежить у корені, а
+    d3d9 вантажить bin\\shaderapidx9.dll — Windows однаково шукає d3d9.dll спершу поруч з exe."""
     out = []
     if g.get("risk"):
         return out
+    apis = apis or (LAYERS[kind]["api"],)
     for x in g["exes"]:
-        if x["api"] == LAYERS[kind]["api"] and x.get("arch") in MESA_ARCHES:
+        if x["api"] in apis and x.get("arch") in MESA_ARCHES:
             d = _dir(x["path"])
             if d.lower() not in (o[0].lower() for o in out):
                 out.append((d, x["arch"]))
@@ -510,7 +547,14 @@ def gl_folders(g: dict) -> list:
 
 def layer_on(g: dict, kind: str) -> bool:
     folders = [d for d, _ in layer_targets(g, kind)]
-    return bool(folders) and all(E.JOURNAL.has(layer_id(kind, f)) for f in folders)
+    if folders:
+        return all(E.JOURNAL.has(layer_id(kind, f)) for f in folders)
+    return kind == "dxvk" and any(E.JOURNAL.has(layer_id(kind, d)) for d, _ in layer_targets(g, kind, DX_APIS))
+
+
+def layer_folders_on(g: dict, kind: str) -> list:
+    """Папки гри, куди OptimaX уже поклала шар."""
+    return [d for d, _ in layer_targets(g, kind, DX_APIS if kind == "dxvk" else None) if E.JOURNAL.has(layer_id(kind, d))]
 
 
 def game_status(g: dict) -> dict:
@@ -532,6 +576,8 @@ def game_status(g: dict) -> dict:
         st["on" if s == "ours" else "kept" if s == "user" else "free"] += 1
     st["mesa"] = layer_on(g, "mesa")
     st["dxvk"] = layer_on(g, "dxvk")
+    st["dxvk_dx11"] = any(E.JOURNAL.has(layer_id("dxvk", d)) for d, _ in layer_targets(g, "dxvk", ("dx10", "dx11")))
+    st["mode"] = current_mode(g)
     return st
 
 
@@ -543,6 +589,9 @@ def assign(log, hw: dict, games: list = None) -> dict:
     games = discover() if games is None else games
     todo, res = [], dict(games=len(games), assigned=0, already=0, kept=0, dx9=0, gl=0, failed=0)
     for g in games:
+        if current_mode(g) == "original":
+            res["original"] = res.get("original", 0) + 1
+            continue  # «Оригінал»: користувач просив нічого в цій грі не змінювати
         if any(x["api"] == "gl" for x in g["exes"]):
             res["gl"] += 1
         for x in g["exes"]:
@@ -771,7 +820,7 @@ def _demo_layer(kind: str, log) -> dict:
     files = {}
     for arch in MESA_ARCHES:
         os.makedirs(os.path.join(dest, arch), exist_ok=True)
-        for n in LAYERS[kind]["files"][:3]:
+        for n in LAYERS[kind]["files"]:
             data = f"demo {arch} {n}".encode()
             with open(os.path.join(dest, arch, n), "wb") as f:
                 f.write(data)
@@ -783,10 +832,29 @@ def _demo_layer(kind: str, log) -> dict:
 
 
 # ───────────────────────── шари в папках ігор ─────────────────────────
+def gl_driver() -> str:
+    """Чим Mesa малює OpenGL: d3d12 (за замовчуванням, OpenGL → DirectX 12) або zink (OpenGL → Vulkan, експериментально)."""
+    import features as F
+    d = str((F.CFG["mining"] or {}).get("gl_driver") or "d3d12")
+    return d if d in ("d3d12", "zink") else "d3d12"
+
+
 def env_tweak() -> E.Tweak:
-    t = E.Tweak(ENV_ID, "game", [E.R(ENV_KEY, ADAPTER_VAR, ADAPTER_NAME, "sz"), E.X("env")])
-    t._title = tr("mg.t_env")
+    ops = [E.R(ENV_KEY, ADAPTER_VAR, ADAPTER_NAME, "sz")]
+    if gl_driver() == "zink":
+        ops.append(E.R(ENV_KEY, "GALLIUM_DRIVER", "zink", "sz"))
+    t = E.Tweak(ENV_ID, "game", ops + [E.X("env")])
+    t._title = tr("mg.t_env_zink" if gl_driver() == "zink" else "mg.t_env")
     return t
+
+
+def _files_for(kind: str, files: dict, apis: tuple) -> dict:
+    """Лише ті бібліотеки шару, які потрібні цим API: DirectX 9 — d3d9 / d3d8, DirectX 10 / 11 — dxgi, d3d11, d3d10core
+    (зайва dxgi.dll поруч із грою на DirectX 9 нічого не дає, а запуск лаунчера чи оверлея може зламати)."""
+    if kind != "dxvk":
+        return files
+    names = {n for a in apis for n in DXVK_SETS.get(a, ())}
+    return {n: p for n, p in files.items() if n in names}
 
 
 def layer_tweak(kind: str, game: str, folder: str, files: dict) -> E.Tweak:
@@ -810,8 +878,8 @@ def enable_layer(kind: str, g: dict, log, hw: dict) -> dict:
     if not info:
         return {"ok": 0, "error": "no_layer"}
     items = [] if kind != "mesa" or E.JOURNAL.has(ENV_ID) else [env_tweak()]
-    items += [layer_tweak(kind, g["name"], d, info["arch"][a]) for d, a in layer_targets(g, kind)
-              if a in info["arch"] and not E.JOURNAL.has(layer_id(kind, d))]
+    items += [layer_tweak(kind, g["name"], d, _files_for(kind, info["arch"][a], ("dx9",)))
+              for d, a in layer_targets(g, kind) if a in info["arch"] and not E.JOURNAL.has(layer_id(kind, d))]
     items += [gpu_tweak(g["name"], x["path"], model(hw)) for x in g["exes"]
               if x["api"] == LAYERS[kind]["api"] and x.get("arch") in info["arch"] and exe_state(x["path"]) == "free"]
     if not items:
@@ -823,7 +891,7 @@ def enable_layer(kind: str, g: dict, log, hw: dict) -> dict:
 
 @_exclusive
 def disable_layer(kind: str, g: dict, log) -> dict:
-    ids = [layer_id(kind, d) for d, _ in layer_targets(g, kind) if E.JOURNAL.has(layer_id(kind, d))]
+    ids = [layer_id(kind, d) for d in layer_folders_on(g, kind)]
     # і призначення exe цієї гри, які зробив шар: без нього DirectX 9 / OpenGL на «Високу продуктивність» не зважає
     api = LAYERS[kind]["api"]
     ids += [gpu_id(x["path"]) for x in g["exes"] if x["api"] == api and kind == "dxvk" and E.JOURNAL.has(gpu_id(x["path"]))]
@@ -847,3 +915,296 @@ def bench_mesa(hw: dict) -> str:
         return ""
     info = mesa_info()
     return info["dir"] if info and "x64" in info["arch"] else ""
+
+
+# ───────────────────────── античит ─────────────────────────
+ANTICHEAT = {"easyanticheat": "EasyAntiCheat", "easyanticheat_eos": "EasyAntiCheat", "battleye": "BattlEye",
+             "beservice.exe": "BattlEye", "beservice_x64.exe": "BattlEye", "xigncode": "XIGNCODE3",
+             "xigncode3": "XIGNCODE3", "gameguard": "GameGuard", "npgamemon.des": "GameGuard",
+             "pnkbstra.exe": "PunkBuster", "pnkbstrb.exe": "PunkBuster", "eac_launcher.exe": "EasyAntiCheat",
+             "start_protected_game.exe": "EasyAntiCheat", "vgc.exe": "Vanguard"}
+
+
+def anticheat(folder: str) -> str:
+    """Назва античиту в папці гри (до двох рівнів углиб) або "". Таким іграм не кладемо чужі d3d9/d3d11/opengl32.dll:
+    античит може не пустити гру або, гірше, вважати це втручанням."""
+    root_depth = folder.rstrip("\\/").count(os.sep)
+    try:
+        for dp, dns, fns in os.walk(folder):
+            depth = dp.rstrip("\\/").count(os.sep) - root_depth
+            for n in list(dns) + list(fns):
+                hit = ANTICHEAT.get(n.lower())
+                if hit:
+                    return hit
+            if depth >= 2:
+                dns[:] = []
+    except OSError:
+        pass
+    return ""
+
+
+# ───────────────────────── режими рендерингу для кожної гри ─────────────────────────
+# auto     — найкращий сумісний спосіб: DirectX 10–12 і Vulkan — напряму на карту («Висока продуктивність»); DirectX 9 —
+#            через DXVK; OpenGL — через Mesa. Шар — лише якщо він завантажений і перевірений, exe потрібної розрядності, а
+#            в грі немає античиту; інакше — як є, з поясненням чому.
+# native   — лише «Висока продуктивність» для exe (без шарів). DirectX 9 і OpenGL так на карту без монітора не перейдуть.
+# dxvk     — DXVK і для DirectX 10 / 11 (якщо напряму гра потрапляє на вбудовану — наприклад, у повноекранному режимі).
+# opengl   — OpenGL через Mesa (d3d12 або Zink — див. gl_driver); DirectX — напряму.
+# original — жодних змін OptimaX у цій грі (і фонове призначення її оминає).
+MODES = ("auto", "native", "dxvk", "opengl", "original")
+KEEP_CHECKS = 5
+
+
+def game_key(g: dict) -> str:
+    return g["dir"].lower().rstrip("\\/")
+
+
+def profiles() -> dict:
+    import features as F
+    return dict((F.CFG["mining"] or {}).get("profiles") or {})
+
+
+def profile(g: dict) -> dict:
+    return dict(profiles().get(game_key(g)) or {})
+
+
+def set_profile(g: dict, **kw) -> dict:
+    import features as F
+    m = dict(F.CFG["mining"] or {})
+    profs = dict(m.get("profiles") or {})
+    p = dict(profs.get(game_key(g)) or {})
+    p.update(kw, name=g["name"])
+    profs[game_key(g)] = p
+    m["profiles"] = profs
+    F.CFG["mining"] = m
+    return p
+
+
+def drop_profile(g: dict) -> None:
+    import features as F
+    m = dict(F.CFG["mining"] or {})
+    profs = dict(m.get("profiles") or {})
+    profs.pop(game_key(g), None)
+    m["profiles"] = profs
+    F.CFG["mining"] = m
+
+
+def current_mode(g: dict) -> str:
+    """Режим із профілю; без профілю (ігри, налаштовані до 6.5) — за тим, що вже зроблено: шар є — auto, інакше native."""
+    m = profile(g).get("mode")
+    if m in MODES:
+        return m
+    return "auto" if layer_folders_on(g, "dxvk") or layer_folders_on(g, "mesa") else "native"
+
+
+def record_check(g: dict, res: dict) -> dict:
+    """Результат перевірки рендерингу — у профіль гри (останні KEEP_CHECKS) і в базу сумісності."""
+    checks = list(profile(g).get("checks") or [])
+    rec = dict(ts=int(time.time()), mode=current_mode(g), verdict=res.get("verdict"), path=res.get("path") or "",
+               d3=res.get("mining_3d"), vram=res.get("vram_mb"), exe=res.get("exe", ""))
+    checks.append(rec)
+    return set_profile(g, checks=checks[-KEEP_CHECKS:])
+
+
+def probe_summary() -> dict:
+    import gpuinfo as GI
+    import features as F
+    pr = F.CFG["gpu_probe"]
+    return GI.summary(pr) if isinstance(pr, dict) else {}
+
+
+def compat(g: dict, kind: str, apis: tuple = None) -> list:
+    """Що заважає шару kind ("dxvk" / "mesa") у цій грі — ключі пояснень mg.why.* (порожньо — можна):
+    risk (Adobe AIR), anticheat, arch (немає exe x64 / x86 з потрібним API), no_layer (шар не завантажено, файли не
+    збіглися із сумами або в архіві немає потрібних бібліотек), no_vulkan (DXVK і Zink працюють на Vulkan, а пристрою
+    Vulkan на майнінговій карті не знайдено), no_d3d12 (Mesa d3d12 — на DirectX 12, а карта його не підтримала)."""
+    out = []
+    if g.get("risk"):
+        return ["risk"]
+    if g.get("anticheat"):
+        out.append("anticheat")
+    targets = layer_targets(g, kind, apis)
+    if not targets:
+        out.append("arch")
+    info = layer_info(kind)
+    if not info:
+        out.append("no_layer")
+    elif kind == "dxvk":
+        for d, a in targets:
+            need = {n for x in g["exes"] if _dir(x["path"]).lower() == d.lower() and x["api"] in (apis or ("dx9",))
+                    for n in DXVK_NEEDS.get(x["api"], ())}
+            if not need <= set(info["arch"].get(a) or {}):
+                out.append("no_layer")
+                break
+    elif any(a not in info["arch"] for _, a in targets):
+        out.append("no_layer")
+    pr = probe_summary()
+    if pr.get("gpu"):  # перевірка DirectX / Vulkan уже була — зважаємо на неї (без неї не забороняємо)
+        if (kind == "dxvk" or (kind == "mesa" and gl_driver() == "zink")) and not pr.get("vulkan"):
+            out.append("no_vulkan")
+        if kind == "mesa" and gl_driver() == "d3d12" and pr.get("dx12") is False:
+            out.append("no_d3d12")
+    return out
+
+
+def plan(g: dict, mode: str) -> dict:
+    """Що зробити для режиму: gpu — exe на «Високу продуктивність»; dxvk — {папка: (розрядність, [бібліотеки])};
+    mesa — {папка: розрядність}; blocked — [(шар, [причини])] — чого зробити не можна й чому."""
+    res = {"gpu": [], "dxvk": {}, "mesa": {}, "blocked": [], "mode": mode}
+    if mode == "original" or g.get("risk"):
+        return res
+    dxvk_apis = DX_APIS if mode == "dxvk" else ("dx9",)
+    if mode in ("auto", "dxvk") and any(x["api"] in dxvk_apis for x in g["exes"]):
+        why = compat(g, "dxvk", dxvk_apis)
+        if why:
+            res["blocked"].append(("dxvk", why))
+        else:
+            info = layer_info("dxvk")
+            for d, a in layer_targets(g, "dxvk", dxvk_apis):
+                apis = tuple({x["api"] for x in g["exes"] if _dir(x["path"]).lower() == d.lower()
+                              and x["api"] in dxvk_apis})
+                res["dxvk"][d] = (a, sorted(_files_for("dxvk", info["arch"][a], apis)))
+    if mode in ("auto", "opengl") and any(x["api"] == "gl" for x in g["exes"]):
+        why = compat(g, "mesa")
+        if why:
+            res["blocked"].append(("mesa", why))
+        else:
+            res["mesa"] = dict(layer_targets(g, "mesa"))
+    layered = {d.lower() for d in list(res["dxvk"]) + list(res["mesa"])}
+    for x in g["exes"]:
+        if x["api"] == "dx9" and _dir(x["path"]).lower() not in layered:
+            continue  # DirectX 9 без DXVK на карту без монітора не перейде — «Висока продуктивність» нічого не дасть
+        res["gpu"].append(x["path"])
+    return res
+
+
+def _deployed(kind: str, folder: str) -> set:
+    e = E.JOURNAL.get(layer_id(kind, folder)) or {}
+    return {_base(r.get("p", "")).lower() for r in e.get("undo", []) if r.get("t") == "file"}
+
+
+def _stale(kind: str, folder: str, want: list) -> bool:
+    """Шар у папці вже є, але не той набір бібліотек (DirectX 9 → DirectX 9 + 11 і навпаки) — перекласти."""
+    have = _deployed(kind, folder)
+    return bool(have - set(want)) or any(n not in have and not os.path.isfile(_join(folder, n)) for n in want)
+
+
+def _apply(g: dict, mode: str, log, hw: dict) -> dict:
+    p = plan(g, mode)
+    undo, todo = [], []
+    want_gpu = {e.lower() for e in p["gpu"]}
+    for x in g["exes"]:
+        if E.JOURNAL.has(gpu_id(x["path"])) and x["path"].lower() not in want_gpu:
+            undo.append(gpu_id(x["path"]))
+    for kind in ("dxvk", "mesa"):
+        want = {d.lower(): d for d in p[kind]}
+        for d in layer_folders_on(g, kind):
+            if d.lower() not in want or (kind == "dxvk" and _stale(kind, d, p["dxvk"][want[d.lower()]][1])):
+                undo.append(layer_id(kind, d))
+    if undo:
+        E.undo_ids(undo, log, by="mining")
+    for d, (a, names) in p["dxvk"].items():
+        if not E.JOURNAL.has(layer_id("dxvk", d)):
+            files = layer_info("dxvk")["arch"][a]  # суми звіряються ще раз — безпосередньо перед копіюванням
+            todo.append(layer_tweak("dxvk", g["name"], d, {n: v for n, v in files.items() if n in names}))
+    for d, a in p["mesa"].items():
+        if not E.JOURNAL.has(layer_id("mesa", d)):
+            todo.append(layer_tweak("mesa", g["name"], d, layer_info("mesa")["arch"][a]))
+    if p["mesa"] and not E.JOURNAL.has(ENV_ID):
+        todo.insert(0, env_tweak())
+    gpu = model(hw)
+    todo += [gpu_tweak(g["name"], x["path"], gpu) for x in g["exes"]
+             if x["path"].lower() in want_gpu and exe_state(x["path"]) == "free"]
+    res = E.apply_tweaks(todo, log, header=False, by="mining") if todo else {"ok": 0, "fail": 0}
+    res["new"] = [t.id for t in todo if E.JOURNAL.has(t.id)]
+    if E.JOURNAL.has(ENV_ID) and not any(t.startswith(LAYERS["mesa"]["prefix"]) for t in E.JOURNAL.newest_first()):
+        E.undo_ids([ENV_ID], log, by="mining")  # жодної гри з Mesa — змінна більше не потрібна
+    res.update(blocked=p["blocked"], undone=len(undo), mode=mode)
+    return res
+
+
+@_exclusive
+def apply_mode(g: dict, mode: str, log, hw: dict) -> dict:
+    """Приводить гру до режиму: прибирає зайве (лише те, що зробила OptimaX) і додає потрібне — через журнал відкату
+    (оригінальні файли гри зберігаються поруч як *.optimax-bak і повертаються під час відкату, також з
+    OptimaX-Rescue.cmd). Вибір, який користувач сам зробив у «Графіці», не чіпаємо. Якщо щось не вдалося — гра
+    повертається до попереднього режиму."""
+    if mode not in MODES:
+        return {"ok": 0, "error": "mode"}
+    prev = current_mode(g)
+    res = _apply(g, mode, log, hw)
+    if res.get("fail") or res.get("error"):
+        log(tr("mg.mode_failed", game=g["name"], mode=tr(f"mg.mode.{prev}")))
+        if res.get("new"):
+            E.undo_ids(res["new"], log, by="mining")
+        if prev != mode:
+            _apply(g, prev, log, hw)
+        res["rolled_back"] = True
+        return res
+    set_profile(g, mode=mode, prev=prev if prev != mode else profile(g).get("prev", ""))
+    log(tr("mg.mode_applied", game=g["name"], mode=tr(f"mg.mode.{mode}")))
+    for kind, why in res["blocked"]:
+        log(tr("mg.blocked", what=LAYER_NAMES[kind], why=", ".join(tr(f"mg.why.{w}") for w in why)))
+    return res
+
+
+@_exclusive
+def reset_game(g: dict, log) -> dict:
+    """Видалити профіль: усе, що OptimaX зробила для гри (шари, призначення exe), повертається, профіль стирається."""
+    ids = [gpu_id(x["path"]) for x in g["exes"] if E.JOURNAL.has(gpu_id(x["path"]))]
+    ids += [layer_id(k, d) for k in ("dxvk", "mesa") for d in layer_folders_on(g, k)]
+    res = E.undo_ids(ids, log, by="mining") if ids else {"undone": 0}
+    if E.JOURNAL.has(ENV_ID) and not any(t.startswith(LAYERS["mesa"]["prefix"]) for t in E.JOURNAL.newest_first()):
+        E.undo_ids([ENV_ID], log, by="mining")
+    drop_profile(g)
+    log(tr("mg.reset_done", game=g["name"]))
+    return res
+
+
+@_exclusive
+def set_gl_driver(driver: str, log) -> dict:
+    """OpenGL через Mesa: d3d12 (за замовчуванням) чи zink. Змінна середовища перезаписується, лише якщо Mesa вже десь
+    увімкнена."""
+    import features as F
+    m = dict(F.CFG["mining"] or {})
+    m["gl_driver"] = "zink" if driver == "zink" else "d3d12"
+    F.CFG["mining"] = m
+    if E.JOURNAL.has(ENV_ID):
+        E.undo_ids([ENV_ID], log, by="mining")
+        return E.apply_tweaks([env_tweak()], log, header=False, by="mining")
+    return {"ok": 1}
+
+
+def recommend(g: dict) -> dict:
+    """Який режим порадити й чому: {mode, why: [ключі mg.rec.*]} — з бази сумісності, античиту й API."""
+    import gamedb as DB
+    apis = {x["api"] for x in g["exes"]}
+    known = DB.lookup(g)
+    if g.get("risk"):
+        return dict(mode="original", why=["air"])
+    if known.get("mode") in MODES:
+        return dict(mode=known["mode"], why=["db"])
+    if g.get("anticheat"):
+        return dict(mode="native", why=["anticheat"])
+    if apis & {"dx9", "gl"}:
+        return dict(mode="auto", why=["dx9" if "dx9" in apis else "gl"])
+    return dict(mode="native", why=["direct"])
+
+
+def game_for_exe(games: list, exe: str) -> dict:
+    exe = (exe or "").lower()
+    return next((g for g in games for x in g["exes"] if _base(x["path"]).lower() == exe), None)
+
+
+# ───────────────────────── нові ігри ─────────────────────────
+def new_games(games: list) -> list:
+    """Ігри, яких OptimaX ще не бачила (за папкою), — і запам'ятовує їх."""
+    import features as F
+    m = dict(F.CFG["mining"] or {})
+    seen = set(m.get("seen") or [])
+    first = not seen  # перший пошук — усі ігри «нові», про них не сповіщаємо
+    fresh = [g for g in games if game_key(g) not in seen]
+    if fresh:
+        m["seen"] = sorted(seen | {game_key(g) for g in fresh})[-2000:]
+        F.CFG["mining"] = m
+    return [] if first else fresh

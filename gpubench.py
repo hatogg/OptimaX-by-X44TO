@@ -540,6 +540,10 @@ class _Util(ctypes.Structure):
     _fields_ = [("gpu", ctypes.c_uint), ("memory", ctypes.c_uint)]
 
 
+class _Mem(ctypes.Structure):
+    _fields_ = [("total", ctypes.c_ulonglong), ("free", ctypes.c_ulonglong), ("used", ctypes.c_ulonglong)]
+
+
 class Nvml:
     """Температура, частоти, споживання й причини скидання частот першої відеокарти NVIDIA."""
 
@@ -595,6 +599,21 @@ class Nvml:
             u = _Util()
             if lib.nvmlDeviceGetUtilizationRates(h, ctypes.byref(u)) == 0:
                 out["util"] = int(u.gpu)
+            # PCIe: на майнінговій карті кожен кадр іде шиною у вбудовану графіку, тож x1/x4 чи Gen1 — вузьке місце
+            for key, fn_name in (("pcie_gen", "nvmlDeviceGetCurrPcieLinkGeneration"),
+                                 ("pcie_width", "nvmlDeviceGetCurrPcieLinkWidth"),
+                                 ("pcie_max_gen", "nvmlDeviceGetMaxPcieLinkGeneration"),
+                                 ("pcie_max_width", "nvmlDeviceGetMaxPcieLinkWidth")):
+                fn = getattr(lib, fn_name, None)
+                if fn and fn(h, ctypes.byref(v)) == 0:
+                    out[key] = int(v.value)
+            tput = getattr(lib, "nvmlDeviceGetPcieThroughput", None)
+            for key, counter in (("pcie_tx", 0), ("pcie_rx", 1)):  # КБ/с за останні ~20 мс
+                if tput and tput(h, counter, ctypes.byref(v)) == 0:
+                    out[key] = int(v.value)
+            mem = _Mem()
+            if lib.nvmlDeviceGetMemoryInfo(h, ctypes.byref(mem)) == 0:
+                out["vram_used"], out["vram_total"] = mem.used // 2**20, mem.total // 2**20
             reasons = ctypes.c_ulonglong(0)
             fn = getattr(lib, "nvmlDeviceGetCurrentClocksEventReasons", None) or \
                 getattr(lib, "nvmlDeviceGetCurrentClocksThrottleReasons", None)

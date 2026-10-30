@@ -9,7 +9,7 @@ OptimaX — допоміжний скрипт збірки релізу.
     python packaging/release.py checksums <файли…>   — SHA256SUMS.txt для релізу
     python packaging/release.py mesa <папка>         — OptimaX-Mesa-<версія>.zip для майнінгових карт (mining.py):
                                                        x64- і x86-бібліотеки з релізу pal1000/mesa-dist-win + mesa.json
-    python packaging/release.py dxvk <папка>         — OptimaX-DXVK-<версія>.zip: d3d9.dll і d3d8.dll (x64, x86) з релізу
+    python packaging/release.py dxvk <папка>         — OptimaX-DXVK-<версія>.zip: бібліотеки DirectX (x64, x86) з релізу
                                                        doitsujin/dxvk + dxvk.json
 
 Версія береться лише з engine.py (VERSION = "..."), тож змінювати її треба в одному місці.
@@ -193,7 +193,7 @@ def _seven_zip() -> str:
 
 DXVK_REPO = "doitsujin/dxvk"
 DXVK_ASSET = re.compile(r"^dxvk-([\d.]+)\.tar\.gz$", re.I)
-DXVK_FILES = ("d3d9.dll", "d3d8.dll")  # як у mining.DXVK_FILES
+DXVK_FILES = ("d3d9.dll", "d3d8.dll", "dxgi.dll", "d3d11.dll", "d3d10core.dll")  # як у mining.DXVK_FILES
 DXVK_DIRS = {"x64": "x64", "x86": "x32"}  # розрядність у OptimaX -> папка в архіві DXVK
 
 
@@ -219,7 +219,8 @@ def _release_asset(repo: str, tag: str, rx, work: str) -> tuple:
 
 
 def build_dxvk(out_dir: str) -> str:
-    """Перепаковує DXVK (DirectX 9 / 8 → Vulkan) для DX9-ігор на майнінгових картах: лише d3d9.dll і d3d8.dll.
+    """Перепаковує DXVK (DirectX 8 / 9 / 10 / 11 → Vulkan) для ігор на майнінгових картах: лише бібліотеки DirectX
+    (без setup-скриптів); у папку гри OptimaX кладе тільки ті, що потрібні її API.
     OPTIMAX_DXVK_TAG=<тег> — конкретний реліз (за замовчуванням останній)."""
     import json
     import tarfile
@@ -236,8 +237,9 @@ def build_dxvk(out_dir: str) -> str:
             arch = next((a for a, d in DXVK_DIRS.items() if parts[-2].lower() == d), None)
             if arch:
                 blobs[f"{arch}/{parts[-1].lower()}"] = t.extractfile(m).read()
-    if "x64/d3d9.dll" not in blobs or "x86/d3d9.dll" not in blobs:
-        raise SystemExit(f"{os.path.basename(arc)}: x64/d3d9.dll or x32/d3d9.dll not found")
+    missing = [f"{a}/{n}" for a in DXVK_DIRS for n in DXVK_FILES if f"{a}/{n}" not in blobs and n != "d3d8.dll"]
+    if missing:  # d3d8.dll є лише з DXVK 2.4; решта — обов'язкові
+        raise SystemExit(f"{os.path.basename(arc)}: not found {', '.join(missing)}")
     man = {"dxvk": ver, "source": f"https://github.com/{DXVK_REPO}/releases/tag/{tag}",
            "archive": os.path.basename(arc), "archive_sha256": sha,
            "files": {k: hashlib.sha256(b).hexdigest() for k, b in sorted(blobs.items())}}
@@ -249,7 +251,7 @@ def build_dxvk(out_dir: str) -> str:
                                  f"from {man['source']}\n"
                                  "OptimaX uses it on PCs with a mining graphics card (no video outputs): DirectX 9 sees "
                                  "only the card with the monitor, DXVK translates it to Vulkan, which sees the mining "
-                                 "card.\n")
+                                 "card. DirectX 10 / 11 libraries are used only in the DXVK mode chosen per game.\n")
         for k, b in sorted(blobs.items()):
             z.writestr(k, b)
     return out

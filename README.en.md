@@ -103,7 +103,7 @@ An image for Telegram, Discord or a forum: FPS before and after, Windows boot ti
 </tr>
 </table>
 
-Also: Safe, Gaming, Low-end PC and Manual modes that build the plan for your PC, a wizard and an expert menu with 136 optimizations in 16 sections, 6 profiles (gaming PC, laptop, old PC, Xeon / X99…), game mode, per-game cores on Ryzen X3D and Intel with P/E cores, a settings guard after Windows updates, trial mode, the fastest DNS and ping to game servers, cleanup and a disk analyzer, app updates through winget. Full description in the [guide](docs/en/guide.md).
+Also: Safe, Gaming, Low-end PC and Manual modes that build the plan for your PC, a wizard and an expert menu with 136 optimizations in 16 sections, 6 profiles (gaming PC, laptop, old PC, Xeon / X99…), game mode with “Lowest latency” and “Stable frametime” profiles, **games on a P106 / P104 / CMP mining card** (Universal GPU Renderer: a render mode per game — native, DXVK for DirectX 9–11, Mesa for OpenGL — and a check of which card really renders the game), per-game cores on Ryzen X3D and Intel with P/E cores, a settings guard after Windows updates, trial mode, the fastest DNS and ping to game servers, cleanup and a disk analyzer, app updates through winget. Full description in the [guide](docs/en/guide.md).
 
 <sub>Screenshots were taken in preview mode on a demo configuration; the numbers illustrate the interface, they don't promise a gain on your PC.</sub>
 

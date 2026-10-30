@@ -253,6 +253,57 @@ def parse_csv(path: str) -> list:
     return out
 
 
+def parse_csv_by_app(path: str) -> dict:
+    """Запис усіх процесів -> {exe (нижній регістр): [час кадру, мс]}."""
+    with open(path, newline="", encoding="utf-8", errors="replace") as f:
+        rows = csv.reader(f)
+        head = [h.strip() for h in next(rows, [])]
+        col = next((head.index(c) for c in ("MsBetweenPresents", "FrameTime", "msBetweenPresents") if c in head), None)
+        app = head.index("Application") if "Application" in head else None
+        if col is None or app is None:
+            return {}
+        out: dict = {}
+        for r in rows:
+            try:
+                out.setdefault(r[app].strip().lower(), []).append(float(r[col]))
+            except (ValueError, IndexError):
+                pass
+    return out
+
+
+def start_capture_all(seconds: int) -> dict:
+    """Запис кадрів усіх процесів у фоні (для «Чому лагає?»: гра стане відома лише після заміру)."""
+    pm = find_presentmon()
+    if not pm or not E.IS_WIN:
+        return {}
+    import verify as V
+    if V.signature(pm)["status"] == "invalid":
+        return {}
+    os.makedirs(TOOLS_DIR, exist_ok=True)
+    out = os.path.join(TOOLS_DIR, f"diag_{int(time.time())}.csv")
+    cmd = [pm, "--output_file", out, "--timed", str(seconds + 2), "--terminate_after_timed", "--no_console_stats",
+           "--stop_existing_session", "--session_name", "OptimaXDiag"]
+    p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=E.CREATE_NO_WINDOW)
+    return dict(proc=p, out=out, t0=time.time(), seconds=seconds)
+
+
+def finish_capture_all(cap: dict) -> dict:
+    p, out = cap.get("proc"), cap.get("out")
+    if not p:
+        return {}
+    try:
+        p.wait(timeout=12)
+    except subprocess.TimeoutExpired:
+        p.kill()
+    try:
+        return parse_csv_by_app(out) if os.path.exists(out) else {}
+    finally:
+        try:
+            os.remove(out)
+        except OSError:
+            pass
+
+
 _DEMO_RUN = [0]
 
 

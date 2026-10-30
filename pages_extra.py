@@ -8,6 +8,7 @@ import ntpath
 import os
 import subprocess
 import webbrowser
+from datetime import datetime
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QGuiApplication
@@ -17,6 +18,7 @@ import apps as A
 import engine as E
 import features as F
 import fpstest as FT
+import gpudiag as GD
 import monitor as M
 import netlab as N
 import report as RP
@@ -179,6 +181,18 @@ class DiagnosePage(QWidget):
         self.stat_grid.setHorizontalSpacing(18)
         self.stat_grid.setVerticalSpacing(10)
         rv.addLayout(self.stat_grid)
+        # GPU Bottleneck History: попередні заміри — що обмежувало, FPS, на якій карті малювала гра
+        self.hist_title = label(tr("hist.title"), "h3")
+        self.hist_title.setContentsMargins(14, 8, 14, 2)
+        rv.addWidget(self.hist_title)
+        self.hist_note = label("", "desc", wrap=True)
+        self.hist_note.setContentsMargins(14, 0, 14, 2)
+        rv.addWidget(self.hist_note)
+        self.hist_grid = QGridLayout()
+        self.hist_grid.setContentsMargins(14, 2, 14, 10)
+        self.hist_grid.setHorizontalSpacing(16)
+        self.hist_grid.setVerticalSpacing(4)
+        rv.addLayout(self.hist_grid)
         self.res_card.hide()
         v.addWidget(self.res_card)
 
@@ -268,6 +282,7 @@ class DiagnosePage(QWidget):
         if not isinstance(res, dict) or "findings" not in res:
             return
         F.CFG["diag_last"] = res
+        GD.add_history(res)
         self.show_result(res)
         self.main.toast(tr("diag.ready"))
 
@@ -290,9 +305,48 @@ class DiagnosePage(QWidget):
                  (tr("diag.s.gpu_t"), fmt(st.get("gpu_t_max"), "°C"))]
         for i, (c, val) in enumerate(cells):
             stat_cell(self.stat_grid, i, c, val)
+        fr = res.get("frames") or {}
+        rd = res.get("render") or {}
+        pc = res.get("pcie") or {}
+        if fr.get("avg"):
+            cells += [(tr("diag.s.fps"), f"{fr['avg']:.0f}"), ("1% low", f"{fr.get('low1') or 0:.0f}"),
+                      (tr("diag.s.stutter"), f"{fr.get('stutters_pm') or 0:.1f}")]
+        if pc.get("load_gen"):
+            cells.append((tr("diag.s.pcie"), f"{pc['load_gen']}.0 x{pc.get('load_width') or '?'} · {pc.get('share', 0)}%"))
+        if st.get("gpu_power"):
+            cells.append((tr("diag.s.power"), f"{st['gpu_power']:.0f} W"))
+        if rd.get("verdict") in ("mining", "igpu", "warp"):
+            cells.append((tr("diag.s.render"), tr(f"diag.render.{rd['verdict']}")))
+        for i, (c, val) in enumerate(cells[8:], 8):
+            stat_cell(self.stat_grid, i, c, val)
         top = st.get("top_bg") or []
         if top:
-            stat_cell(self.stat_grid, len(cells), tr("diag.s.bg"), ", ".join(f"{n} {p:.0f}%" for n, p in top[:3]), 4)
+            n = (len(cells) + 3) // 4 * 4
+            stat_cell(self.stat_grid, n, tr("diag.s.bg"), ", ".join(f"{n} {p:.0f}%" for n, p in top[:3]), 4)
+        self.show_history(res.get("game"))
+
+    def show_history(self, game: str = None):
+        clear_layout(self.hist_grid)
+        hist = GD.history()
+        self.hist_title.setVisible(len(hist) > 1)
+        self.hist_note.setVisible(len(hist) > 1)
+        if len(hist) <= 1:
+            return
+        reg = GD.regression(GD.history(game) if game else hist)
+        self.hist_note.setText(tr("hist.regress", game=reg["game"], metric=tr(f"hist.m.{reg['metric']}"),
+                                  was=reg["was"], now=reg["now"], pct=reg["pct"]) if reg else tr("hist.note"))
+        heads = (tr("hist.when"), tr("hist.game"), tr("hist.limit"), "CPU / GPU", "FPS / 1%", tr("diag.s.render"))
+        for j, h in enumerate(heads):
+            self.hist_grid.addWidget(label(h, "muted"), 0, j)
+        for i, h in enumerate(reversed(hist[-8:]), 1):
+            fps = f"{h['avg']:.0f} / {h.get('low1') or 0:.0f}" if h.get("avg") else "—"
+            vals = (datetime.fromtimestamp(h.get("ts") or 0).strftime("%d.%m %H:%M"), h.get("game") or "—",
+                    tr(f"lim.{h['main']}") if h.get("main") in M.LIMITS + ("mixed",) else "—",
+                    f"{h.get('cpu') or 0:.0f}% / {h.get('gpu') or 0:.0f}%", fps,
+                    tr(f"diag.render.{h['render']}") if h.get("render") in ("mining", "igpu", "warp") else "—")
+            for j, val in enumerate(vals):
+                self.hist_grid.addWidget(label(str(val), "desc"), i, j)
+        self.hist_grid.setColumnStretch(len(heads), 1)
 
     # ── тест FPS ──
     def refresh_fps(self):

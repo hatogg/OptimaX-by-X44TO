@@ -46,3 +46,10 @@ def test_mining_card():
     assert any("DXVK" in t for t in m["texts"]) and any("Mesa" in t for t in m["texts"]), m["texts"]
     assert "P106-100" in m["bench_note"], m["bench_note"]
     assert m["left"] == 0, "Revert all must remove every mining change"
+    # Universal GPU Renderer: перевірка DirectX / Vulkan, режими, перевірка рендерингу, аналізатори
+    assert "1.4.303" in m["probe"] and "582.78" in m["probe"], m["probe"]
+    assert m["checked"] and m["menus"] >= 3 and m["link"] >= 2 and m["shader"], m
+    assert st["anticheat_plan"] == [["dxvk", ["anticheat"]]], st["anticheat_plan"]
+    d = st["mining_diag"]
+    assert d["render"] == "mining" and "render_ok" in d["keys"] and d["fps"], d
+    assert d["hist"] >= 2 and d["hist_rows"] > 0, d
