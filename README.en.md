@@ -42,7 +42,7 @@ Measures FPS before and after and keeps only what helped. If things got worse, i
 
 ### Before/after FPS test
 
-Average FPS, 1% and 0.1% lows, stutters and a frame-time graph through PresentMon. If it got worse, one button rolls back the changes between the measurements.
+3–5 runs in a row and the median: average FPS, 1% and 0.1% lows, stutters and frame pacing through PresentMon. The gain is shown with its measurement error, so you see whether it's real. If it got worse, one button rolls back the changes between the measurements.
 
 <img src="docs/assets/screens/en/fps-test.png" alt="Before/after FPS test with a frame-time graph">
 </td>
@@ -88,7 +88,7 @@ A DNS filter right on your PC: statistics, query log, StevenBlack and HaGeZi lis
 
 ### Why is it lagging?
 
-While you play, it watches the CPU, GPU, memory, disk and temperatures, then explains in plain words: overheating, CPU bottleneck, not enough memory, a background app.
+While you play, it watches the CPU, GPU, memory, disk and temperatures, then names the main limit (CPU, GPU, memory, drive, overheating) and explains in plain words what to do about it.
 
 <img src="docs/assets/screens/en/diagnose.png" alt="Lag diagnostics">
 </td>
@@ -103,21 +103,23 @@ An image for Telegram, Discord or a forum: FPS before and after, Windows boot ti
 </tr>
 </table>
 
-Also: a wizard and an expert menu with 136 optimizations in 16 sections, 6 profiles (gaming PC, laptop, old PC, Xeon / X99…), game mode, per-game cores on Ryzen X3D and Intel with P/E cores, a settings guard after Windows updates, trial mode, the fastest DNS and ping to game servers, cleanup and a disk analyzer, app updates through winget. Full description in the [guide](docs/en/guide.md).
+Also: Safe, Gaming, Low-end PC and Manual modes that build the plan for your PC, a wizard and an expert menu with 136 optimizations in 16 sections, 6 profiles (gaming PC, laptop, old PC, Xeon / X99…), game mode, per-game cores on Ryzen X3D and Intel with P/E cores, a settings guard after Windows updates, trial mode, the fastest DNS and ping to game servers, cleanup and a disk analyzer, app updates through winget. Full description in the [guide](docs/en/guide.md).
 
 <sub>Screenshots were taken in preview mode on a demo configuration; the numbers illustrate the interface, they don't promise a gain on your PC.</sub>
 
 ## How it works
 
 1. **Analysis.** OptimaX detects the CPU (P/E cores, AMD X3D, Xeon), graphics cards, memory, drives, monitor and battery and shows the weakest spot of the build.
-2. **Plan.** The wizard asks a few simple questions and builds the plan for you; the expert menu gives full control over every item.
+2. **Plan.** A mode (Safe, Gaming, Low-end PC) builds the plan for your hardware and for what limits your FPS; the wizard asks a few simple questions, and the expert menu gives full control over every item.
 3. **Review.** You see every change before it's applied. Anything that harms your particular hardware (such as turning off Game Bar on Ryzen X3D) is blocked with an explanation.
 4. **Apply.** A Windows restore point first, then the changes with a console and a Stop button. Optionally, trial mode until the next restart.
-5. **Measure.** The FPS test or smart optimization shows whether things really got better.
+5. **Measure.** The FPS test or smart optimization shows whether things really got better — with the measurement error — and changes that hurt your particular PC are removed.
 
 ## Safe by design
 
-- Every change is written to a journal and restored to your original value, not to a “default”.
+- Every change is written to a journal **before** it happens and restored to your original value, not to a “default”. If OptimaX crashes in the middle of a change, it reverts what had already changed on the next start.
+- The journal has a backup copy, and before its first change OptimaX records your original Windows settings — even if the journal is lost, it finds and reverts its changes.
+- Updates run only after a SHA-256 and digital signature check, repeated right before launch.
 - `OptimaX-Rescue.cmd` duplicates the journal as Windows commands: it works without the program, from Safe Mode.
 - Before every release, GitHub Actions on clean Windows Server 2022 and 2025 applies **every** tweak, checks that it worked, rolls it back and checks that everything returned.
 - Preview mode `--dry-run` shows every command without changing anything.

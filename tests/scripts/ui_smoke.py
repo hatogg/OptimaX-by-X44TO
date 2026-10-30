@@ -99,6 +99,22 @@ for key in list(w.nav_keys):
     shot(w, f"page-{key}")
 steps["pages"] = len(w.nav_keys)
 
+# режими оптимізації: план під демо-залізо → перегляд змін (для «Ігрового» — із замірами)
+w.open_modes()
+pump(timeout=0.2)
+opt = w.pages["optimize"]
+shot(w, "modes")
+opt.modes.show_why("gaming")
+pump(timeout=0.1)
+shot(w, "modes-why")
+opt.modes.choose("gaming")
+pump(timeout=0.2)
+steps["modes"] = {"rows": len(opt.review.rows), "smart": bool(opt.review.sw_smart.isChecked()),
+                  "safe": len((opt.modes.plans.get("safe") or {}).get("ids") or []),
+                  "limit": bool(opt.modes.limit.text())}
+shot(w, "modes-review")
+opt.back_from_review()
+
 # застосувати рекомендований план (режим перегляду), потім «збій» і аварійний відкат
 plan = (w.analysis or {}).get("recommended") or []
 w.start_apply(plan, False, False)

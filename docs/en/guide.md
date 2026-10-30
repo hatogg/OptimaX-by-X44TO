@@ -9,6 +9,7 @@ Everything the program can do, from the first analysis to the emergency rollback
 - [How it works](#how-it-works)
 - [What other optimizers don't have](#what-other-optimizers-dont-have)
 - [Sections of the program](#sections-of-the-program)
+- [Optimization modes](#optimization-modes)
 - [Profiles](#profiles)
 - [Smart optimization](#smart-optimization)
 - [Emergency rollback](#emergency-rollback)
@@ -71,6 +72,21 @@ OptimaX won't let you turn on something that harms your particular hardware. For
 | **Backups** | Change journal with rollback, emergency rollback and OptimaX-Rescue.cmd, settings guard, Windows restore points, settings profiles |
 | **Settings** | Language, tray, autostart, scheduled maintenance, hotkeys (Ctrl+Alt+G for game mode, Ctrl+Alt+M to clean memory) |
 
+## Optimization modes
+
+The Modes tab on the Optimize page. A mode is not a fixed list: the plan is built for your PC.
+
+| Mode | For whom | What it considers |
+| --- | --- | --- |
+| **Safe** | Minimal risk | Only low-risk changes, each one reversible; services, power and drivers stay untouched |
+| **Gaming** | Max FPS, with proof | The profile for your hardware + what limits FPS: on a GPU-bound PC CPU tweaks are skipped; on an overheating one, nothing that adds heat. After applying, it measures and removes what hurts |
+| **Low-end PC** | Little RAM, an HDD, old hardware | Frees RAM and disk; if the diagnosis sees RAM or disk running short, it adds changes for exactly that |
+| **Manual** | Full control | The expert menu with nothing preselected |
+
+**What limits FPS** comes from “Why does it lag?” or from the in-game FPS test (the diagnosis runs alongside the frame capture); the newest result is used. A limit counts only if it held for at least half of the measurement.
+
+**What smart optimization proved on this PC:** a change found harmful is never offered in any mode; a change that twice showed no effect beyond the measurement error is not offered in Gaming. Under each mode, “Left out” lists every excluded change with the reason.
+
 ## Profiles
 
 | Profile | For whom |
@@ -88,10 +104,10 @@ The recommended profile for your PC is marked automatically.
 
 A regular optimizer applies everything and hopes for the best. Smart optimization checks:
 
-1. **Measure before**, twice, to learn how much results vary on your PC.
+1. **Measure before**, three times: the median (one bad run can't shift it) and how much results vary on your PC — the measurement error.
 2. **Apply** the plan. If it contains changes that work only after a restart, OptimaX asks you to restart and continues on its own after you sign in.
-3. **Measure after.** Better: the changes stay. Worse, or “hidden worse” (some changes help while one hurts): the search starts.
-4. **Find the culprit by halving:** temporarily turn off half of the changes, measure, compare. A few measurements are enough to find one or two harmful changes among 20–40; they are removed and the rest stay. A difference within the noise (under ±2%) doesn't count as harm.
+3. **Measure after**, also three times. A gain counts as proven only if it exceeds the measurement error (95%, depending on the number of runs). Better: the changes stay. Worse, or “hidden worse” (some changes help while one hurts): the search starts. No proven gain: one button removes the performance changes with no effect.
+4. **Find the culprit by halving:** temporarily turn off half of the changes, measure, compare. A few measurements are enough to find one or two harmful changes among 20–40; they are removed and the rest stay. A difference within the error (at least ±2%) doesn't count as harm; on pure noise a false “better” or “found harm” happens in no more than ~5% of sessions.
 
 You can measure with the **OptimaX GPU test** (30 seconds, 1280×720, lighter quality) or with **your own game** through PresentMon (45 seconds, just play as usual). **Check my changes** does the same with what you applied earlier. Stopping in the middle of the search brings back everything that was turned off temporarily.
 
@@ -191,10 +207,16 @@ Starting OptimaX again doesn't open a second window; it shows the one already ru
 
 Once a day OptimaX checks GitHub for a new release. If there is one, a “new version is available” banner appears on Analysis and an Update button in Settings. The program downloads the installer, installs the new version silently and starts again. You can turn the check off in Settings.
 
+The downloaded file runs only after verification: its SHA-256 must match the GitHub checksum and the release's `SHA256SUMS.txt` (when both exist they must agree), and its digital signature must not be broken. If OptimaX itself is signed, the update must be signed by the same publisher. The file is stored in `C:\ProgramData\OptimaX\updates` (regular apps can't write there) and checked again right before launch. If it fails, it doesn't run and OptimaX offers the release page.
+
 ## Safety and rollback
 
 - A Windows restore point before every apply.
 - Every change goes to the journal `%APPDATA%\OptimaX\back.json` and is restored on the Backups tab to your original value. Rollback goes strictly from newest to oldest, so even if two tweaks changed the same value, it returns to the original.
+- The rollback record reaches the disk **before** the change (`back.pending.json`). If OptimaX crashes in the middle of a change, it reverts what had already changed on the next start and offers to roll back the interrupted batch. An error in the middle of an item reverts what that item had changed at once.
+- The previous journal version is `back.json.bak`; a damaged journal is set aside as `back.json.corrupt-…` and restored from the copy. If the journal can't be written, OptimaX changes nothing.
+- Before its first change OptimaX saves a snapshot of your original Windows settings (`baseline.json`). Backups → Original Windows settings finds OptimaX changes missing from the journal and reverts them.
+- Conflicting changes are never applied together; without administrator rights, system-wide settings are skipped with an explanation.
 - `C:\ProgramData\OptimaX\rescue\OptimaX-Rescue.cmd` duplicates the journal as Windows commands and rolls everything back without the program, also from Safe Mode. After changes OptimaX watches for blue screens and crash restarts for three days.
 - Smart optimization removes changes after which FPS dropped, and brings back what it turned off temporarily if you stop the search.
 - Trial mode rolls the changes back on its own if you don't confirm them after a restart.

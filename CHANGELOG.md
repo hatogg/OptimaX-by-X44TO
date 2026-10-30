@@ -2,6 +2,43 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [6.4] — 2026-10-30
+
+OptimaX не просто змінює Windows, а доводить, що кожна оптимізація справді допомагає, — і ще надійніше повертає все назад.
+
+### Безпека й відкат
+
+- **Жодної зміни без запису.** Запис відкату тепер потрапляє на диск *до* того, як зміниться система. Якщо OptimaX аварійно закриється посеред оптимізації (виліт, синій екран, зникло світло), під час наступного запуску вона сама поверне те, що встигло змінитися, а пакет змін, який не дійшов до кінця, запропонує відкотити. Раніше частина змін могла лишитися в системі без запису.
+- **Оптимізація або вся, або ніяк.** Якщо посеред пункту трапилася помилка (немає доступу до ключа реєстру тощо), уже змінене в цьому пункті одразу повертається, а пакет продовжується.
+- **Журнал не загубиться.** Попередня версія журналу зберігається як резервна копія; пошкоджений файл відкладається, а журнал відновлюється з копії. Раніше пошкоджений журнал мовчки заміщувався порожнім, і відкат ставав неможливим. Якщо журнал не вдається записати (диск повний, антивірус), OptimaX зупиняється й нічого не змінює.
+- **Знімок початкових налаштувань Windows.** Перед першою зміною OptimaX запам'ятовує всі параметри, які може змінити. Навіть якщо журнал загубиться, «Резервні копії» → «Початкові налаштування Windows» знайде зміни OptimaX без запису й поверне їх.
+- **Частковий відкат більше не губить кроки.** Те, що не вдалося повернути, лишається в журналі з позначкою — відкат можна повторити або скористатися OptimaX-Rescue.cmd.
+- **Конфлікти.** Зміни, що перезаписують одна одну (наприклад, «Агресивний Turbo» і «Тихий режим»), ніколи не застосовуються разом: в експертному меню друга вимикається, у перегляді — позначається, а в пакеті пропускається з поясненням.
+- **Права адміністратора** перевіряються для кожної зміни: без них системні параметри пропускаються з поясненням, а не ламаються на півдорозі.
+- **Безпечне оновлення.** Завантажене оновлення запускається лише після перевірки SHA-256 (сума з GitHub і `SHA256SUMS.txt` релізу — мусять збігатися) і цифрового підпису Windows. Пошкоджений або чужий підпис — ніколи; підписана OptimaX приймає лише оновлення того самого видавця. Файл лежить у папці, куди звичайні програми не можуть писати, і перевіряється ще раз безпосередньо перед запуском. PresentMon перевіряється так само.
+
+### Точні заміри
+
+- **Тест FPS: 3 або 5 прогонів** поспіль, медіана (один невдалий прогін її не зсуне), явно невдалий прогін відкидається. Видно розкид між прогонами, 0.1% low, фризи за хвилину й плавність кадрів.
+- **Порівняння «до/після» з похибкою.** Для FPS, 1% і 0.1% low показано зміну ± похибку вимірювання (95%, з урахуванням кількості прогонів). «Приріст підтверджено» — лише коли зміна більша за похибку, інакше «різниці немає».
+- **Розумна оптимізація:** по 3 заміри до і після, медіана, 0.1% low; у результаті — похибка й чи перевищує її приріст. Якщо доведеного приросту немає, одна кнопка прибирає зміни продуктивності без ефекту.
+
+### Діагностика й режими
+
+- **Що обмежує продуктивність.** «Чому лагає?» класифікує кожну секунду (процесор, відеокарта, пам'ять, диск, перегрів, ліміт живлення) і називає головне обмеження з часткою часу та порадою. Тест FPS у грі визначає це автоматично, паралельно із записом кадрів.
+- **Режими оптимізації:** «Безпечний», «Ігровий», «Слабкий ПК», «Ручний» — нова вкладка на сторінці «Оптимізація». План складається під конкретний ПК: залізо, головне обмеження (наприклад, на ПК, що впирається у відеокарту, твіки процесора не застосовуються, а на перегрітому — нічого, що гріє) і результати розумної оптимізації (шкідливе на цьому ПК не пропонується ніколи). Для кожної виключеної зміни видно причину. «Ігровий» і «Слабкий ПК» за замовчуванням перевіряють результат замірами.
+
+### Перевірки
+
+- Нові автотести: аварія посеред оптимізації й пакета, помилка посеред пункту, незаписуваний і пошкоджений журнал, частковий відкат, знімок початкових налаштувань, конфлікти, права адміністратора (на фальшивій Windows); підміна оновлення до й після завантаження, розбіжні суми, політика підпису, WinVerifyTrust на справжній Windows; статистика FPS (хибне «краще/гірше» на чистому шумі — не частіше ~5% у кожен бік); режими й визначення обмеження. Самоперевірка `--selftest` зібраного exe перевіряє журнал, перевірку файлів, режими й похибку FPS.
+
+<details>
+<summary>English</summary>
+
+OptimaX doesn't just change Windows — it proves that every optimization actually helps, and rolls everything back even more reliably. **Safety and rollback:** the rollback record now reaches the disk *before* the system changes; if OptimaX crashes in the middle of a change (a crash, a blue screen, a power cut), it reverts what had already changed on the next start and offers to roll back the unfinished batch (some changes used to stay in the system without a record). An item is applied entirely or not at all: if an error hits in the middle (no access to a registry key and so on), what that item had already changed is reverted at once and the batch goes on. The journal keeps a backup copy; a damaged file is set aside and the journal is restored from the copy (a damaged journal used to be silently replaced by an empty one). If the journal can't be written (disk full, antivirus), OptimaX stops and changes nothing. Before its first change OptimaX records every setting it may change, so even if the journal is lost, Backups → Original Windows settings finds OptimaX changes without a record and reverts them. A partial rollback no longer loses steps: what couldn't be reverted stays in the journal, marked, to retry or to revert with OptimaX-Rescue.cmd. Conflicting changes (such as Aggressive Turbo and Cool mode) are never applied together. Administrator rights are checked per change. Updates run only after a SHA-256 check (the GitHub digest and the release's `SHA256SUMS.txt` must agree) and a Windows digital signature check; a broken or foreign signature is never accepted, and a signed OptimaX only accepts updates from the same publisher; the file is stored where regular apps can't write and re-checked right before launch; PresentMon is checked the same way. **Precise measurements:** the FPS test does 3 or 5 runs and takes the median, drops an obviously bad run, and shows the run-to-run spread, 0.1% lows, stutters per minute and frame pacing; before/after shows each change ± the measurement error (95%, depending on the number of runs) and only calls it a confirmed gain when it exceeds the error; smart optimization measures 3 times before and after, uses medians and 0.1% lows, shows the error, and offers to remove performance changes with no proven effect. **Diagnosis and modes:** “Why does it lag?” classifies every second (CPU, GPU, memory, drive, overheating, power limit) and names the main limit with its share of time and advice; the in-game FPS test detects it automatically while recording frames. New Safe, Gaming, Low-end PC and Manual modes build the plan for your PC: hardware, the main limit (CPU tweaks are skipped on a GPU-bound PC, nothing that adds heat on an overheating one) and smart-optimization results (what hurt this PC is never offered); every left-out change shows why. **Checks:** new automated tests cover crashes and errors mid-change, unwritable and damaged journals, partial rollback, the settings snapshot, conflicts, admin rights, update tampering, checksum and signature policy, WinVerifyTrust on real Windows, FPS statistics (false better/worse on pure noise stays at ~5% each way), modes and bottleneck detection; `--selftest` of the built exe checks them too.
+
+</details>
+
 ## [6.3.5] — 2026-10-25
 
 ### Виправлено

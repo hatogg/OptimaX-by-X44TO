@@ -19,7 +19,7 @@ def test_selftest_with_ui():
     failed = {c["name"]: c.get("error") for c in rep["checks"] if not c["ok"]}
     assert rc == 0 and rep["ok"], failed or tail(out)
     names = {c["name"] for c in rep["checks"]}
-    assert {"modules", "i18n", "hardware", "tweaks", "rescue", "abtest", "adblock", "ui"} <= names, names
+    assert {"modules", "i18n", "hardware", "tweaks", "rescue", "abtest", "safety", "adblock", "ui"} <= names, names
     assert rep["dry_run"], "selftest must never change the system"
     ui = next(c for c in rep["checks"] if c["name"] == "ui")
     assert len(ui["info"]["pages"]) >= 14

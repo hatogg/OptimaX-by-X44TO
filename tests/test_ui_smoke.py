@@ -16,6 +16,8 @@ def test_main_window(demo, lang):
     assert not r["errors"], "\n".join(r["errors"])
     assert not r["bad"] and not r["raw"], (r["bad"], r["raw"])
     assert st["hw"] and st["pages"] >= 14, st
+    assert st["modes"]["rows"] >= 10 and st["modes"]["smart"] and st["modes"]["safe"] >= 10, st["modes"]
+    assert st["modes"]["limit"]
     assert st["applied"] >= 15 and st["batch"] == st["applied"], st
     assert st.get("banner") and st["banner"][0], st.get("banner")
     assert st["after_rescue"] == 0, "emergency rollback left changes of the batch"

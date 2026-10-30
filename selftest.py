@@ -22,9 +22,9 @@ import traceback
 
 MODULES = ("engine", "features", "guard", "hardware", "hwnative", "hotkeys", "lifecycle", "monitor", "power", "report",
            "updater", "apps", "netlab", "fpstest", "benchtools", "adblock", "rescue", "abtest", "i18n",
-           "lang_ui", "lang_engine", "lang_tweaks", "lang_extra", "lang_setup", "lang_lab", "lang_safe",
+           "lang_ui", "lang_engine", "lang_tweaks", "lang_extra", "lang_setup", "lang_lab", "lang_safe", "lang_v64",
            "gpubench", "ui_kit", "pages_optimize", "pages_tools", "pages_extra", "pages_lab", "smart_ui",
-           "sharecard")
+           "sharecard", "verify", "baseline", "modes")
 UI_TIMEOUT = 120  # секунд на визначення заліза у вікні
 _PROGRESS = None  # <звіт>-progress.txt: що робилося перед аварійним завершенням
 _CRASH = None     # <звіт>-crash.txt: стек Python у момент нативного збою (faulthandler)
@@ -230,6 +230,50 @@ def check_rescue():
     return {"bytes": len(s.encode("utf-8")), "subroutines": len(labels)}
 
 
+def check_safety(hw: dict = None):
+    """6.4: попередній запис журналу переживає «аварію», пошкоджений журнал відновлюється з копії, перевірка
+    файлів (SHA-256, WinVerifyTrust) працює, режими складають план під це залізо, похибка FPS рахується."""
+    import tempfile
+    import engine as E
+    import fpstest as FT
+    import modes as MD
+    import verify as V
+    d = tempfile.mkdtemp(prefix="oxst_")
+    path = os.path.join(d, "journal.json")
+    j = E.Journal(path)
+    j.put("done", [{"t": "reg", "p": r"HKCU\Software\OptimaX-Selftest", "n": "A", "old": None}])
+    j.put("done2", [{"t": "reg", "p": r"HKCU\Software\OptimaX-Selftest", "n": "B", "old": None}])
+    j.begin("half", "Half", "perf")
+    j.note([{"t": "reg", "p": r"HKCU\Software\OptimaX-Selftest", "n": "C", "old": [4, 1]}])
+    w = E.Journal(path).interrupted()  # «новий процес» бачить обірвану оптимізацію
+    if not w or w["tid"] != "half" or len(w["undo"]) != 1:
+        raise AssertionError(f"write-ahead record lost: {w}")
+    j.abort()
+    with open(path, "w", encoding="utf-8") as f:
+        f.write('{"applied": ')
+    r = E.Journal(path)
+    if r.problem != "restored" or not r.has("done"):
+        raise AssertionError(f"backup restore failed: {r.problem} {list(r.data['applied'])}")
+    data = os.urandom(4096)
+    fp = os.path.join(d, "f.bin")
+    with open(fp, "wb") as f:
+        f.write(data)
+    import hashlib
+    V.check_file(fp, hashlib.sha256(data).hexdigest(), publisher="")
+    sig = V.signature(sys.executable)["status"]
+    if E.IS_WIN and sig == "unknown":
+        raise AssertionError("WinVerifyTrust call failed")
+    plans = {m: len(MD.plan(m, hw or {}, {}, {})["ids"]) for m in ("safe", "gaming", "lowend")}
+    if not all(plans.values()):
+        raise AssertionError(f"empty plan: {plans}")
+    b = FT.summarize_runs([{"avg": a, "low1": a * .8, "low01": a * .6, "ts": 1} for a in (100, 101, 99)])
+    c = FT.compare_runs(b, FT.summarize_runs([{"avg": a, "low1": a * .8, "low01": a * .6, "ts": 2}
+                                             for a in (110, 111, 109)]))
+    if c["verdict"] != "better" or not c["metrics"]["avg"]["sig"]:
+        raise AssertionError(f"fps compare: {c}")
+    return {"exe_signature": sig, "plans": plans, "fps_margin": c["m_avg"]}
+
+
 def check_abtest():
     import random
     import abtest as AB
@@ -410,6 +454,7 @@ def main(argv, ui_factory=None) -> int:
         res.run("tweaks", check_tweaks, store.get("hw"))
         res.run("rescue", check_rescue)
         res.run("abtest", check_abtest)
+        res.run("safety", check_safety, store.get("hw"))
         res.run("adblock", check_adblock)
         res.run("buildinfo", check_buildinfo)
         if "--selftest-ui" in argv and ui_factory:

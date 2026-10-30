@@ -2,7 +2,7 @@
 import random
 import sys
 
-from _util import ROOT
+from _util import IS_WIN, ROOT, skip
 
 sys.path.insert(0, ROOT)
 import fpstest as FT  # noqa: E402  (на Linux — демо-кадри, без PresentMon і без змін у системі)
@@ -88,6 +88,8 @@ def test_old_single_measurements_still_compare():
 
 
 def test_capture_runs_demo():
+    if IS_WIN:
+        skip("demo frames exist only outside Windows; on Windows capture needs a running game and PresentMon")
     log = []
     res = FT.capture_runs("cs2.exe", 5, 3, log.append, None)
     assert res["runs"] == 3 and res["avg"] > 0 and res["low01"] > 0 and res["smooth"]

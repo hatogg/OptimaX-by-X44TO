@@ -60,7 +60,7 @@ def test_checksum_helpers():
     import verify as V
     data = b"OptimaX" * 1000
     sha = hashlib.sha256(data).hexdigest()
-    p = os.path.join(tempfile.mkdtemp(prefix="oxv_"), "f.exe")
+    p = os.path.join(tempfile.mkdtemp(prefix="oxv_"), "f.bin")  # не PE: підпису немає й бути не може
     with open(p, "wb") as f:
         f.write(data)
     assert V.sha256(p) == sha
