@@ -1,7 +1,8 @@
 """
 OptimaX — самоперевірка збірки. Нічого не змінює в системі.
 
-    OptimaX.exe --selftest=report.json              — модулі, переклади, твіки, залізо, Rescue, A/B, фільтр
+    OptimaX.exe --selftest=report.json              — модулі, переклади, твіки, залізо, Rescue, A/B, фільтр,
+                                                      журнал збоїв Windows («Чому впав комп?»)
     OptimaX.exe --selftest=report.json --selftest-ui — те саме + головне вікно: усі розділи, картка результату
 
 Поруч зі звітом JSON з'являється report.md (короткий підсумок) і, з --selftest-ui, знімки розділів.
@@ -23,7 +24,8 @@ import traceback
 MODULES = ("engine", "features", "guard", "hardware", "hwnative", "hotkeys", "lifecycle", "monitor", "power", "report",
            "updater", "apps", "netlab", "fpstest", "benchtools", "adblock", "rescue", "abtest", "i18n",
            "lang_ui", "lang_engine", "lang_tweaks", "lang_extra", "lang_setup", "lang_lab", "lang_safe", "lang_v64",
-           "lang_mining", "lang_gpu", "mining", "gpuinfo", "gpudiag", "gamedb", "pages_mining",
+           "lang_mining", "lang_gpu", "mining", "gpuinfo", "gpudiag", "gamedb", "pages_mining", "crashlog", "library",
+           "qr", "phonemon", "bugreport", "whatsnew", "transfer", "pages_library", "pages_life", "lang_life",
            "gpubench", "ui_kit", "pages_optimize", "pages_tools", "pages_extra", "pages_lab", "smart_ui",
            "sharecard", "verify", "baseline", "modes")
 UI_TIMEOUT = 120  # секунд на визначення заліза у вікні
@@ -201,6 +203,29 @@ def check_hardware(store):
     return res
 
 
+def check_crashlog():
+    """«Чому впав комп?» на справжній Windows: запит журналу подій без помилок і розбір того, що в ньому є."""
+    import crashlog as CL
+    import engine as E
+    if not E.IS_WIN:
+        raise Skip("the Windows event log exists only on Windows")
+    t0 = time.time()
+    rc, out = E.ps(CL.EVENTS_PS.format(days=365), 90, ro=True)
+    data = E.parse_json_out(out)
+    if (out or "").strip() and data is None:  # подій немає — порожньо; текст без JSON — помилка самого запиту
+        raise AssertionError(f"event log query failed (rc={rc}): {out.strip()[-600:]}")
+    events = [e for e in E.as_list(data) if isinstance(e, dict)]
+    bad = [e for e in events if not isinstance(e.get("id"), int) or not isinstance(e.get("ts"), int)]
+    if bad:
+        raise AssertionError(f"unexpected event format: {json.dumps(bad[:2], ensure_ascii=False)[:600]}")
+    res = CL.analyze(days=365, sessions=[])
+    for inc in res["incidents"]:
+        CL.explain(inc)
+    return {"events": len(events), "ids": sorted({e["id"] for e in events}), "incidents": len(res["incidents"]),
+            "gpu": (res["gpu"] or {}).get("n", 0), "whea": (res["whea"] or {}).get("n", 0),
+            "dumps": len(res["dumps"]), "seconds": round(time.time() - t0, 1)}
+
+
 def check_rescue():
     import engine as E
     import rescue as RS
@@ -341,7 +366,10 @@ def check_ui(factory, out_dir, store):
     Main, apply_theme = factory()
     errors = []
     old_hook = sys.excepthook
-    sys.excepthook = lambda tp, v, tb: errors.append("".join(traceback.format_exception(tp, v, tb))[-1500:])
+
+    def hook(tp, v, tb):
+        errors.append("".join(traceback.format_exception(tp, v, tb))[-1500:])
+    sys.excepthook = hook
     L.start_server = lambda *a, **k: None  # не перехоплювати вікно справжньої копії OptimaX
     U.UPDATE_REPO = ""
     app = QApplication.instance()
@@ -378,6 +406,7 @@ def check_ui(factory, out_dir, store):
         probe.deleteLater()
         mark("ui: Main()")
         w = Main()
+        sys.excepthook = hook  # вікно ставить свій перехоплювач (звіт про помилку) — самоперевірці потрібен свій
         mark("ui: show")
         w._toast.show_msg = lambda text, kind="ok", area=None: toasts.append([kind, text])
         w.show()
@@ -402,6 +431,17 @@ def check_ui(factory, out_dir, store):
         card.save(os.path.join(out_dir, "share-card.png"))
         mark("ui: share dialog")
         w.share_result()
+        # фонові задачі (бібліотека ігор, «Чому впав комп?» після запуску) мають завершитися до закриття: інакше
+        # вікно запитає «зачекати?», а потік, що ще працює під час виходу з процесу, аварійно його завершить
+        mark("ui: crash scan")
+        w.crash_scan()
+        busy_until = time.time() + UI_TIMEOUT
+        while any(x.isRunning() for x in list(w._workers)) and time.time() < busy_until:
+            app.processEvents()
+            time.sleep(0.05)
+        left = [type(x).__name__ for x in list(w._workers) if x.isRunning()]
+        if left:
+            raise AssertionError(f"background jobs still running after {UI_TIMEOUT}s: {left}")
         bad = [t for k, t in toasts if k == "bad"]
         raw = [t for _, t in toasts if re.fullmatch(r"[a-z0-9_]+(\.[a-z0-9_]+)+", t or "")]
         mark("ui: quit")
@@ -409,6 +449,8 @@ def check_ui(factory, out_dir, store):
         for _ in range(20):
             app.processEvents()
             time.sleep(0.01)
+        if w.isVisible():
+            raise AssertionError("the window did not close (a background job was still running)")
     finally:
         sys.excepthook = old_hook
     if errors or bad or raw:
@@ -454,6 +496,7 @@ def main(argv, ui_factory=None) -> int:
         res.run("hardware", check_hardware, store)
         res.run("tweaks", check_tweaks, store.get("hw"))
         res.run("rescue", check_rescue)
+        res.run("crashlog", check_crashlog)
         res.run("abtest", check_abtest)
         res.run("safety", check_safety, store.get("hw"))
         res.run("adblock", check_adblock)

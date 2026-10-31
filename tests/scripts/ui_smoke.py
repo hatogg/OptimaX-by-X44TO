@@ -1,12 +1,18 @@
 """Головне вікно на справжньому Qt (offscreen) у режимі перегляду на демо-залізі:
-усі розділи, застосування плану, банер збою й аварійний відкат, розумна оптимізація, картка результату.
+усі розділи, бібліотека ігор, простий вигляд, «Чому впав комп?», монітор на телефоні, застосування плану, банер збою
+й аварійний відкат, перенесення налаштувань, розумна оптимізація, «Що нового», звіт про помилку, картка результату.
 Аргумент: мова. Знімки — у теку з OPTIMAX_TEST_SHOTS (якщо задано)."""
 import _boot
+import json
 import os
 import re
 import sys
+import tempfile
+import threading
 import time
 import traceback
+import urllib.error
+import urllib.request
 
 LANG = sys.argv[1] if len(sys.argv) > 1 else "uk"
 sys.argv = _boot.argv(f"--lang={LANG}")
@@ -14,7 +20,10 @@ import optimizer as O  # noqa: E402
 import engine as E  # noqa: E402
 import features as F  # noqa: E402
 import gpubench as GB  # noqa: E402
+import library as LB  # noqa: E402
 import mining as MG  # noqa: E402
+import pages_life as PL  # noqa: E402
+import phonemon as PH  # noqa: E402
 import sharecard as SC  # noqa: E402
 import smart_ui as SM  # noqa: E402
 import ui_kit as UK  # noqa: E402
@@ -89,6 +98,10 @@ QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: ("", ""))
 QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: ("", ""))
 
 w = O.Main()
+# вікно ставить свої перехоплювачі (звіт про помилку одним натисканням) — тестові потрібні власні
+sys.excepthook = lambda tp, v, tb: errors.append("".join(traceback.format_exception(tp, v, tb))[-2000:])
+threading.excepthook = lambda a: errors.append(f"thread {getattr(a.thread, 'name', '?')}: {a.exc_type.__name__}: "
+                                               f"{a.exc_value}")
 toasts = []
 w._toast.show_msg = lambda text, kind="ok", area=None: toasts.append([kind, text])
 w.show()
@@ -101,6 +114,106 @@ for key in list(w.nav_keys):
     pump(timeout=0.15)
     shot(w, f"page-{key}")
 steps["pages"] = len(w.nav_keys)
+
+# бібліотека ігор: плитки, обрана гра з історією FPS, запуск (режим перегляду) з режимом гри, який вимикається сам
+lib = w.pages["library"]
+w.go("library")
+pump(lambda: len(lib.tiles) >= 4, 30)
+st_lib = {"tiles": len(lib.tiles)}
+
+
+def cs_tile():
+    return next((t for t in lib.tiles if t.g.get("appid") == "730"), None)
+
+
+cs = cs_tile()
+if cs:
+    g_cs = cs.g
+    LB.add_fps("cs2.exe", {"avg": 212.4, "low1": 141.0, "stutters_pm": 0.4})
+    cs.clicked.emit(g_cs)
+    pump(timeout=0.1)
+    st_lib["detail"] = [lib.det.isVisible(), lib.det_name.text(), lib.btn_play.isEnabled(), lib.det_fps.text()]
+    n_t = len(toasts)
+    started = UK.tr("lib.started", game=g_cs["name"])
+    lib.play()
+    pump(lambda: any(t == started for _, t in toasts[n_t:]) and F.BOOSTER.active, 30)
+    st_lib["started"] = any(t == started for _, t in toasts[n_t:])
+    st_lib["boost_on"] = F.BOOSTER.active
+    shot(w, "library")
+    w._library_tick({"cs2.exe"})  # гра запустилася…
+    w._library_tick(set())  # …і закрилася
+    pump(lambda: not F.BOOSTER.active, 30)
+    pump(timeout=0.2)
+    st_lib["boost_off"] = not F.BOOSTER.active and w.lib_boost is None
+    st_lib["sessions"] = [s.get("exe") for s in LB.sessions()]
+    lib.on_show()
+    st_lib["sub"] = cs_tile().sub.text() if cs_tile() else ""
+steps["library"] = st_lib
+
+# простий вигляд: перемикач у налаштуваннях, одна кнопка «Оптимізувати» → перегляд змін, повернення
+home = w.pages["home"]
+setp = w.pages["settings"]
+w.go("home")
+setp.sw_simple.click()
+pump(timeout=0.1)
+st_s = {"nav": [k for i, k in enumerate(w.nav_keys) if w.nav.button(i).isVisible()],
+        "card": home.simple.isVisible(), "full_hidden": not home.an_card.isVisible(), "cfg": F.CFG["simple_ui"],
+        "state": home.s_state.text(), "problems": home.s_box.count()}
+shot(w, "home-simple")
+home.s_btn.click()
+pump(timeout=0.3)
+opt = w.pages["optimize"]
+st_s["review"] = [opt.stack.currentWidget() is opt.review, len(opt.review.rows)]
+opt.back_from_review()
+w.go("home")
+setp.sw_simple.click()
+pump(timeout=0.1)
+st_s["restored"] = (all(w.nav.button(i).isVisible() for i in range(len(w.nav_keys))) and home.an_card.isVisible()
+                    and not home.simple.isVisible() and not F.CFG["simple_ui"])
+steps["simple"] = st_s
+
+# «Чому впав комп?»: демо-журнал Windows — раптове вимкнення, синій екран, скидання драйвера, апаратна помилка
+w.go("diagnose")
+dg = w.pages["diagnose"]
+F.CFG["crash_last"] = None
+dg.crash.check()
+pump(lambda: isinstance(F.CFG["crash_last"], dict) and dg.crash.btn.isEnabled() and dg.crash.box.count() > 0, 60)
+cl = F.CFG["crash_last"] or {}
+steps["crash"] = {"kinds": [i["kind"] for i in cl.get("incidents") or []], "rows": dg.crash.box.count(),
+                  "head": dg.crash.head.text(), "gpu": (cl.get("gpu") or {}).get("n"),
+                  "whea": (cl.get("whea") or {}).get("n")}
+dg.crash.memtest()  # запитання → у режимі перегляду лише запис у журнал
+shot(w, "crash-card")
+
+# монітор на телефоні: сервер у домашній мережі, QR-код, сторінка й дані, чужий шлях — 404, новий код, вимкнення
+pc = dg.phone
+st_ph = {}
+pc.sw.click()
+pump(lambda: PH.MONITOR.running and bool(pc.url.text()), 30)
+st_ph.update(running=PH.MONITOR.running, url=pc.url.text(), qr=not pc.qr.pixmap().isNull(), shown=pc.body_w.isVisible())
+if PH.MONITOR.running:
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    base = f"http://127.0.0.1:{PH.MONITOR.port}/{PH.MONITOR.token}/"
+    try:
+        page = opener.open(base, timeout=10).read().decode("utf-8")
+        api = json.loads(opener.open(base + "api", timeout=10).read().decode("utf-8"))
+        st_ph.update(page="OptimaX" in page and "fetch('api'" in page, api="ts" in api)
+        try:
+            opener.open(f"http://127.0.0.1:{PH.MONITOR.port}/wrong-code/", timeout=10)
+            st_ph["foreign"] = 200
+        except urllib.error.HTTPError as e:
+            st_ph["foreign"] = e.code
+    except (OSError, ValueError) as e:
+        st_ph["http_error"] = f"{type(e).__name__}: {e}"
+    old_token = PH.MONITOR.token
+    pc.new_code()
+    st_ph["new_code"] = PH.MONITOR.token != old_token and PH.MONITOR.token in pc.url.text()
+    shot(w, "phone")
+    pc.sw.click()
+    pump(lambda: not PH.MONITOR.running, 30)
+    pump(timeout=0.1)
+    st_ph["stopped"] = not PH.MONITOR.running and not pc.body_w.isVisible() and not (F.CFG["phone"] or {}).get("enabled")
+steps["phone"] = st_ph
 
 # майнінгова карта без відеовиходів: розділ на сторінці «Ігри» — пошук і призначення ігор, Mesa для OpenGL, відкат
 mc = w.pages["games"].mining
@@ -184,6 +297,17 @@ plan = (w.analysis or {}).get("recommended") or []
 w.start_apply(plan, False, False)
 pump(lambda: E.JOURNAL.count() > 0, 60)
 steps["applied"] = E.JOURNAL.count()
+# перенесення налаштувань: експорт набору змін (тут — «старий ПК»); імпорт — після повного відкату нижче
+exp_path = os.path.join(tempfile.mkdtemp(prefix="oxtr_"), "optimax-settings.json")
+QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: (exp_path, ""))
+setp.transfer.export()
+QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: ("", ""))
+try:
+    with open(exp_path, encoding="utf-8") as f:
+        exported = json.load(f)
+except (OSError, ValueError):
+    exported = {}
+steps["transfer"] = {"format": exported.get("format"), "tweaks": len(exported.get("tweaks") or [])}
 safety = F.CFG["safety"] or {}
 steps["batch"] = len(safety.get("ids") or [])
 F.CFG["demo_crash"] = True
@@ -208,6 +332,15 @@ steps["after_rescue"] = sum(E.JOURNAL.has(i) for i in safety.get("ids") or [])
 F.CFG["demo_crash"] = False
 E.undo_ids(E.JOURNAL.newest_first(), lambda *_: None)
 
+# імпорт на «новому ПК»: зміни, яких тут ще немає, — у перегляді змін (застосування — там, як завжди)
+QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (exp_path, ""))
+setp.transfer.import_()
+QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: ("", ""))
+pump(timeout=0.3)
+opt = w.pages["optimize"]
+steps["transfer"]["review"] = [opt.stack.currentWidget() is opt.review, opt.review.source, len(opt.review.rows)]
+opt.back_from_review()
+
 # розумна оптимізація: заміряти → застосувати → заміряти → знайти шкідливе
 w.open_smart_plan()
 rv = w.pages["optimize"].review
@@ -227,6 +360,16 @@ steps["card"] = [card.width(), card.height()]
 if SHOTS and not _boot.STUB:
     card.save(os.path.join(SHOTS, f"{DEMO}-{LANG}-share-card.png"))
 w.share_result()
+
+# «Що нового» і звіт про помилку (попередній перегляд: поза Windows браузер не відкривається)
+n_d = len(dialogs)
+PL.show_whats_new(w, E.VERSION)
+steps["whats_new"] = [len(dialogs) > n_d, F.CFG["seen_version"] == E.VERSION]
+n_t = len(toasts)
+PL.ask_report(w, 'Traceback (most recent call last):\n  File "C:\\Users\\Ivan\\x.py", line 1\nValueError: boom')
+PL.manual_report(w)
+preview = re.escape(UK.tr("bug.preview", n=987654)).replace("987654", r"\d+")
+steps["report"] = [k for k, t in toasts[n_t:] if re.fullmatch(preview, t or "")]
 
 w.quit_app()
 pump(timeout=0.5)

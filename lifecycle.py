@@ -114,6 +114,11 @@ def uninstall_cleanup(revert: bool, log) -> dict:
         F.CFG["charge_limit"] = None
     for name in TASKS:
         E.run(["schtasks", "/Delete", "/TN", name, "/F"], 20, log)
+    try:  # монітор на телефоні: правило брандмауера
+        import phonemon as PH
+        PH.cleanup()
+    except Exception as e:
+        log(f"phone: {e}")
     for key in ("trial",):
         F.CFG[key] = None
     s = F.CFG["schedule"] or {}

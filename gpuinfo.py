@@ -259,14 +259,38 @@ def probe(force: bool = False) -> dict:
     return res
 
 
+def headless(a: dict) -> bool:
+    """Карта без відеовиходів за моделлю (ID пристрою PCI чи назва): P106, P104, CMP… Роз'ємів у неї немає фізично."""
+    import hardware as H
+    if a.get("ven") != NVIDIA:
+        return False
+    try:
+        dev = f"{int(a.get('dev') or 0):04X}"
+    except (TypeError, ValueError):
+        dev = ""
+    return dev in H.MINING_GPUS or bool(H.MINING_NAME.search(a.get("name") or ""))
+
+
 def mining_adapter(pr: dict) -> dict:
-    """Майнінгова карта серед адаптерів DXGI: NVIDIA без виходів (у P106 їх немає взагалі)."""
+    """Майнінгова карта серед адаптерів DXGI: відома модель без виходів, інакше NVIDIA без виходів."""
     nv = [a for a in pr.get("dxgi") or [] if a.get("ven") == NVIDIA and not a.get("software")]
-    return next((a for a in nv if not a.get("outputs")), nv[0] if nv else {})
+    return next((a for a in nv if headless(a)), next((a for a in nv if not a.get("outputs")), nv[0] if nv else {}))
 
 
 def display_adapter(pr: dict) -> dict:
-    return next((a for a in pr.get("dxgi") or [] if a.get("outputs") and not a.get("software")), {})
+    """Карта, до якої під'єднано монітор.
+
+    На гібридному ПК DXGI показує виходи вбудованої графіки на тій карті, на якій запущено сам процес, — тож
+    вони можуть «з'явитися» й у P106, хоча роз'ємів у неї немає взагалі. Карта відомої майнінгової моделі
+    монітором не буває: беремо іншу справжню карту, навіть якщо DXGI не дав їй виходів."""
+    cards = [a for a in pr.get("dxgi") or [] if not a.get("software")]
+    real = [a for a in cards if not headless(a)]
+    shown = next((a for a in real if a.get("outputs")), None)
+    if shown:
+        return shown
+    if real and len(real) < len(cards):  # виходи «позичила» майнінгова карта — монітор на вбудованій
+        return real[0]
+    return {}
 
 
 def vulkan_for(pr: dict, adapter: dict) -> dict:

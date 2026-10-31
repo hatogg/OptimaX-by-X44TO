@@ -291,6 +291,12 @@ def icon_pixmap(name: str, color: str, size: int = 20) -> QPixmap:
     elif name == "bolt":
         path.moveTo(13.5, 2.8); path.lineTo(5.5, 13.2); path.lineTo(11.4, 13.2); path.lineTo(10.4, 21.2)
         path.lineTo(18.5, 10.6); path.lineTo(12.6, 10.6); path.closeSubpath()
+    elif name == "library":  # три обкладинки ігор на полиці
+        path.addRoundedRect(QRectF(3.5, 5, 5, 14), 1.4, 1.4)
+        path.addRoundedRect(QRectF(9.5, 5, 5, 14), 1.4, 1.4)
+        path.moveTo(16.2, 6.2); path.lineTo(20.6, 5.2); path.lineTo(21.6, 18.4); path.lineTo(17.2, 19.4)
+        path.closeSubpath()
+        path.moveTo(2.5, 21); path.lineTo(21.5, 21)
     elif name == "block":
         path.addEllipse(QPointF(12, 12), 8.6, 8.6)
         path.moveTo(5.9, 5.9); path.lineTo(18.1, 18.1)

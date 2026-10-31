@@ -317,7 +317,7 @@ def steam_games(root: str = None) -> list:
                 continue
             d = os.path.join(lib, "steamapps", "common", inst)
             if os.path.isdir(d):
-                out.append(dict(name=name or inst, store="steam", dir=d))
+                out.append(dict(name=name or inst, store="steam", dir=d, appid=appid))
     return out
 
 
@@ -337,7 +337,7 @@ def epic_games(folder: str = None) -> list:
         if d and os.path.isdir(d):
             exe = m.get("LaunchExecutable") or ""
             out.append(dict(name=m.get("DisplayName") or os.path.basename(d), store="epic", dir=os.path.normpath(d),
-                            main=os.path.normpath(os.path.join(d, exe)) if exe else ""))
+                            main=os.path.normpath(os.path.join(d, exe)) if exe else "", epic=m.get("AppName") or ""))
     return out
 
 
@@ -362,7 +362,7 @@ def ubisoft_games() -> list:
         d = E.reg_get(f"{base}\\{sub}", "InstallDir")
         if d and os.path.isdir(str(d[1])):
             p = os.path.normpath(str(d[1]))
-            out.append(dict(name=os.path.basename(p), store="ubisoft", dir=p))
+            out.append(dict(name=os.path.basename(p), store="ubisoft", dir=p, ubi=sub if sub.isdigit() else ""))
     return out
 
 
@@ -454,7 +454,7 @@ def discover() -> list:
 def demo_games() -> list:
     root = r"C:\Program Files (x86)\Steam\steamapps\common"
     return [
-        dict(name="Counter-Strike 2", store="steam", dir=root + r"\Counter-Strike Global Offensive", risk="",
+        dict(name="Counter-Strike 2", store="steam", dir=root + r"\Counter-Strike Global Offensive", risk="", appid="730",
              exes=[dict(path=root + r"\Counter-Strike Global Offensive\game\bin\win64\cs2.exe", api="dx11",
                         arch="x64")]),
         dict(name="Fortnite", store="epic", dir=r"C:\Program Files\Epic Games\Fortnite", risk="", anticheat="EasyAntiCheat",

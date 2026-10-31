@@ -14,6 +14,10 @@ Everything the program can do, from the first analysis to the emergency rollback
 - [Smart optimization](#smart-optimization)
 - [Emergency rollback](#emergency-rollback)
 - [Benchmarks](#benchmarks)
+- [Game library](#game-library)
+- [Why did the PC crash?](#why-did-the-pc-crash)
+- [Phone monitor](#phone-monitor)
+- [Simple view, What's new, settings transfer, error reports](#simple-view-whats-new-settings-transfer-error-reports)
 - [Mining graphics card (P106, P104, CMP)](#mining-graphics-card-p106-p104-cmp)
 - [Ad blocker (like Pi-hole)](#ad-blocker-like-pi-hole)
 - [Result card](#result-card)
@@ -50,6 +54,8 @@ OptimaX won't let you turn on something that harms your particular hardware. For
 | **Ad blocker like Pi-hole** | A DNS filter right on your PC: statistics, query log, StevenBlack/HaGeZi/OISD lists, encrypted DNS, protection for the whole home network, without a Raspberry Pi or a separate server |
 | **Smart optimization (A/B)** | Measures FPS before and after and keeps only what helps; if things got worse it finds the culprit by splitting the changes in halves and removes it. It can also check changes applied earlier |
 | **Emergency rollback** | Watches for blue screens, crash restarts and graphics driver failures after the changes and offers to roll back exactly that batch. OptimaX-Rescue.cmd rolls everything back from Safe Mode without the program |
+| **Why did the PC crash?** | Blue screens and sudden restarts from the Windows log in plain words: what happened, what is usually to blame, which game was running and what to do |
+| **Phone monitor** | Temperatures, load and the game's FPS on your phone over the home network — no app, just a QR code |
 | **Result card** | An image for social networks and forums: FPS before/after, Windows boot time, processes, memory, services, ping, blocked ads. Only numbers that were actually measured |
 | **Tested on real Windows** | Before every release, CI on clean Windows Server 2022 and 2025 applies every tweak, checks that it worked, rolls it back and checks that everything returned exactly, and once more as a batch through OptimaX-Rescue.cmd |
 
@@ -57,10 +63,11 @@ OptimaX won't let you turn on something that harms your particular hardware. For
 
 | Section | What's there |
 | --- | --- |
-| **Analysis** | Optimization and privacy levels, speed-up potential, weakest spot, your PC, build check, live readings, before and after with a card for social networks, notices from the settings guard, trial mode and emergency rollback |
+| **Analysis** | Optimization and privacy levels, speed-up potential, weakest spot, your PC, build check, live readings, before and after with a card for social networks, notices from the settings guard, trial mode, emergency rollback and about a PC crash; in the simple view — a PC score, one Optimize button and problems with Fix |
 | **Optimization** | Wizard and Expert menu, 6 profiles, search, 16 sections, “What will change” for every item, colour-coded review before applying, trial mode, smart optimization |
+| **Library** | All games from Steam, Epic, GOG, Ubisoft and My games with covers, launch with game mode, play time, FPS history per game |
 | **Games** | Game mode (services, background apps, memory, power, timer, Do Not Disturb, background balancer, auto mode — also for Steam / Epic / GOG / Ubisoft games; “Lowest latency” and “Stable frametime” profiles, global or per game); per game: priority, discrete GPU, no Fullscreen Optimizations, cores; an ISLC-style memory cleaner; 0.5 ms timer; on a PC with a mining card — “Games on the P106” (Universal GPU Renderer: a render mode per game, a check of which card renders it, driver, PCIe, memory and shader cache analyzers) |
-| **Diagnostics** | Why is it lagging? (with PresentMon frames and stutter causes when it is downloaded, plus a history of runs), before/after FPS test with a graph, forum report |
+| **Diagnostics** | Why did the PC crash? with a memory test, phone monitor, Why is it lagging? (with PresentMon frames and stutter causes when it is downloaded, plus a history of runs), before/after FPS test with a graph, forum report |
 | **Benchmarks** | Smart optimization (an A/B test of changes on the GPU test or your game), OptimaX GPU test (1080p, 1440p, 4K), 5–60 minute stress test with a stability check and sensors, result history; FurMark 2 with an automatic result, Superposition, Cinebench, OCCT, CrystalDiskMark, 3DMark |
 | **Hardware** | Specifications, build check with fix buttons, MSI Mode for graphics, network and audio devices, GPU overclocking (a prompt for DeepSeek, MSI Afterburner) |
 | **Laptop** | Battery wear, power on AC and battery, cool mode, sleep without drain, classic S3 sleep, refresh rate by power source, charge limit (ASUS and Dell right from the program, for other makers where to find it in their utility) |
@@ -71,7 +78,7 @@ OptimaX won't let you turn on something that harms your particular hardware. For
 | **Startup apps** | Apps from the registry, startup folders and Task Scheduler, with switches |
 | **Appearance** | File Explorer and taskbar (classic context menu, End task, fast folders…), selection colours |
 | **Backups** | Change journal with rollback, emergency rollback and OptimaX-Rescue.cmd, settings guard, Windows restore points, settings profiles |
-| **Settings** | Language, tray, autostart, scheduled maintenance, hotkeys (Ctrl+Alt+G for game mode, Ctrl+Alt+M to clean memory) |
+| **Settings** | Language, tray, autostart, scheduled maintenance, hotkeys (Ctrl+Alt+G for game mode, Ctrl+Alt+M to clean memory), simple view, What's new, report a problem, settings transfer to another PC |
 
 ## Optimization modes
 
@@ -141,6 +148,45 @@ The **OptimaX GPU test** is a scene of its own: a neon city with the OptimaX log
 Every result is kept in the history with the percentage against the previous run of the same test and the number of OptimaX changes between them, so you can see what the optimization gave.
 
 **Other benchmarks** install through winget and start in one click: FurMark 2 (OptimaX runs the benchmark and reads the score, FPS and temperature), Unigine Superposition, Cinebench R23, OCCT, CrystalDiskMark and 3DMark (through Steam).
+
+## Game library
+
+The **Library** section gathers games from Steam, Epic, GOG, Ubisoft and My games in one place (the list refreshes once a day and with the Refresh button).
+
+- **Covers** come only from Steam's local cache — nothing is downloaded; other games get a tile with the exe's icon and the name.
+- **Play** starts the game through its launcher (steam://, Epic, Ubisoft Connect) or the exe itself — always as the user, like from the desktop, even though OptimaX runs as administrator (otherwise the game's settings and saves would belong to the administrator, and overlays and mods might not work).
+- **Game mode on launch** (switch): game mode turns on before the launch and off by itself when the game closes.
+- **Play time and sessions.** OptimaX notices when a game starts and closes: total time, last played, number of sessions. A session that didn't close because the PC itself went down is marked — that's how Why did the PC crash? knows what was running.
+- **FPS history** (the Record FPS while playing switch; PresentMon is needed — the download button is right there): after 2 minutes of play and then every 15 minutes, 60 seconds of recording while the game is in front. A chart of average FPS and 1% lows per game shows whether FPS dropped after a driver, Windows or game update.
+- On a PC with a **mining card** the game's render mode and its last check are shown, and Mining card mode opens the mode choice.
+
+## Why did the PC crash?
+
+A card on the **Diagnostics** page reads the last 30 days of the Windows log (read-only) and explains in plain words:
+
+- **Blue screen** — the code and name (for example `0x116 VIDEO_TDR_FAILURE`), what is usually to blame (graphics driver or card, memory, a device driver, disk, CPU, a hardware error) and what to do;
+- **Sudden shutdown without a blue screen** — power was lost or the PC froze solid: most often the power supply, overheating or a power surge; a **power-button shutdown** is shown separately;
+- **Graphics driver resets** without a restart (Display 4101, nvlddmkm), **WHEA hardware errors** (corrected ones too), codes from the dumps in `C:\Windows\Minidump` and the result of the **Windows memory test**.
+
+OptimaX knows which game was running at the moment of the crash from its own game sessions (see Library). On a PC with a mining card, if the crash happened in a game, the advice “first return the game to the Original mode” has a button that opens exactly that choice — nothing changes without your confirmation. Test memory opens Windows Memory Diagnostic (it runs after a restart, 10–20 minutes); the result appears here. After it starts, OptimaX itself shows a notice about a new crash on the home page (unless it followed its own changes — the emergency rollback already asks about those).
+
+What OptimaX doesn't guess: the “guilty driver” can't be found in a dump without debug symbols, so the cause is named by the code and category.
+
+## Phone monitor
+
+A card on the **Diagnostics** page: Turn on, and a QR code appears. Scan it with the camera of a phone on the same Wi-Fi — a page opens with CPU and GPU temperatures, load, video memory, clock and power draw (NVIDIA), memory and the FPS of the game in front (when PresentMon is downloaded). No app is needed.
+
+- The page only shows readings — it can't control the PC.
+- The address contains a secret code; New code invalidates the old link. Requests are answered only for devices on the home network.
+- The Windows Firewall rule covers private networks and the local subnet only; it is removed when the monitor is turned off and when OptimaX is uninstalled. If Windows marks the network as Public, OptimaX says so — the phone won't connect then.
+- Readings are collected only while someone has the page open.
+
+## Simple view, What's new, settings transfer, error reports
+
+- **Simple view** (Settings → View and help, or the Simple view button on the home page): the menu keeps only Home, Library, Games, Diagnostics, Backups and Settings, and the home page shows a PC score, one **Optimize** button (the recommended mode's plan in the usual change review) and problems with a Fix button. All features brings back the full view.
+- **What's new** — a short window once after an update (not after the first install); open it again from Settings.
+- **Settings transfer** (Save to file / Load from file): the JSON file holds only the names of the applied optimizations from the OptimaX catalogue (no registry values or system paths), game mode, memory cleaner and library settings, My games and the render modes of games on a mining card. On loading, optimizations open in the change review with a compatibility check against this hardware and Windows (you apply them), My games are added only when the exe exists on this PC, and flags that change the system go through the rollback journal.
+- **One-click error reports.** If OptimaX hits an error, it keeps running and offers to send a report: a new GitHub issue page opens with the text filled in (version, Windows, CPU and GPU, the error, the last log lines). The user name, PC name, profile paths and email addresses are removed from the text, and you send it yourself after reviewing it. If OptimaX closed unexpectedly, the report is offered on the next start. Report a problem in Settings opens the same template.
 
 ## Mining graphics card (P106, P104, CMP)
 

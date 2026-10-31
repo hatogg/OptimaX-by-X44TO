@@ -40,6 +40,24 @@ def test_probe_summary_finds_the_card_without_outputs():
     assert GI.summary({"dxgi": [], "vulkan": []})["gpu"] == ""
 
 
+def test_hybrid_outputs_on_the_mining_card_still_mean_the_igpu_drives_the_monitor():
+    """Справжній ПК (6.5): процес перевірки працював на P106, і DXGI переніс на неї виходи HD 4000 —
+    у «Перевірці карти» з'явилось «монітор: NVIDIA GeForce GTX 1060 6GB»."""
+    ig, nv, warp = (dict(a) for a in GI.DEMO_PROBE["mining"]["dxgi"])
+    nv["outputs"], ig["outputs"] = 1, 0
+    pr = {"dxgi": [nv, ig, warp], "vulkan": []}
+    s = GI.summary(pr)
+    assert s["gpu"] == "NVIDIA GeForce GTX 1060 6GB" and s["luid"] == NV, s
+    assert s["display"] == "Intel(R) HD Graphics 4000" and s["display_luid"] == IG, s
+    # звичайний ПК: справжня GTX 1060 (1C03) з монітором і вбудована графіка без нього
+    gtx = dict(nv, dev=0x1C03, outputs=1)
+    assert GI.display_adapter({"dxgi": [ig, gtx, warp]})["name"] == gtx["name"]
+    assert not GI.headless(gtx) and GI.headless(nv) and not GI.headless(ig)
+    # лише майнінгова карта (віддалений робочий стіл тощо) — монітором її не називаємо
+    assert GI.display_adapter({"dxgi": [nv, warp]}) == {}
+    assert GI.headless(dict(ven=GI.NVIDIA, dev=0x2489, name="NVIDIA CMP 70HX")), "a CMP card recognised by name"
+
+
 def test_engine_counters_per_process_and_adapter():
     c = {f"pid_10_luid_{NV}_phys_0_eng_0_engtype_3D": 55.0, f"pid_10_luid_{NV}_phys_0_eng_5_engtype_Copy": 12.0,
          f"pid_10_luid_{IG}_phys_0_eng_0_engtype_3D": 2.0, f"pid_99_luid_{NV}_phys_0_eng_0_engtype_3D": 30.0}

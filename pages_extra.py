@@ -139,6 +139,11 @@ class DiagnosePage(QWidget):
         outer.addWidget(page_header(tr("nav.diagnose"), tr("diag.sub")))
         body, v = page_body()
 
+        # «Чому впав комп?» і монітор на телефоні (pages_life.py)
+        import pages_life as PL
+        self.crash = PL.CrashCard(main, v)
+        self.phone = PL.PhoneCard(main, v)
+
         # «Чому лагає?»
         dc = card("cardAccent")
         dv = vbox(dc, (24, 20, 24, 20), 12)

@@ -51,6 +51,14 @@ DEFAULTS = {
     "mining": {"auto": False, "last_scan": 0, "profiles": {}, "gl_driver": "d3d12", "seen": [], "check": True},
     "shader_state": {},  # Shader Cache Manager: драйвер, з яким кеш перевіряли востаннє
     "game_exes": None,  # {ts, names}: exe ігор зі Steam / Epic / GOG / Ubisoft — для автоматичного режиму гри
+    "library": {"fps": True, "boost": True},  # бібліотека ігор: {ts, games, fps, boost}
+    "play": {},  # сесії ігор: {sessions: [{exe, name, start, last, end, lost}], totals: {exe: секунд}}
+    "game_fps": {},  # історія FPS по іграх: {exe: [{ts, avg, low1, low01, stutters_pm, smooth}]}
+    "crash_last": None,  # останній розбір «Чому впав комп?»
+    "crash_seen": 0,  # час останнього аварійного перезавантаження, про яке вже розповіли
+    "phone": {},  # монітор на телефоні: {enabled, token, port}
+    "seen_version": None,  # версія, для якої вже показано «Що нового»
+    "simple_ui": False,  # простий вигляд
     "gpu_probe": None,  # що бачать DirectX і Vulkan (gpuinfo.probe)
     "diag_hist": [],  # історія «Чому лагає?»: що обмежувало FPS і на якій карті малювала гра
 }

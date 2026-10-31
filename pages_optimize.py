@@ -833,6 +833,7 @@ class HomePage(QWidget):
         outer = vbox(self)
         body = QWidget()
         v = vbox(body, (32, 26, 32, 24), 16)
+        self._outer_v = v
 
         # сповіщення: пробний режим і сторож налаштувань
         self.banner = QFrame()
@@ -854,8 +855,36 @@ class HomePage(QWidget):
         self.banner_b2.clicked.connect(lambda _=False: self._b2 and self._b2())
         v.addWidget(self.banner)
 
+        # простий вигляд: оцінка, одна кнопка і проблеми з «Виправити»
+        self.simple = card("cardAccent")
+        sv = vbox(self.simple, (24, 20, 24, 20), 14)
+        sh = hbox(spacing=18)
+        self.s_ring = Ring(T["acc"], 96, 8, 20)
+        sh.addWidget(self.s_ring)
+        stv = vbox(spacing=4)
+        stv.addWidget(label(tr("home.s.title"), "display"))
+        self.s_state = label(tr("home.analyzing"), "sub", wrap=True)
+        stv.addWidget(self.s_state)
+        sbh = hbox(spacing=10)
+        self.s_btn = button(tr("home.s.optimize"), "primary", main.quick_optimize)
+        self.s_btn.setMinimumWidth(190)
+        sbh.addWidget(self.s_btn)
+        sbh.addWidget(button(tr("home.s.lag"), None, lambda: main.go("diagnose")))
+        sbh.addStretch()
+        sbh.addWidget(button(tr("home.s.full"), "ghost", lambda: main.apply_simple(False)))
+        stv.addLayout(sbh)
+        sh.addLayout(stv, 1)
+        sv.addLayout(sh)
+        self.s_problems_t = label(tr("home.s.problems"), "h3")
+        sv.addWidget(self.s_problems_t)
+        self.s_box = vbox(spacing=2)
+        sv.addLayout(self.s_box)
+        self.simple.hide()
+        v.addWidget(self.simple)
+
         # аналіз
         an = card("cardAccent")
+        self.an_card = an
         av = vbox(an, (24, 20, 24, 20), 14)
         head = hbox(spacing=12)
         hv = vbox(spacing=3)
@@ -865,6 +894,8 @@ class HomePage(QWidget):
         head.addLayout(hv, 1)
         self.btn_an = button(tr("home.reanalyze"), None, main.run_analysis)
         head.addWidget(self.btn_an, 0, Qt.AlignmentFlag.AlignTop)
+        head.addWidget(button(tr("home.s.simple"), "ghost", lambda: main.apply_simple(True)), 0,
+                       Qt.AlignmentFlag.AlignTop)
         av.addLayout(head)
         tiles = hbox(spacing=12)
         self.t_opt = Tile(tr("home.opt_level"), T["acc"])
@@ -877,6 +908,10 @@ class HomePage(QWidget):
         v.addWidget(an)
 
         # вибір шляху
+        self.adv = QWidget()  # усе, чого немає в простому вигляді
+        av2 = vbox(self.adv, spacing=16)
+        v.addWidget(self.adv)
+        v = av2
         v.addWidget(label(tr("home.choose_path"), "h2"))
         paths = hbox(spacing=14)
         for key, ico, cb, obj in (("wizard", "wand", main.open_wizard, "primary"),
@@ -937,6 +972,7 @@ class HomePage(QWidget):
                      Qt.AlignmentFlag.AlignLeft)
         two.addWidget(chk, 2)
         v.addLayout(two)
+        v = self._outer_v  # живі показники — і в простому вигляді
 
         # живі показники
         stats = hbox(spacing=12)
@@ -965,6 +1001,7 @@ class HomePage(QWidget):
         self.ba_note = label(tr("ba.note"), "desc", wrap=True)
         bv.addWidget(self.ba_note)
         v.addWidget(ba)
+        self.ba_card = ba
         v.addStretch()
         outer.addWidget(scroller(body), 1)
 
@@ -984,6 +1021,34 @@ class HomePage(QWidget):
         self.timer.start(1500)
         self.tick()
         self.render_metrics()
+
+    def set_simple(self, on: bool):
+        self.simple.setVisible(on)
+        for w in (self.an_card, self.adv, self.ba_card):
+            w.setVisible(not on)
+
+    def fill_simple(self, an: dict, checks: list):
+        self.s_ring.set_value(an["opt"] / 100)
+        self.s_state.setText(tr("home.s.state", n=an["opt"], left=an["left"]))
+        clear_layout(self.s_box)
+        probs = [c for c in checks if c["level"] == "warn"] + [c for c in checks if c["level"] == "info" and c.get("fix")]
+        self.s_problems_t.setText(tr("home.s.problems") if probs else tr("home.s.no_problems"))
+        for c in probs[:6]:
+            r = QFrame()
+            r.setObjectName("row")
+            h = hbox(r, (14, 10, 14, 10), 12)
+            h.addWidget(dot(T["warn"] if c["level"] == "warn" else T["acc"], 10), 0, Qt.AlignmentFlag.AlignTop)
+            tv = vbox(spacing=2)
+            tv.addWidget(label(c["title"], "rowTitle", wrap=True))
+            tv.addWidget(label(c.get("detail") or "", "desc", wrap=True))
+            h.addLayout(tv, 1)
+            fix = c.get("fix")
+            if fix:
+                kind, val = fix
+                b = button(tr(f"fix.{kind}"))
+                b.clicked.connect(lambda _=False, k=kind, vv=val, bb=b: self.main.do_fix(k, vv, bb))
+                h.addWidget(b, 0, Qt.AlignmentFlag.AlignVCenter)
+            self.s_box.addWidget(r)
 
     def set_banner(self, kind=None, title="", text="", b1=None, b2=None):
         """kind: None — сховати; trial | guard. b1/b2: (підпис, дія)."""
@@ -1036,6 +1101,7 @@ class HomePage(QWidget):
     def set_analysis(self, hw: dict, an: dict, checks: list):
         self.btn_an.setEnabled(True)
         self.an_state.setText(tr("home.analyzed"))
+        self.fill_simple(an, checks)
         self.t_opt.ring.set_value(an["opt"] / 100)
         self.t_opt.sub.setText(tr("home.opt_sub", n=an["left"]))
         self.t_priv.ring.set_value(an["privacy"] / 100)

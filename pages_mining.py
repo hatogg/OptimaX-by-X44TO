@@ -392,7 +392,8 @@ class MiningCard(QFrame):
         def job(log, p):
             games = MG.discover()
             MG.new_games(games)
-            F.remember_game_exes(games)
+            import library as LB
+            LB.refresh(games)
             res = MG.assign(log, hw, games)
             if not res.get("busy"):
                 res.update(list=games, scanned=True)

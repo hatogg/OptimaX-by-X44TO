@@ -49,13 +49,20 @@ import power as PW
 import adblock as AB
 import rescue as RS
 import baseline as BL  # noqa: F401  (знімок початкових налаштувань перед першою зміною)
+import bugreport as BR
+import crashlog as CL
+import library as LB
+import phonemon as PH
 import updater as U
+import whatsnew as WN
 from i18n import tr
 from pages_extra import DiagnosePage, NetworkPage, AppsPage
 from pages_lab import BenchPage, AdblockPage
 import sharecard as SC
 import smart_ui as SM
 from pages_optimize import OptimizePage, HomePage
+from pages_library import LibraryPage
+import pages_life as PL
 from pages_tools import (GamesPage, HardwarePage, LaptopPage, CleanupPage, StartupPage, LookPage, BackupPage,
                          SettingsPage)
 from ui_kit import (T, build_qss, make_font, label, vbox, hbox, dot, styled, nav_icon, logo_pixmap, Toast, Worker,
@@ -65,7 +72,8 @@ ADMIN = E.is_admin()
 
 NAV = [
     ("nav.g.optimize", [("home", "pulse", "nav.home"), ("optimize", "wand", "nav.optimize"),
-                        ("games", "gamepad", "nav.games"), ("diagnose", "gauge", "nav.diagnose"),
+                        ("library", "library", "nav.library"), ("games", "gamepad", "nav.games"),
+                        ("diagnose", "gauge", "nav.diagnose"),
                         ("bench", "bolt", "nav.bench")]),
     ("nav.g.device", [("hardware", "chip", "nav.hardware"), ("laptop", "laptop", "nav.laptop"),
                       ("network", "globe", "nav.network")]),
@@ -99,6 +107,7 @@ def relaunch(admin: bool = True, extra=()) -> bool:
 
 class Main(QWidget):
     hotkey_pressed = pyqtSignal(str)  # з потоку гарячих клавіш у головний потік
+    error_caught = pyqtSignal(str, bool)  # необроблена помилка (з будь-якого потоку) -> вікно звіту в потоці інтерфейсу
 
     def __init__(self, start_hidden: bool = False):
         super().__init__()
@@ -117,7 +126,16 @@ class Main(QWidget):
         self._titled = False
         self.purges = 0
         self.auto_boost = False
+        self.lib_boost = None  # {names, ts, seen} — режим гри, увімкнений запуском із «Бібліотеки»
         self._render_seen = {}  # exe -> коли помітили запуск гри (None — уже перевірено)
+        self.tracker = LB.Tracker()
+        self._ticks = 0
+        self._fps_try = {}  # exe -> коли востаннє пробували записати FPS
+        native = BR.native_crash()
+        # через чергу подій: вікно звіту не відкривається всередині обробника помилки чи з фонового потоку
+        self.error_caught.connect(lambda trace, nat: PL.ask_report(self, trace, nat), Qt.ConnectionType.QueuedConnection)
+        BR.install(self.error_caught.emit)
+        LB.close_lost()
         self.balancer = M.Balancer()
         self.cores = M.GameCores()
         self.rfp = PW.RefreshByPower()
@@ -136,7 +154,7 @@ class Main(QWidget):
         self.stack = QStackedWidget()
         h.addWidget(self.stack, 1)
         self.pages = {}
-        for key, cls in (("home", HomePage), ("optimize", OptimizePage), ("games", GamesPage),
+        for key, cls in (("home", HomePage), ("optimize", OptimizePage), ("library", LibraryPage), ("games", GamesPage),
                          ("diagnose", DiagnosePage), ("bench", BenchPage), ("hardware", HardwarePage),
                          ("laptop", LaptopPage), ("network", NetworkPage), ("cleanup", CleanupPage),
                          ("adblock", AdblockPage), ("apps", AppsPage),
@@ -181,6 +199,126 @@ class Main(QWidget):
         QTimer.singleShot(8000, lambda: self.check_updates(auto=True, startup=True))
         if G.trial_state() and G.trial_state()[0] == "decide":
             QTimer.singleShot(1500, self.ask_trial)
+        self.apply_simple(bool(F.CFG["simple_ui"]))
+        if native:  # минулого разу сама OptimaX закрилася аварійно — запропонувати звіт
+            QTimer.singleShot(4000, lambda: PL.ask_report(self, native, True))
+        self._whats_new = WN.pending()
+        if self._whats_new and not start_hidden:
+            QTimer.singleShot(2500, self.show_whats_new)
+        if (F.CFG["phone"] or {}).get("enabled"):
+            self.run_quick("phone", lambda log, p: PH.MONITOR.start(log), silent=True,
+                           on_done=lambda _r: self.pages["diagnose"].phone.sync())
+
+    def crash_scan(self):
+        """Після запуску: чи не було аварійного перезавантаження, про яке ще не розповіли (і яке не пов'язане зі
+        змінами OptimaX — про ті вже питає аварійний відкат)."""
+        if self.quitting:
+            return
+        hw = self.hw or {}
+
+        def job(log, p):
+            return CL.analyze(days=7, mining=bool(hw.get("mining_gpu")))
+
+        def done(res):
+            if not isinstance(res, dict) or "incidents" not in res:
+                return
+            new = CL.new_since(res, int(F.CFG["crash_seen"] or 0))
+            dg = self.pages["diagnose"]
+            if res["incidents"]:
+                F.CFG["crash_seen"] = max(i["ts"] for i in res["incidents"])
+            if not new or self.crash:
+                return
+            F.CFG["crash_last"] = dict(res, days=7)
+            dg.crash.show(F.CFG["crash_last"])
+            inc = new[0]
+            title, _text = CL.explain(inc)
+            home = self.pages["home"]
+            if not home.banner.isVisible():
+                home.set_banner("pc_crash", tr("crash.banner_t"), title + (" · " + tr("crash.game", game=inc["game"])
+                                                                          if inc.get("game") else ""),
+                                (tr("crash.banner_btn"), lambda: (home.set_banner(None), self.go("diagnose"))),
+                                (tr("btn.close"), lambda: home.set_banner(None)))
+            if not self.isVisible():
+                self.toast(tr("crash.banner_t"), "warn")
+        self.run_quick("crash", job, silent=True, on_done=done)
+
+    # ── простий вигляд, «Що нового», бібліотека ──
+    SIMPLE_NAV = ("home", "library", "games", "diagnose", "backup", "settings")
+
+    def apply_simple(self, on: bool):
+        """Простий вигляд: у меню лише головне, на головній — оцінка, одна кнопка й проблеми з «Виправити»."""
+        F.CFG["simple_ui"] = bool(on)
+        for i, key in enumerate(self.nav_keys):
+            self.nav.button(i).setVisible(not on or key in self.SIMPLE_NAV)
+        for cap, keys in self.nav_caps:
+            cap.setVisible(not on or any(k in self.SIMPLE_NAV for k in keys))
+        self.pages["home"].set_simple(on)
+        st = self.pages["settings"]
+        if hasattr(st, "sw_simple"):
+            st.sw_simple.set_quiet(bool(on))
+
+    def show_whats_new(self):
+        if not self._whats_new:
+            return
+        v, self._whats_new = self._whats_new, ""
+        PL.show_whats_new(self, v)
+
+    def quick_optimize(self):
+        """Одна кнопка простого вигляду: план рекомендованого режиму у «Перегляді змін» (застосування — там)."""
+        import modes as MD
+        if not self.hw:
+            self.toast(tr("home.analyzing"), "warn")
+            return
+        self.go("optimize")
+        op = self.pages["optimize"]
+        op.set_mode(0)
+        op.modes.choose(MD.recommended(self.hw) or "gaming")
+
+    def launch_game(self, g: dict, btn=None):
+        """Запуск із «Бібліотеки»: режим гри (якщо ввімкнено) — до запуску, вимкнеться сам, коли гра закриється."""
+        main_exe = g.get("main") or ""
+        if LB.setting("boost", True) and not F.BOOSTER.active:
+            self.lib_boost = {"names": set(g.get("exes") or []), "ts": time.time(), "seen": False}
+            self.auto_boost = True
+            self.run_quick(tr("g.title"), lambda log, p: F.BOOSTER.start(log, game=main_exe or None), silent=True,
+                           on_done=lambda _r: self.update_booster_ui())
+        self.run_quick(g["name"], lambda log, p: LB.launch(g, log), busy=btn, silent=True,
+                       on_done=lambda r: self.toast(tr("lib.started", game=g["name"]) if isinstance(r, dict) and
+                                                    r.get("ok") else tr("lib.start_fail", game=g["name"]),
+                                                    "ok" if isinstance(r, dict) and r.get("ok") else "bad"))
+
+    def _library_tick(self, names: set):
+        """Сесії ігор (час гри, «що працювало під час збою»), режим гри від «Бібліотеки» і запис FPS."""
+        res = self.tracker.tick(names)
+        if res["started"] or res["ended"]:
+            lib = self.pages.get("library")
+            if lib and lib.isVisible():
+                lib.on_show()
+        lb = self.lib_boost
+        if lb:
+            on = bool(names & lb["names"])
+            lb["seen"] = lb["seen"] or on
+            if (lb["seen"] and not on) or (not lb["seen"] and time.time() - lb["ts"] > 600):
+                self.lib_boost = None
+                if F.BOOSTER.active and self.auto_boost:
+                    self.auto_boost = False
+                    self.run_quick(tr("g.title"), lambda log, p: F.BOOSTER.stop(log), silent=True,
+                                   on_done=lambda _r: (self.update_booster_ui(), self.toast(tr("g.auto_off"))))
+        if not LB.setting("fps", True) or self._workers:
+            return
+        import fpstest as FT
+        fg = (M.foreground_process() or "").lower() if E.IS_WIN else next(iter(self.tracker.active), "")
+        if not fg or fg not in self.tracker.active or not FT.find_presentmon():
+            return
+        if not LB.fps_due(fg, self.tracker.started_at(fg), self._fps_try.get(fg, 0)):
+            return
+        self._fps_try[fg] = time.time()
+
+        def job(log, p):
+            res = FT.capture(fg, LB.FPS_SECONDS, log, None)
+            LB.add_fps(fg, res)
+            return res
+        self.run_quick("FPS", job, silent=True)
 
     # ── бічне меню ──
     def _sidebar(self) -> QFrame:
@@ -209,8 +347,11 @@ class Main(QWidget):
         self.nav = QButtonGroup(self)
         self.nav.setExclusive(True)
         self.nav_keys = []
+        self.nav_caps = []  # [(заголовок групи, [ключі])] — для простого вигляду
         for cap, items in NAV:
-            nv.addWidget(label(tr(cap), "navcap"))
+            cl = label(tr(cap), "navcap")
+            nv.addWidget(cl)
+            self.nav_caps.append((cl, [k for k, _, _ in items]))
             for key, ic, text in items:
                 b = QPushButton(tr(text))
                 b.setObjectName("nav")
@@ -287,6 +428,8 @@ class Main(QWidget):
         self.showNormal()
         self.raise_()
         self.activateWindow()
+        if getattr(self, "_whats_new", ""):
+            QTimer.singleShot(800, self.show_whats_new)
 
     def quit_app(self):
         self.quitting = True
@@ -373,6 +516,7 @@ class Main(QWidget):
         self.pages["network"].sync()
         self._guard_tick()
         self.safety_check(prompt=self.crash_prompt)
+        QTimer.singleShot(6000, self.crash_scan)
         if AB.Backend(F.CFG).mode == "filter":  # після оновлення програми чи збою фільтр має знову працювати
             self.run_quick("adblock", lambda log, p: AB.Backend(F.CFG).ensure_running(log), silent=True)
         if F.CFG["first_run"]:
@@ -408,10 +552,17 @@ class Main(QWidget):
         self.tray_ab.setVisible(AB.Backend(F.CFG).mode == "filter")
 
     def _background_tick(self):
-        # автоматичний режим гри
+        self._ticks += 1
         names = None
-        if F.CFG["booster"].get("auto"):
+        if self._ticks % 3 == 0:  # бібліотека: сесії ігор, режим гри від запуску, FPS
             names = F.running_game_names()
+            try:
+                self._library_tick(names)
+            except Exception as e:  # облік ігор не повинен зупиняти решту фонових перевірок
+                LOG.write(f"  library: {type(e).__name__}: {e}")
+        # автоматичний режим гри
+        if F.CFG["booster"].get("auto"):
+            names = names if names is not None else F.running_game_names()
             mine = {ntpath.basename(g["path"]).lower(): g["path"] for g in F.CFG["games"] or [] if g.get("boost")}
             found = {}
             if F.CFG["booster"].get("found"):  # Game Booster 2.0: і ігри, знайдені в Steam / Epic / GOG / Ubisoft
@@ -424,7 +575,7 @@ class Main(QWidget):
                 game = wanted[running[0]] if running[0] in mine else None
                 self.run_quick(tr("g.title"), lambda log, p: F.BOOSTER.start(log, game=game), silent=True,
                                on_done=lambda _r: (self.update_booster_ui(), self.toast(tr("g.auto_on"))))
-            elif not game_on and F.BOOSTER.active and self.auto_boost:
+            elif not game_on and F.BOOSTER.active and self.auto_boost and not self.lib_boost:
                 self.auto_boost = False
                 self.run_quick(tr("g.title"), lambda log, p: F.BOOSTER.stop(log), silent=True,
                                on_done=lambda _r: (self.update_booster_ui(), self.toast(tr("g.auto_off"))))
@@ -443,8 +594,7 @@ class Main(QWidget):
             self.cores.tick(games, self.hw, LOG.write)
         # балансувальник фону на час гри
         if F.BOOSTER.active and F.CFG["booster"].get("balance"):
-            names = {ntpath.basename(g["path"]).lower() for g in games}
-            self.balancer.tick(names, LOG.write)
+            self.balancer.tick({ntpath.basename(g["path"]).lower() for g in games}, LOG.write)
         elif self.balancer.lowered:
             self.balancer.restore_all(LOG.write)
         # частота екрана від живлення
@@ -464,7 +614,7 @@ class Main(QWidget):
                 res = MG.assign(log, hw, games)
                 if not res.get("busy"):
                     res.update(list=games, scanned=True, fresh=[g["name"] for g in fresh])
-                F.remember_game_exes(games)
+                LB.refresh(games)
                 return res
 
             def done(r):
@@ -477,7 +627,7 @@ class Main(QWidget):
         elif (F.CFG["booster"].get("found") and F.game_exes_due() and not self._workers
               and QApplication.activeModalWidget() is None):
             F.mark_game_exes()
-            self.run_quick("games", lambda log, p: F.remember_game_exes(MG.discover()), silent=True)
+            self.run_quick("games", lambda log, p: LB.refresh(), silent=True)
         # майнінгова карта: на якій карті насправді малює запущена гра (раз за запуск гри, через 40 с після старту)
         if self.hw and MG.active(self.hw) and (F.CFG["mining"] or {}).get("check", True):
             self._render_watch(names)
@@ -1043,7 +1193,12 @@ class Main(QWidget):
             F.BOOSTER.stop(LOG.write)
         self.balancer.restore_all(LOG.write)
         self.hk.stop()
+        try:
+            PH.MONITOR.stop(remember=False)  # сервер зупиняється, а ввімкненим лишається до наступного запуску
+        except Exception:
+            pass
         self.tray.hide()
+        BR.clean_exit()
         e.accept()
         QApplication.instance().quit()
 
