@@ -49,6 +49,8 @@ BUGCHECKS = {
 }
 CATEGORIES = ("gpu", "memory", "driver", "hardware", "cpu", "disk", "power", "button", "system", "unknown")
 
+# «Подій не знайдено» і «такого джерела немає» Get-WinEvent видає як EventLogException, яку SilentlyContinue
+# не глушить (на чистій Windows немає nvlddmkm і подій WHEA), — тому кожен запит окремо в try/catch.
 EVENTS_PS = r"""
 $t=(Get-Date).AddDays(-{days})
 $q=@(
@@ -57,7 +59,7 @@ $q=@(
  @{{LogName='System'; ProviderName='Microsoft-Windows-MemoryDiagnostics-Results'; StartTime=$t}},
  @{{LogName='System'; ProviderName='nvlddmkm'; StartTime=$t}}
 )
-$ev=foreach($x in $q){{ Get-WinEvent -FilterHashtable $x -MaxEvents 80 -ErrorAction SilentlyContinue }}
+$ev=foreach($x in $q){{ try {{ Get-WinEvent -FilterHashtable $x -MaxEvents 80 -ErrorAction Stop }} catch {{}} }}
 @($ev | ForEach-Object {{
   $m=''; try {{ $m=(($_.Message -split "`n")[0]).Trim() }} catch {{}}
   @{{id=$_.Id; prov=$_.ProviderName; ts=([DateTimeOffset]$_.TimeCreated).ToUnixTimeSeconds();

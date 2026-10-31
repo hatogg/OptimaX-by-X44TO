@@ -17,6 +17,7 @@ import json
 import secrets
 import socket
 import subprocess
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -392,8 +393,11 @@ def firewall(on: bool, port: int, log=lambda *_: None) -> None:
         return
     E.run(["netsh", "advfirewall", "firewall", "delete", "rule", f"name={RULE}"], 15)
     if on:
+        # правило саме для OptimaX: без програми в правилі Windows ще й запитала б «дозволити доступ?», а «Скасувати»
+        # там створює правило блокування, сильніше за наше
         E.run(["netsh", "advfirewall", "firewall", "add", "rule", f"name={RULE}", "dir=in", "action=allow",
-               "protocol=TCP", f"localport={port}", "profile=private", "remoteip=localsubnet"], 15, log)
+               f"program={sys.executable}", "protocol=TCP", f"localport={port}", "profile=private",
+               "remoteip=localsubnet"], 15, log)
 
 
 def public_network() -> bool:

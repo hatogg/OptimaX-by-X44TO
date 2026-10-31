@@ -36,6 +36,10 @@
 
 **My antivirus or SmartScreen complains about OptimaX. Is it a virus?** No. Antiviruses often flag programs built with PyInstaller “just in case”, and OptimaX also changes the registry and services, exactly what antiviruses watch. All the code is open in this repository, and releases are built by GitHub Actions straight from it; file checksums are in `SHA256SUMS.txt` next to the release (`Get-FileHash OptimaX-Setup-<version>.exe` in PowerShell).
 
+**My PC suddenly restarted or showed a blue screen. How do I find out why?** Diagnostics → Why did the PC crash? → Check: OptimaX reads the Windows log and explains what happened, what is usually to blame and what to do, and names the game if one was running. If memory is the suspect, Test memory is right there.
+
+**Is the phone monitor safe?** The page only shows readings — it can't control the PC. It is reachable only from the home network and only through the link with its secret code (New code invalidates the old link), and the firewall rule applies to private networks only and is removed when the monitor is turned off. The page can't be opened over the internet.
+
 **How much does it cost?** Nothing. OptimaX is open-source software under the MIT license: you can use, change and share it.
 
-**Found a bug or have an idea?** Open an [issue](https://github.com/hatogg/OptimaX-by-X44TO/issues/new/choose). Attach the forum report (Diagnostics → Report for a forum or technician) to a bug report: it has the hardware, Windows version and applied changes, with no personal data.
+**Found a bug or have an idea?** Settings → Report a problem opens a GitHub issue with the version and system already filled in (no user name or personal paths), or open an [issue](https://github.com/hatogg/OptimaX-by-X44TO/issues/new/choose) yourself. Attach the forum report (Diagnostics → Report for a forum or technician) to a bug report: it has the hardware, Windows version and applied changes, with no personal data.
