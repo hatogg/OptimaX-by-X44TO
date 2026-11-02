@@ -409,11 +409,82 @@ def _parallel(jobs: dict, timeout: int) -> dict:
     return res
 
 
-def detect_hw() -> dict:
+# ── кеш запитів PowerShell (6.7) ──
+# Три процеси PowerShell із CIM-запитами — найдовша частина запуску OptimaX. Процесор, пам'ять, плати й диски між
+# перезавантаженнями не змінюються, тож відповіді зберігаються до наступного перезавантаження. Кеш стає недійсним і
+# раніше — якщо змінився драйвер відеокарти, набір дисків чи мережевих адаптерів (це видно без PowerShell, з
+# hwnative.collect), або версія OptimaX.
+HW_CACHE_VER = 1
+
+
+def _boot_minute() -> int:
+    try:
+        import ctypes as _c
+        k32 = _c.windll.kernel32
+        k32.GetTickCount64.restype = _c.c_ulonglong
+        return int((time.time() - k32.GetTickCount64() / 1000) // 60)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _hw_key(nat: dict) -> str:
+    import hashlib
+    import json
+    fp = {"v": E.VERSION, "c": HW_CACHE_VER, "boot": _boot_minute(), "build": nat.get("build"),
+          "gpus": [(g.get("name"), g.get("date"), g.get("instance")) for g in nat.get("gpus") or []
+                   if isinstance(g, dict)],
+          "disks": [(d.get("id"), d.get("name"), d.get("size_gb"), d.get("letters")) for d in nat.get("disks") or []
+                    if isinstance(d, dict)],
+          "net": (nat.get("wifi"), nat.get("ethernet"))}
+    return hashlib.sha256(json.dumps(fp, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def _hw_cache_path() -> str:
+    return os.path.join(E.admin_dir("state"), "hwcache.json")
+
+
+def _hw_cache_load(key: str):
+    import json
+    try:
+        with open(_hw_cache_path(), encoding="utf-8") as f:
+            d = json.load(f)
+        if isinstance(d, dict) and d.get("key") == key and isinstance(d.get("got"), dict) and \
+                isinstance(d["got"].get("core"), dict):
+            return d["got"]
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def _hw_cache_save(key: str, got: dict) -> None:
+    if not isinstance(got.get("core"), dict) or got.get("_errors"):  # неповну відповідь не запам'ятовуємо
+        return
+    try:
+        E._write_atomic(_hw_cache_path(), {"key": key, "ts": int(time.time()),
+                                           "got": {k: got.get(k) for k in ("core", "storage", "pci")}}, durable=False)
+    except Exception:  # noqa: BLE001 — кеш лише прискорює запуск
+        pass
+
+
+def detect_hw(cache: bool = False) -> dict:
+    """cache=True — можна взяти відповіді PowerShell, збережені після останнього перезавантаження (запуск програми);
+    інакше все визначається заново."""
     if not E.IS_WIN:
         return _from_demo(E.DEMO)
-    got = _parallel({"core": lambda: E.ps_json(CORE_SCRIPT, 45), "storage": lambda: E.ps_json(STORAGE_SCRIPT, 45),
-                     "pci": lambda: E.ps_json(GPU_PCI_SCRIPT, 45), "native": HN.collect}, 45)
+    got = None
+    if cache:
+        nat = HN.collect()
+        key = _hw_key(nat)
+        got = _hw_cache_load(key)
+        if got is None:
+            got = _parallel({"core": lambda: E.ps_json(CORE_SCRIPT, 45),
+                             "storage": lambda: E.ps_json(STORAGE_SCRIPT, 45),
+                             "pci": lambda: E.ps_json(GPU_PCI_SCRIPT, 45)}, 45)
+            _hw_cache_save(key, got)
+        got = dict(got, native=nat)
+    else:
+        got = _parallel({"core": lambda: E.ps_json(CORE_SCRIPT, 45), "storage": lambda: E.ps_json(STORAGE_SCRIPT, 45),
+                         "pci": lambda: E.ps_json(GPU_PCI_SCRIPT, 45), "native": HN.collect}, 45)
     data = got.get("core") if isinstance(got.get("core"), dict) else {}
     st = got.get("storage") if isinstance(got.get("storage"), dict) else {}
     nat = got.get("native") if isinstance(got.get("native"), dict) else {}

@@ -18,6 +18,7 @@ import subprocess
 import time
 
 import engine as E
+import secfs as SF
 import features as F
 from i18n import tr
 
@@ -29,9 +30,9 @@ EVENT_IDS = {1001: "bsod", 41: "power", 6008: "shutdown", 4101: "gpu"}
 
 
 def rescue_dir() -> str:
-    if E.IS_WIN and not E.DRY_RUN:
-        return os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "OptimaX", "rescue")
-    return os.path.join(E.DATA_DIR, "rescue")
+    """%ProgramData%\\OptimaX\\rescue, захищена від запису звичайними програмами: цей файл запускають з правами
+    адміністратора, а done.txt поруч прибирає записи з журналу відкату."""
+    return E.admin_dir("rescue")
 
 
 def rescue_path() -> str:
@@ -63,7 +64,7 @@ def record_batch(before: set, kind: str = "apply", log=lambda *_: None) -> list:
         return []
     import guard as G
     F.CFG["safety"] = dict(ts=int(time.time()), ids=new, kind=kind, boot=G.boot_time(), checked=False)
-    if E.IS_WIN and not E.DRY_RUN and not F.autostart_enabled():
+    if E.IS_WIN and not E.DRY_RUN and not F.autostart_enabled() and F.elevated_tasks_ok():
         cmd = subprocess.list2cmdline(F._self_command() + ["--check-crash"])
         E.run(["schtasks", "/Create", "/TN", SAFETY_TASK, "/TR", cmd, "/SC", "ONLOGON", "/RL", "HIGHEST", "/IT",
                "/DELAY", "0000:30", "/F"], 20, log)
@@ -241,6 +242,8 @@ def _file_undo_ps(rec: dict) -> str:
 
 def undo_lines(rec: dict) -> list:
     """Команди .cmd для одного запису відкату з журналу."""
+    if not E.valid_undo(rec):
+        return [f"rem {_echo(tr('e.undo_bad', what=str(rec)[:60]))}"]
     t = rec.get("t")
     if t == "reg":
         return _reg_lines(rec)
@@ -327,10 +330,9 @@ def build_script(journal: E.Journal = None) -> str:
 def write_rescue(journal: E.Journal = None) -> str:
     """Перегенерувати файл. -> шлях (або '' при помилці запису)."""
     try:
-        os.makedirs(rescue_dir(), exist_ok=True)
         path = rescue_path()
         tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8", newline="") as f:
+        with SF.remove_then_create(tmp, "w", encoding="utf-8", newline="") as f:
             f.write(build_script(journal))
         os.replace(tmp, path)
         return path

@@ -185,6 +185,8 @@ class Main(QWidget):
         # минулого разу OptimaX закрилася аварійно посеред змін: повертаємо «напівзастосоване» й питаємо про пакет
         self.run_quick(tr("rec.title"), lambda log, p: RS.recover_on_start(log), silent=True,
                        on_done=self._recovered)
+        # задачі з правами адміністратора, які старіші версії створили для портативного exe, — прибрати (6.7)
+        self.run_quick("tasks", lambda log, p: F.audit_tasks(log), silent=True)
         broken = len(E.legacy_to_repair())
         if broken:  # зміни старіших версій, які виявилися шкідливими (служби ноутбука тощо), — повертаємо з журналу
             self.run_quick(tr("svc.repair_t"), lambda log, p: E.repair_legacy(log),
@@ -483,7 +485,7 @@ class Main(QWidget):
         self.pages["home"].set_analyzing()
 
         def job(log, p):
-            hw = H.detect_hw()
+            hw = H.detect_hw(cache=True)  # після першого запуску з моменту перезавантаження — без PowerShell
             return {"hw": hw, "an": H.analyze(hw), "checks": H.build_check(hw, F.CFG["games"]), "gpu_t": H.gpu_temp()}
         self.run_quick("hw", job, silent=True, on_done=self._hw_ready)
 

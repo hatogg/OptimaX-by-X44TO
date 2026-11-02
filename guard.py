@@ -134,7 +134,8 @@ def start_trial(ids: list, log) -> dict:
     if not ids:
         return {"ok": False}
     F.CFG["trial"] = dict(ids=ids, ts=int(time.time()), boot=boot_time())
-    if E.IS_WIN and not E.DRY_RUN and not F.autostart_enabled():  # з автозапуском OptimaX і так стартує сам
+    if E.IS_WIN and not E.DRY_RUN and not F.autostart_enabled() and F.elevated_tasks_ok():
+        # з автозапуском OptimaX і так стартує сам; портативна копія запитає під час наступного запуску
         E.run(["schtasks", "/Create", "/TN", TRIAL_TASK, "/TR", _self_cmd("--trial"), "/SC", "ONLOGON", "/RL",
                "HIGHEST", "/IT", "/DELAY", "0000:15", "/F"], 20, log)
     log(tr("trial.started", n=len(ids)))
@@ -195,6 +196,8 @@ def set_schedule(on: bool, day: int, hour: int, log=lambda *_: None) -> bool:
     if not E.IS_WIN or E.DRY_RUN:
         return True
     if on:
+        if not F.elevated_tasks_ok(log):
+            return False
         rc, _ = E.run(["schtasks", "/Create", "/TN", MAINT_TASK, "/TR", _self_cmd("--maintenance"), "/SC", "WEEKLY",
                        "/D", DAYS[day % 7], "/ST", f"{hour % 24:02d}:00", "/RL", "HIGHEST", "/IT", "/F"], 20, log)
     else:

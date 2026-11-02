@@ -56,6 +56,8 @@ def set_resume_task(on: bool, log=lambda *_: None) -> None:
     if not E.IS_WIN or E.DRY_RUN:
         return
     if on:
+        if not F.elevated_tasks_ok(log):
+            return
         cmd = subprocess.list2cmdline(F._self_command() + ["--smart"])
         E.run(["schtasks", "/Create", "/TN", SMART_TASK, "/TR", cmd, "/SC", "ONLOGON", "/RL", "HIGHEST", "/IT",
                "/DELAY", "0000:20", "/F"], 20, log)

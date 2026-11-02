@@ -2,6 +2,33 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [Unreleased]
+
+Безпека й швидкість самої програми: усе, що OptimaX з правами адміністратора читає й запускає, тепер лежить у захищеній папці.
+
+### Безпека
+
+- **Журнал відкату** переїхав з `%APPDATA%\OptimaX` у `%ProgramData%\OptimaX\state`, куди звичайні програми писати не можуть. Під час першого запуску журнал переноситься сам. Кожен запис перед відкатом перевіряється, а пошкоджений чи чужий не виконується й не потрапляє в OptimaX-Rescue.cmd. Команди відкату служб, задач і живлення передаються списком аргументів, а не рядком для cmd.
+- **Задачі планувальника з правами адміністратора** (автозапуск, пробний період, Safety, обслуговування за розкладом, розумна оптимізація, DNS-фільтр від SYSTEM) створюються лише для OptimaX, встановленої в Program Files. Портативна копія про це повідомляє. Задачі старіших версій, що запускали exe поза Program Files, прибираються під час запуску, а DNS-фільтр при цьому вимикається коректно, з поверненням DNS.
+- **PresentMon** лежить у `%ProgramData%\OptimaX\tools`. Сума записується під час завантаження й звіряється перед кожним запуском. Копія, завантажена старішою версією, береться лише з дійсним підписом Intel.
+- **Папки в ProgramData** (`state`, `tools`, `updates`, `rescue`, `adblock`, шари для майнінгових карт) захищаються однаково (новий модуль `secfs.py`): власник — адміністратори, запис — лише адміністраторам і SYSTEM, а посилання на місці папки відкладається вбік.
+- **Системні програми** (powershell.exe, schtasks, icacls, taskkill…) запускаються за повним шляхом із System32, а системні змінні середовища процесу беруться з Windows. PowerShell завантажує лише системні модулі.
+- **Файли для ігор** (DXVK, Mesa) не кладуться в системні папки Windows, навіть якщо «папка гри» веде туди.
+- **«Вимкнути ізоляцію ядра (VBS / HVCI)»** більше не входить у профіль Full і в ціль «FPS» майстра — лише вручну.
+- Збірка: версія PyInstaller обмежена (`>=6.10,<7`). У релізі право запису має лише крок публікації.
+
+### Швидше
+
+- Аналіз заліза під час запуску не запускає три процеси PowerShell повторно до перезавантаження ПК. Кеш скидається раніше, якщо змінився драйвер відеокарти, диски чи мережеві адаптери.
+- Перелік задач планувальника (перевірка твіків, задачі NVIDIA) іде через COM-інтерфейс планувальника, а не через Get-ScheduledTask.
+
+<details>
+<summary>English</summary>
+
+**Security:** the rollback journal moved from `%APPDATA%\OptimaX` to `%ProgramData%\OptimaX\state`, which ordinary programs can't write to (migrated automatically on first start). Every record is validated before rollback; a damaged or foreign one is neither run nor written into OptimaX-Rescue.cmd. Service, task and power rollbacks pass argument lists instead of cmd strings. Scheduled tasks with administrator or SYSTEM rights (autostart, trial, Safety, scheduled maintenance, smart optimization, DNS filter) are created only for OptimaX installed in Program Files; older tasks that ran an exe outside Program Files are removed on start, and the DNS filter is turned off properly, restoring DNS. PresentMon lives in `%ProgramData%\OptimaX\tools`, its hash is recorded at download and checked before every launch; a copy downloaded by an older version is adopted only with a valid Intel signature. ProgramData folders (`state`, `tools`, `updates`, `rescue`, `adblock`, mining-card layers) are secured the same way by the new `secfs.py`: owned by Administrators, writable only by Administrators and SYSTEM, and a link in place of the folder is moved aside. System programs run by full System32 path, the process's system environment variables come from Windows, and PowerShell loads only system modules. Game files (DXVK, Mesa) are never placed into Windows folders. “Turn off core isolation (VBS / HVCI)” is no longer part of the Full profile or the wizard's FPS goal — manual only. Build: PyInstaller is bounded to `>=6.10,<7`; in the release workflow only the publish job can write. **Faster:** hardware detection at start reuses the three PowerShell queries until the next reboot (sooner if the GPU driver, disks or network adapters change); scheduled-task listing uses the Task Scheduler COM interface instead of Get-ScheduledTask.
+
+</details>
+
 ## [6.6] — 2026-10-31
 
 «Чому впав комп?», бібліотека ігор, простий вигляд, монітор ПК на телефоні, перенесення налаштувань і звіт про помилку одним натисканням.

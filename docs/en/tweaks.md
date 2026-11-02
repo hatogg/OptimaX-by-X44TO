@@ -56,7 +56,7 @@ For your CPU and GPU: P/E-cores, MSI Mode, NVIDIA, AMD, VBS, PCIe, USB.
 | 🟡 | MSI Mode for the graphics card <sub>(restart)</sub> | Message-signaled interrupts for the GPU — lower latency. Other devices are under Hardware. | Full | yes |
 | 🔵 | Turn off NVIDIA telemetry | The NVIDIA driver's data collection service and tasks. Doesn't affect the GPU. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
 | 🔵 | Turn off AMD ULPS <sub>(restart)</sub> | Radeon ultra-low power state sometimes causes stutter and black screens — turning it off. | Full, Medium, Xeon / X99 | yes |
-| 🔴 | Turn off core isolation (VBS / HVCI) <sub>(restart, lowers security)</sub> | +5–15% FPS on some systems. Protection against vulnerable drivers will be off. | Full | yes |
+| 🔴 | Turn off core isolation (VBS / HVCI) <sub>(restart, lowers security)</sub> | +5–15% FPS on some systems. Protection against vulnerable drivers will be off. | — | yes |
 | 🔵 | Turn off PCIe power saving | The GPU and NVMe drives never enter power saving — fewer micro-stutters. | Full, Medium, Xeon / X99 | yes |
 | 🔵 | Turn off USB selective suspend | Mice, keyboards and headsets stop dropping out or going to sleep. | Full, Medium, Laptop, Xeon / X99 | yes |
 

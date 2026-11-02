@@ -1246,6 +1246,10 @@ def _ps_quote(s: str) -> str:
 
 
 def install_task(log) -> bool:
+    import secfs as SF
+    if not SF.self_trusted():  # служба SYSTEM запускала б exe, який може підмінити будь-яка програма (6.7)
+        log(tr("e.task_untrusted"))
+        return False
     cmd = _self_command()
     args = subprocess.list2cmdline(cmd[1:] + ["--dns-service"])
     script = (
@@ -1285,11 +1289,13 @@ def set_firewall(on: bool, log) -> None:
 
 
 def secure_dir(log) -> None:
-    """Папку фільтра (і ключ доступу до нього) можуть читати лише адміністратори й SYSTEM."""
-    os.makedirs(data_dir(), exist_ok=True)
+    """Папку фільтра (і ключ доступу до нього) можуть читати лише адміністратори й SYSTEM. 6.7: через secfs —
+    заодно власником стають адміністратори (папку, створену кимось наперед, раніше лишали за ним)."""
     if E.IS_WIN and not E.DRY_RUN:
-        E.run(["icacls", data_dir(), "/inheritance:r", "/grant:r", "*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F"],
-              20, log)
+        import secfs as SF
+        SF.secure_dir(data_dir(), users_read=False, log=log)
+    else:
+        os.makedirs(data_dir(), exist_ok=True)
 
 
 def port_owner(port: int = 53) -> str:
@@ -1360,6 +1366,10 @@ class Backend:
 
     # ── увімкнення / вимкнення ──
     def enable(self, log, progress=None) -> dict:
+        if not self.demo:
+            import secfs as SF
+            if not SF.self_trusted():  # служба SYSTEM запускала б портативний exe, який може підмінити будь-яка програма
+                raise RuntimeError(tr("e.task_untrusted"))
         if E.JOURNAL.has("dns"):  # спершу повертаємо DNS, змінені на сторінці «Мережа» або легким режимом
             log(tr("ab.undo_light"))
             E.undo_ids(["dns"], log)
@@ -1439,6 +1449,9 @@ class Backend:
         if Client().call("GET", "/api/status", timeout=1.0):
             return True
         if task_exists():
+            import secfs as SF
+            if not SF.trusted_location(E.task_command(TASK)):  # задача старої версії на портативний exe —
+                return False                                    # не запускаємо (її прибере features.audit_tasks)
             E.run(["schtasks", "/Run", "/TN", TASK], 20, log)
             return False
         return install_task(log)

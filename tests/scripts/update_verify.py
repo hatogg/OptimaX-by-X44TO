@@ -40,7 +40,18 @@ def fake_open(url, timeout, accept=None):
 
 
 U._open = fake_open
-U.subprocess.Popen = lambda args, **k: LAUNCHED.append(args)
+_POPEN = U.subprocess.Popen
+
+
+def _popen(args, **k):
+    """Рахуємо лише запуски інсталятора; решта (icacls для захищеної папки) іде далі як є."""
+    if isinstance(args, list) and args and os.path.basename(str(args[0])).startswith("OptimaX-"):
+        LAUNCHED.append(args)
+        return None
+    return _POPEN(args, **k)
+
+
+U.subprocess.Popen = _popen
 SIG = {"status": "unsigned", "code": V.TRUST_E_NOSIGNATURE}
 WHO = {"name": ""}
 V.signature = lambda path: dict(SIG)

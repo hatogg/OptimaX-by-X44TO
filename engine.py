@@ -25,6 +25,7 @@ try:
 except ImportError:  # не Windows: інтерфейс можна переглянути, дії виконуються «вхолосту»
     winreg = None
 
+import secfs as SF
 from i18n import tr, tweak_text
 
 APP_NAME = "OptimaX"
@@ -36,9 +37,10 @@ DRY_RUN = (not IS_WIN) or ("--dry-run" in sys.argv)
 DEMO = os.environ.get("OPTIMAX_DEMO", "gaming")  # демо-залізо поза Windows: gaming/laptop/old/x3d/xeon
 CANCEL = threading.Event()
 
+if IS_WIN:
+    SF.pin_environment()  # ComSpec, ProgramData, PSModulePath… — справжні, а не перевизначені користувачем
 APPDATA = os.environ.get("APPDATA") or os.path.expanduser("~")
 DATA_DIR = os.path.join(APPDATA, APP_NAME)
-JOURNAL_PATH = os.path.join(DATA_DIR, "back.dryrun.json" if DRY_RUN else "back.json")
 CREATE_NO_WINDOW = 0x08000000
 TIMEOUT_RC = -999
 
@@ -107,10 +109,12 @@ def run(cmd, timeout: int = 30, log: Optional[Callable] = None, input_text: Opti
         if log:
             log(f"  [dry-run] {shown[:110]}")
         return 0, ""
+    if isinstance(cmd, list) and cmd:
+        cmd = [SF.sysexe(cmd[0])] + list(cmd[1:])  # не шукати schtasks.exe у папці програми чи поточній папці
     try:
         p = subprocess.Popen(cmd, shell=isinstance(cmd, str), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              stdin=subprocess.PIPE if input_text else subprocess.DEVNULL,
-                             creationflags=CREATE_NO_WINDOW)
+                             creationflags=CREATE_NO_WINDOW, cwd=_child_cwd())
     except Exception as e:
         return 1, str(e)
     chunks = []
@@ -140,6 +144,15 @@ def run(cmd, timeout: int = 30, log: Optional[Callable] = None, input_text: Opti
     return p.returncode, _decode(b"".join(chunks), enc).strip()
 
 
+def _child_cwd():
+    """Поточна папка дочірніх процесів — System32: cmd.exe шукає програму спершу в поточній папці, а в портативної
+    версії це може бути «Завантаження»."""
+    if not IS_WIN:
+        return None
+    d = SF.system_dir()
+    return d if os.path.isdir(d) else None
+
+
 def _drain(pipe, put) -> None:
     try:
         for block in iter(lambda: pipe.read1(4096), b""):  # read1 — не чекати повних 4 КБ, віддавати що є
@@ -151,8 +164,8 @@ def _drain(pipe, put) -> None:
 def kill_tree(p) -> None:
     """Зупиняє процес разом з усіма дочірніми (taskkill /T), а не лише оболонку cmd.exe."""
     try:
-        subprocess.run(["taskkill", "/T", "/F", "/PID", str(p.pid)], capture_output=True, timeout=20,
-                       creationflags=CREATE_NO_WINDOW)
+        subprocess.run([SF.sysexe("taskkill"), "/T", "/F", "/PID", str(p.pid)], capture_output=True, timeout=20,
+                       creationflags=CREATE_NO_WINDOW, cwd=_child_cwd())
     except Exception:
         pass
     try:
@@ -161,7 +174,11 @@ def kill_tree(p) -> None:
         pass
 
 
-PS_PREFIX = "$ProgressPreference='SilentlyContinue';[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
+# PSModulePath — лише системні модулі: автозавантаження модуля (Get-ScheduledTask → ScheduledTasks) інакше першим
+# перевірило б Documents\WindowsPowerShell\Modules користувача, куди може писати будь-яка його програма
+PS_PREFIX = ("$ProgressPreference='SilentlyContinue';[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
+             "$env:PSModulePath=[Environment]::GetFolderPath('System')+'\\WindowsPowerShell\\v1.0\\Modules;'+"
+             "[Environment]::GetFolderPath('ProgramFiles')+'\\WindowsPowerShell\\Modules';")
 
 
 def ps(script: str, timeout: int = 30, log: Optional[Callable] = None, ro: bool = False):
@@ -224,7 +241,7 @@ def stream(cmd: str, log: Callable, parse: Callable, timeout: int = 1800, enc: O
         return True
     try:
         p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                             encoding=enc or OEM, errors="replace", creationflags=CREATE_NO_WINDOW)
+                             encoding=enc or OEM, errors="replace", creationflags=CREATE_NO_WINDOW, cwd=_child_cwd())
     except Exception as e:
         log(tr("e.stream_fail", err=e))
         return False
@@ -359,6 +376,38 @@ def svc_get_start(name: str):
     return mode
 
 
+# Усі задачі планувальника через COM (Schedule.Service): у рази швидше за Get-ScheduledTask, який будує повні
+# CIM-об'єкти (тригери, дії) для кожної з кількох сотень задач. Вивід — «1|\шлях\задача» (1 — увімкнена).
+TASKS_PS = ("$s=New-Object -ComObject Schedule.Service;$s.Connect();"
+            "$o=New-Object System.Collections.Generic.List[string];"
+            "function W($f){try{foreach($t in $f.GetTasks(1)){$o.Add([string][int][bool]$t.Enabled+'|'+$t.Path)}}catch{};"
+            "try{foreach($c in $f.GetFolders(0)){W $c}}catch{}};"
+            "W ($s.GetFolder('\\'));[Console]::Out.Write(($o -join [char]10))")
+
+
+def all_tasks() -> dict:
+    """{\\шлях\\задача: увімкнена} для всіх задач планувальника (і прихованих) або {} при помилці."""
+    if not IS_WIN:
+        return {}
+    _rc, out = ps(TASKS_PS, 90, ro=True)
+    res = {}
+    for ln in (out or "").splitlines():
+        en, _, path = ln.strip().partition("|")
+        if en in ("0", "1") and path.startswith("\\"):
+            res[path] = en == "1"
+    return res
+
+
+def task_command(name: str) -> str:
+    """Шлях до exe, який запускає задача планувальника, або '' (задачі немає чи прочитати не вдалося)."""
+    import html
+    rc, out = run(["schtasks", "/Query", "/TN", name, "/XML"], 15, ro=True)
+    if rc != 0:
+        return ""
+    m = re.search(r"<Command>(.*?)</Command>", out or "", re.S)
+    return html.unescape(m.group(1)).strip().strip('"') if m else ""
+
+
 def active_scheme() -> str:
     if not IS_WIN:
         return BALANCED
@@ -412,7 +461,7 @@ def _write_atomic(path: str, data, durable: bool) -> None:
     Антивірус, що саме сканує файл, на мить блокує заміну — пробуємо кілька разів."""
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    with SF.remove_then_create(tmp, "w", encoding="utf-8") as f:  # чужий .tmp (чи посилання) не дописуємо
         json.dump(data, f, ensure_ascii=False, indent=1)
         f.flush()
         if durable:
@@ -618,6 +667,113 @@ class Journal:
         return len(self.data["applied"])
 
 
+def admin_dir(sub: str, users_read: bool = True) -> str:
+    """Папка для того, що OptimaX з правами адміністратора потім читає чи запускає: %ProgramData%\\OptimaX\\<sub>,
+    захищена від запису звичайними програмами (secfs.secure_dir). У режимі перегляду, поза Windows і без прав
+    адміністратора — %APPDATA%\\OptimaX\\<sub>, як і раніше."""
+    if IS_WIN and not DRY_RUN and is_admin():
+        return SF.secure_dir(os.path.join(SF.data_root(), sub), users_read=users_read)
+    d = os.path.join(DATA_DIR, sub)
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+LEGACY_JOURNAL = os.path.join(DATA_DIR, "back.json")
+JOURNAL_PROBLEM = ""  # не вдалося перенести журнал у захищену папку — причина (видно у звіті й журналі програми)
+
+
+def _journal_path() -> str:
+    """6.7: журнал відкату — у %ProgramData%\\OptimaX\\state. Раніше він лежав у %APPDATA%, куди може писати будь-яка
+    програма користувача, а відкат виконує записані в ньому команди з правами адміністратора."""
+    global JOURNAL_PROBLEM
+    if DRY_RUN:
+        return os.path.join(DATA_DIR, "back.dryrun.json")
+    if not (IS_WIN and is_admin()):
+        return LEGACY_JOURNAL
+    try:
+        path = os.path.join(admin_dir("state"), "back.json")
+        _migrate_journal(LEGACY_JOURNAL, path)
+        return path
+    except Exception as e:  # noqa: BLE001 — краще журнал на старому місці, ніж зміни без можливості відкату
+        JOURNAL_PROBLEM = f"{type(e).__name__}: {e}"
+        return LEGACY_JOURNAL
+
+
+def _migrate_journal(old: str, new: str) -> None:
+    """Переносить журнал (і незавершений запис оптимізації) зі старого місця; старі файли перейменовує, щоб їх
+    більше ніхто не читав. Записи, що не проходять перевірку (valid_undo), не переносяться — їх і так не виконати."""
+    old_wal = old[:-5] + ".pending.json"
+    new_wal = new[:-5] + ".pending.json"
+    stamp = int(time.time())
+    if os.path.exists(old) and not os.path.exists(new):
+        data = Journal._read(old)
+        dropped = []
+        for tid, e in list(data["applied"].items()):
+            good = [r for r in e["undo"] if valid_undo(r)]
+            if len(good) != len(e["undo"]):
+                dropped.append(tid)
+                e["undo"] = good
+                e["partial"] = True
+        if dropped:
+            data["migrated_dropped"] = dropped[:200]
+        _write_atomic(new, data, durable=True)
+        os.replace(old, f"{old}.moved-{stamp}")
+        for extra in (old + ".bak", old + ".tmp"):
+            if os.path.exists(extra):
+                os.replace(extra, f"{extra}.moved-{stamp}")
+    if os.path.exists(old_wal) and not os.path.exists(new_wal):
+        try:
+            with open(old_wal, encoding="utf-8") as f:
+                wal = json.load(f)
+            if isinstance(wal, dict) and isinstance(wal.get("undo"), list):
+                wal["undo"] = [r for r in wal["undo"] if valid_undo(r)]
+                _write_atomic(new_wal, wal, durable=True)
+        except (OSError, ValueError):
+            pass
+        os.replace(old_wal, f"{old_wal}.moved-{stamp}")
+
+
+# ── перевірка записів відкату ──
+_UNDO_TYPES = {"reg", "svc", "task", "cmd", "ps", "pw", "live", "file"}
+_HIVES = ("HKLM\\", "HKCU\\", "HKCR\\", "HKU\\")
+_SVC_NAME = re.compile(r"^[A-Za-z0-9_.$\-]{1,256}$")
+_SVC_START = {"auto", "demand", "disabled", "boot", "system", "delayed-auto"}
+_TASK_NAME = re.compile(r'^[^"%^&|<>\r\n]{1,400}$')
+_PW_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+_LIVE = {"explorer", "broadcast", "env", "syscolor", "mouse", "keyboard", "anim"}
+_HEX64 = re.compile(r"^[0-9a-fA-F]{64}$")
+
+
+def valid_undo(rec) -> bool:
+    """Запис відкату має очікувану форму: відомий тип і поля, які не можуть стати чужою командою.
+    Записи типу cmd / ps (команди з каталогу оптимізацій) захищає місце зберігання журналу — admin_dir."""
+    if not isinstance(rec, dict) or rec.get("t") not in _UNDO_TYPES:
+        return False
+    t = rec["t"]
+    if t == "reg":
+        p, n, old = rec.get("p"), rec.get("n"), rec.get("old", 0)
+        return (isinstance(p, str) and p.upper().startswith(_HIVES) and isinstance(n, str) and
+                (old is None or (isinstance(old, list) and len(old) == 2 and isinstance(old[0], int))))
+    if t == "svc":
+        return bool(isinstance(rec.get("n"), str) and _SVC_NAME.match(rec["n"]) and rec.get("old") in _SVC_START)
+    if t == "task":
+        return bool(isinstance(rec.get("n"), str) and _TASK_NAME.match(rec["n"]))
+    if t in ("cmd", "ps"):
+        return isinstance(rec.get("c"), str) and "\x00" not in rec["c"]
+    if t == "pw":
+        if not all(isinstance(rec.get(k), str) and _PW_ID.match(rec[k]) for k in ("g", "s", "st")):
+            return False
+        return rec.get("old") is None or (isinstance(rec["old"], int) and not isinstance(rec["old"], bool))
+    if t == "live":
+        return rec.get("k") in _LIVE
+    if t == "file":
+        p, bak, sha = rec.get("p"), rec.get("bak"), rec.get("sha") or ""
+        return (isinstance(p, str) and os.path.isabs(p) and isinstance(sha, str) and (not sha or _HEX64.match(sha))
+                and (bak is None or (isinstance(bak, str) and bak.startswith(p + ".optimax-bak"))))
+    return False
+
+
+JOURNAL_PATH = _journal_path()
 JOURNAL = Journal(JOURNAL_PATH)
 
 
@@ -671,10 +827,8 @@ class Ctx:
         if self._tasks is False:
             self._tasks = None
             if IS_WIN:
-                rc, out = ps("Get-ScheduledTask | Where-Object {$_.State -ne 'Disabled'} | "
-                             "ForEach-Object { $_.TaskPath + $_.TaskName }", 90, ro=True)
-                names = {ln.strip().lower() for ln in out.splitlines() if ln.strip()}
-                if rc == 0 and names:
+                names = {p.lower() for p, en in all_tasks().items() if en}
+                if names:
                     self._tasks = names
         return self._tasks
 
@@ -809,6 +963,8 @@ def exec_op(op, ctx: Ctx) -> None:
             ctx.undo.append({"t": "pw", "g": g, "s": sub, "st": setting, "old": old, "m": mode})
     elif k == "file":
         _, src, dest = op
+        if SF.system_target(os.path.dirname(dest)):  # «папка гри» з налаштувань веде в Windows (чи це посилання туди)
+            raise RuntimeError(tr("e.file_system", path=dest))
         sha = file_sha256(src)
         bak = None
         if os.path.exists(dest):
@@ -845,6 +1001,8 @@ def exec_op(op, ctx: Ctx) -> None:
 
 
 def _undo_record(rec: dict, log: Callable, deferred: set = None) -> None:
+    if not valid_undo(rec):  # зіпсований чи підкинутий запис не виконуємо — він лишиться в журналі як невдалий
+        raise ValueError(tr("e.undo_bad", what=str(rec)[:80]))
     t = rec["t"]
     if t == "live" and deferred is not None and rec.get("k") == "explorer":
         deferred.add("explorer")
@@ -859,11 +1017,11 @@ def _undo_record(rec: dict, log: Callable, deferred: set = None) -> None:
         else:
             reg_set(rec["p"], rec["n"], _dec(rec["old"][1]), rec["old"][0])
     elif t == "svc":
-        rc, out = run(f"sc config {rec['n']} start= {rec['old']}", 15, log)
+        rc, out = run(["sc", "config", rec["n"], "start=", rec["old"]], 15, log)
         if rc not in (0, 1060):  # 1060 — служби вже немає: повертати нічого
             raise RuntimeError(f"sc config {rec['n']}: {first_line(out, 70) or rc}")
     elif t == "task":
-        run(f'schtasks /Change /Enable /TN "{rec["n"]}"', 15, log)
+        run(["schtasks", "/Change", "/Enable", "/TN", rec["n"]], 15, log)
     elif t == "cmd":
         run(rec["c"], 1800, log)
     elif t == "ps":
@@ -872,9 +1030,9 @@ def _undo_record(rec: dict, log: Callable, deferred: set = None) -> None:
         if rec.get("old") is None:
             return
         verb = "-setdcvalueindex" if rec.get("m") == "dc" else "-setacvalueindex"
-        run(f"powercfg {verb} {rec['g']} {rec['s']} {rec['st']} {rec['old']}", 10, log)
+        run(["powercfg", verb, rec["g"], rec["s"], rec["st"], str(rec["old"])], 10, log)
         if active_scheme() == rec["g"]:
-            run(f"powercfg -setactive {rec['g']}", 10, log)
+            run(["powercfg", "-setactive", rec["g"]], 10, log)
     elif t == "live":
         live_refresh(rec["k"], log)
     elif t == "file":
@@ -1400,10 +1558,8 @@ NV_TASK_MASKS = ("NvTmRep", "NvTmMon", "NvProfileUpdater", "NvDriverUpdateCheck"
 def dyn_nvidia_tasks(ctx: Ctx):
     if not IS_WIN:
         return [TK(r"\NvTmRep_CrashReport1_{demo}")]
-    cond = " -or ".join(f"$_.TaskName -like '{m}*'" for m in NV_TASK_MASKS)
-    rc, out = ps(f"Get-ScheduledTask | Where-Object {{ {cond} }} | ForEach-Object {{ $_.TaskPath + $_.TaskName }}",
-                 40, ro=True)
-    names = [x.strip() for x in out.splitlines() if x.strip()]
+    masks = tuple(m.lower() for m in NV_TASK_MASKS)
+    names = [p for p in all_tasks() if p.rsplit("\\", 1)[-1].lower().startswith(masks)]
     return [TK(*names)] if names else []
 
 
@@ -1906,7 +2062,7 @@ tw("disable_vbs", "hw", [R(r"HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard",
                            "EnableVirtualizationBasedSecurity", 0),
                          R(r"HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios"
                            r"\HypervisorEnforcedCodeIntegrity", "Enabled", 0)],
-   p="F", reboot=True, impact="habits", risky="security")
+   reboot=True, impact="habits", risky="security")  # 6.7: лише вручну — вимикає захист ядра (Memory Integrity)
 tw("pcie_aspm", "hw", [P("ASPM", 0, "SUB_PCIEXPRESS")], p="FMX", warn_on=LAP)
 tw("usb_suspend", "hw", [P(USB_SET, 0, USB_SUB)], p="FMTX")
 

@@ -368,6 +368,8 @@ def fake_ps(code):
         return 0, "Ready" if TASKS[name] else "Disabled"
     if "Get-ScheduledTask | Where-Object" in code:
         return 0, "\n".join(k for k, en in TASKS.items() if en)
+    if "Schedule.Service" in code:  # engine.all_tasks(): «1|\шлях\задача» для кожної задачі
+        return 0, "\n".join(f"{int(bool(en))}|{k}" for k, en in TASKS.items())
     if "Win32_Service" in code:
         out = []
         for n in _children(SVC.lower()):
