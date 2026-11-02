@@ -493,6 +493,48 @@ def _self_command() -> list:
     return [pyw if os.path.exists(pyw) else exe, os.path.abspath(sys.argv[0])]
 
 
+# Задачі планувальника, які запускають OptimaX з правами адміністратора (DNS-фільтр від SYSTEM — в adblock.TASK)
+ELEVATED_TASKS = (TASK_NAME, "OptimaX Trial", "OptimaX Maintenance", "OptimaX Safety", "OptimaX Smart")
+
+
+def elevated_tasks_ok(log=None) -> bool:
+    """6.7: задачі з правами адміністратора чи SYSTEM — лише для копії OptimaX у Program Files. Портативний exe у
+    «Завантаженнях» (чи будь-якій іншій папці користувача) може підмінити будь-яка програма, а задача запускала б
+    підмінений файл з найвищими правами при кожному вході в систему."""
+    import secfs as SF
+    ok = SF.self_trusted()
+    if not ok and log:
+        log(tr("e.task_untrusted"))
+    return ok
+
+
+def audit_tasks(log=lambda *_: None) -> list:
+    """Задачі з правами адміністратора, створені старішими версіями для exe поза Program Files (портативна копія),
+    прибираємо: такий exe може підмінити будь-яка програма. DNS-фільтр вимикаємо через нього самого, щоб Windows
+    не лишилася з DNS 127.0.0.1 без служби. -> назви прибраних задач."""
+    if not E.IS_WIN or E.DRY_RUN:
+        return []
+    import secfs as SF
+    import adblock as AB
+    gone = []
+    for name in ELEVATED_TASKS + (AB.TASK,):
+        cmd = E.task_command(name)
+        if not cmd or SF.trusted_location(cmd):
+            continue
+        if name == AB.TASK:
+            try:
+                AB.Backend(CFG).disable(log)
+            except Exception as e:  # noqa: BLE001 — задачу однаково прибираємо, DNS повертаємо самі
+                log(f"  ⚠ {type(e).__name__}: {e}")
+                AB.remove_task(log)
+                AB.restore_system_dns(log)
+        else:
+            E.run(["schtasks", "/Delete", "/TN", name, "/F"], 20, log)
+        log(tr("e.task_removed", name=name, path=cmd))
+        gone.append(name)
+    return gone
+
+
 def autostart_enabled() -> bool:
     if not E.IS_WIN:
         return bool(CFG["demo_autostart"])
@@ -505,6 +547,8 @@ def set_autostart(on: bool, log=lambda *_: None) -> bool:
         CFG["demo_autostart"] = on
         return True
     if on:
+        if not elevated_tasks_ok(log):
+            return False
         tr_cmd = subprocess.list2cmdline(_self_command() + ["--tray"])
         rc, out = E.run(["schtasks", "/Create", "/TN", TASK_NAME, "/TR", tr_cmd, "/SC", "ONLOGON", "/RL", "HIGHEST",
                          "/IT", "/DELAY", "0000:20", "/F"], 20, log)
@@ -552,7 +596,7 @@ WIZARD = [
 DEVICE_PROFILE = {"gaming": "M", "laptop": "T", "old": "O", "xeon": "X"}
 LATENCY = ["processor_idle", "timer_resolution", "dynamic_tick", "msi_gpu", "disable_nagle", "network_stack_boost",
            "fso_global", "turbo_aggressive"]
-FPS = ["disable_vbs", "msi_gpu", "fso_global", "turbo_aggressive"]
+FPS = ["msi_gpu", "fso_global", "turbo_aggressive"]  # 6.7: без disable_vbs — захист ядра вимикають лише вручну
 HOT = ["ultimate_power", "processor_idle", "power_throttling", "turbo_aggressive", "core_parking", "min_cpu_state",
        "laptop_ac_max", "pcie_aspm"]
 AI_FEATURES = ["ai_copilot", "ai_recall", "ai_click_to_do", "ai_apps", "ai_edge", "search_no_bing"]

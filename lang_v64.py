@@ -381,4 +381,26 @@ STRINGS = {
     "bk.partial_d": ("Частину кроків не вдалося повернути — повторіть відкат або скористайтеся OptimaX-Rescue.cmd",
                      "Часть шагов не удалось вернуть — повторите откат или воспользуйтесь OptimaX-Rescue.cmd",
                      "Some steps could not be reverted — retry the rollback or use OptimaX-Rescue.cmd"),
+    # 6.7 — захищені папки й задачі планувальника
+    "e.undo_bad": ("Запис відкату пошкоджений або підкинутий — його не виконано: {what}",
+                   "Запись отката повреждена или подброшена — она не выполнена: {what}",
+                   "The rollback record is damaged or planted — it was not run: {what}"),
+    "e.file_system": ("Файл не покладено: {path} веде в системну папку Windows",
+                      "Файл не положен: {path} ведёт в системную папку Windows",
+                      "File not placed: {path} leads into a Windows system folder"),
+    "e.task_untrusted": ("Ця копія OptimaX лежить поза Program Files — її exe може підмінити будь-яка програма, тож "
+                         "задачі з правами адміністратора (автозапуск, розклад, DNS-фільтр) для неї не створюються. "
+                         "Встановіть OptimaX інсталятором, щоб ними користуватися.",
+                         "Эта копия OptimaX лежит вне Program Files — её exe может подменить любая программа, поэтому "
+                         "задачи с правами администратора (автозапуск, расписание, DNS-фильтр) для неё не создаются. "
+                         "Установите OptimaX установщиком, чтобы ими пользоваться.",
+                         "This copy of OptimaX is outside Program Files — any program could replace its exe, so tasks "
+                         "with administrator rights (autostart, schedule, DNS filter) aren't created for it. Install "
+                         "OptimaX with the installer to use them."),
+    "e.task_removed": ("Прибрано задачу «{name}»: вона запускала з правами адміністратора {path} — файл, який може "
+                       "підмінити будь-яка програма",
+                       "Удалена задача «{name}»: она запускала с правами администратора {path} — файл, который может "
+                       "подменить любая программа",
+                       "Removed the “{name}” task: it ran {path} with administrator rights — a file any program could "
+                       "replace"),
 }

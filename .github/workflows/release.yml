@@ -20,8 +20,10 @@ on:
         type: boolean
         default: true
 
+# Право писати (створити реліз) — лише в кроку публікації; збірка й перевірки (pip, PyInstaller, сторонні архіви)
+# працюють з токеном лише для читання
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   version:
@@ -52,6 +54,8 @@ jobs:
     name: GitHub release
     needs: [version, ci]
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8

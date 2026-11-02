@@ -22,8 +22,17 @@ from i18n import tr
 
 RELEASES_API = "https://api.github.com/repos/GameTechDev/PresentMon/releases/latest"
 RELEASES_PAGE = "https://github.com/GameTechDev/PresentMon/releases"
-TOOLS_DIR = os.path.join(E.DATA_DIR, "tools")
+LEGACY_TOOLS_DIR = os.path.join(E.DATA_DIR, "tools")  # до 6.7: папка користувача, куди могла писати будь-яка програма
 ASSET_RE = re.compile(r"^PresentMon-[\d.]+-x64\.exe$", re.I)
+MANIFEST = "presentmon.json"  # {"name": файл, "sha256": сума після завантаження}
+_OK: dict = {}  # шлях -> (розмір, mtime_ns): сума вже звірена; папка захищена, тож повторно хешувати не треба
+
+
+def tools_dir() -> str:
+    """6.7: PresentMon запускається з правами адміністратора (і сам — під час гри з бібліотеки), тому лежить у
+    %ProgramData%\\OptimaX\\tools, куди звичайні програми писати не можуть, а не в %APPDATA%."""
+    return E.admin_dir("tools")
+
 
 
 def _app_dir() -> str:
@@ -31,15 +40,89 @@ def _app_dir() -> str:
     return os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
 
 
+def _read_manifest(d: str) -> dict:
+    try:
+        with open(os.path.join(d, MANIFEST), encoding="utf-8") as f:
+            m = json.load(f)
+        if isinstance(m, dict) and ASSET_RE.match(str(m.get("name", ""))) and \
+                re.fullmatch(r"[0-9a-f]{64}", str(m.get("sha256", ""))):
+            return m
+    except (OSError, ValueError):
+        pass
+    return {}
+
+
+def _write_manifest(d: str, name: str, sha: str) -> None:
+    E._write_atomic(os.path.join(d, MANIFEST), {"name": name, "sha256": sha}, durable=False)
+
+
+def _verified(path: str, sha: str) -> bool:
+    try:
+        st = os.stat(path)
+    except OSError:
+        return False
+    key = (st.st_size, st.st_mtime_ns)
+    if _OK.get(path) == key:
+        return True
+    import verify as V
+    if V.sha256(path) != sha:
+        return False
+    _OK[path] = key
+    return True
+
+
 def find_presentmon():
+    """PresentMon, який можна запускати з правами адміністратора: поруч зі встановленою OptimaX (Program Files) або
+    завантажений нею в захищену папку й звірений із сумою, записаною під час завантаження. Будь-який інший
+    PresentMon*.exe (наприклад, підкладений у папку портативної версії) не підходить."""
     if not E.IS_WIN:
         return "PresentMon-demo.exe"
-    for folder in (os.path.join(_app_dir(), "tools"), _app_dir(), TOOLS_DIR):
-        hits = sorted(glob.glob(os.path.join(folder, "PresentMon*.exe")), reverse=True)
-        hits = [h for h in hits if "service" not in h.lower()]
-        if hits:
-            return hits[0]
+    import secfs as SF
+    if SF.self_trusted():
+        app = _app_dir()
+        for folder in (os.path.join(app, "tools"), app):
+            hits = sorted(glob.glob(os.path.join(folder, "PresentMon*.exe")), reverse=True)
+            hits = [h for h in hits if "service" not in h.lower() and SF.trusted_location(h)]
+            if hits:
+                return hits[0]
+    try:
+        d = tools_dir()
+    except Exception:  # noqa: BLE001 — захищену папку створити не вдалося: краще без FPS, ніж неперевірений exe
+        return None
+    m = _read_manifest(d)
+    if not m:
+        m = _adopt_legacy(d)
+    if m:
+        path = os.path.join(d, m["name"])
+        if not SF.is_reparse(path) and _verified(path, m["sha256"]):
+            return path
     return None
+
+
+def _adopt_legacy(d: str) -> dict:
+    """PresentMon, завантажений версією до 6.7 у %APPDATA%: копіюємо в захищену папку й беремо, лише якщо копія має
+    дійсний підпис Intel (перевіряємо саму копію — оригінал за цей час могли підмінити)."""
+    import shutil
+    import verify as V
+    hits = sorted(glob.glob(os.path.join(LEGACY_TOOLS_DIR, "PresentMon-*-x64.exe")), reverse=True)
+    hits = [h for h in hits if ASSET_RE.match(os.path.basename(h))]
+    if not hits:
+        return {}
+    name = os.path.basename(hits[0])
+    dest = os.path.join(d, name)
+    try:
+        if os.path.lexists(dest):
+            os.remove(dest)
+        shutil.copyfile(hits[0], dest)
+        sig = V.signature(dest)
+        if sig["status"] != "valid" or "intel" not in V._cn(V.signer(dest)).lower():
+            os.remove(dest)
+            return {}
+        sha = V.sha256(dest)
+        _write_manifest(d, name, sha)
+        return {"name": name, "sha256": sha}
+    except (OSError, V.VerifyError):
+        return {}
 
 
 def download_presentmon(log) -> str:
@@ -54,12 +137,13 @@ def download_presentmon(log) -> str:
     asset = next((a for a in rel.get("assets", []) if ASSET_RE.match(a.get("name", ""))), None)
     if not asset:
         raise RuntimeError(tr("fps.no_asset"))
-    os.makedirs(TOOLS_DIR, exist_ok=True)
-    dest = os.path.join(TOOLS_DIR, asset["name"])
+    d = tools_dir()
+    dest = os.path.join(d, asset["name"])
     log(tr("fps.downloading", name=asset["name"], mb=f"{asset.get('size', 0) / 2**20:.1f}"))
     tmp = dest + ".part"
     req = urllib.request.Request(asset["browser_download_url"], headers={"User-Agent": f"{E.APP_NAME}/{E.VERSION}"})
-    with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as f:
+    import secfs as SF
+    with urllib.request.urlopen(req, timeout=60) as r, SF.remove_then_create(tmp, "wb") as f:
         while True:
             chunk = r.read(1 << 16)
             if not chunk:
@@ -80,7 +164,10 @@ def download_presentmon(log) -> str:
     except V.VerifyError:
         os.remove(tmp)
         raise
+    sha = V.sha256(tmp)
     os.replace(tmp, dest)
+    _write_manifest(d, asset["name"], sha)  # find_presentmon звірятиме файл із цією сумою перед кожним запуском
+    _OK.pop(dest, None)
     log(tr("fps.downloaded"))
     return dest
 
@@ -279,8 +366,7 @@ def start_capture_all(seconds: int) -> dict:
     import verify as V
     if V.signature(pm)["status"] == "invalid":
         return {}
-    os.makedirs(TOOLS_DIR, exist_ok=True)
-    out = os.path.join(TOOLS_DIR, f"diag_{int(time.time())}.csv")
+    out = os.path.join(tools_dir(), f"diag_{int(time.time())}.csv")
     cmd = [pm, "--output_file", out, "--timed", str(seconds + 2), "--terminate_after_timed", "--no_console_stats",
            "--stop_existing_session", "--session_name", "OptimaXDiag"]
     p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=E.CREATE_NO_WINDOW)
@@ -345,8 +431,7 @@ def capture(exe: str, seconds: int, log, progress) -> dict:
     import verify as V
     if V.signature(pm)["status"] == "invalid":  # файл підмінили після завантаження
         raise RuntimeError(tr("vf.sig_invalid", name=os.path.basename(pm), code="WinVerifyTrust"))
-    os.makedirs(TOOLS_DIR, exist_ok=True)
-    out = os.path.join(TOOLS_DIR, f"capture_{int(time.time())}.csv")
+    out = os.path.join(tools_dir(), f"capture_{int(time.time())}.csv")
     cmd = [pm, "--process_name", exe, "--output_file", out, "--timed", str(seconds), "--terminate_after_timed",
            "--no_console_stats", "--stop_existing_session", "--session_name", "OptimaX"]
     log(f"  {' '.join(os.path.basename(c) if i == 0 else c for i, c in enumerate(cmd))}")

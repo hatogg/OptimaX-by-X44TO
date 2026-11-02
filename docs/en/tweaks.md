@@ -2,7 +2,7 @@
 
 [← Back to the main page](../../README.en.md) · [Українська](../uk/tweaks.md)
 
-Generated from the program code (136 optimizations in 16 sections, version 6.6). Marks: 🔴 affects everyday habits, 🟡 moderate impact, 🔵 safe. “Rollback” tells whether OptimaX restores the change to your own original value.
+Generated from the program code (136 optimizations in 16 sections, version 6.7). Marks: 🔴 affects everyday habits, 🟡 moderate impact, 🔵 safe. “Rollback” tells whether OptimaX restores the change to your own original value.
 
 Before applying, OptimaX checks compatibility with your hardware and Windows version: irrelevant items are disabled, items harmful to your PC (for example, turning off Game Bar on AMD X3D) are blocked, and the reason is shown under the item.
 
@@ -56,7 +56,7 @@ For your CPU and GPU: P/E-cores, MSI Mode, NVIDIA, AMD, VBS, PCIe, USB.
 | 🟡 | MSI Mode for the graphics card <sub>(restart)</sub> | Message-signaled interrupts for the GPU — lower latency. Other devices are under Hardware. | Full | yes |
 | 🔵 | Turn off NVIDIA telemetry | The NVIDIA driver's data collection service and tasks. Doesn't affect the GPU. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
 | 🔵 | Turn off AMD ULPS <sub>(restart)</sub> | Radeon ultra-low power state sometimes causes stutter and black screens — turning it off. | Full, Medium, Xeon / X99 | yes |
-| 🔴 | Turn off core isolation (VBS / HVCI) <sub>(restart, lowers security)</sub> | +5–15% FPS on some systems. Protection against vulnerable drivers will be off. | Full | yes |
+| 🔴 | Turn off core isolation (VBS / HVCI) <sub>(restart, lowers security)</sub> | +5–15% FPS on some systems. Protection against vulnerable drivers will be off. | — | yes |
 | 🔵 | Turn off PCIe power saving | The GPU and NVMe drives never enter power saving — fewer micro-stutters. | Full, Medium, Xeon / X99 | yes |
 | 🔵 | Turn off USB selective suspend | Mice, keyboards and headsets stop dropping out or going to sleep. | Full, Medium, Laptop, Xeon / X99 | yes |
 

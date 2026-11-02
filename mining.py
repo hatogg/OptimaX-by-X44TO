@@ -650,7 +650,8 @@ def layer_root(kind: str) -> str:
     вони лежать у ProgramData, і доступ до папки лишаємо тільки адміністраторам і SYSTEM (за замовчуванням у
     підпапках ProgramData будь-який користувач може створювати файли й папки — підкинути свої бібліотеки)."""
     if E.IS_WIN and not E.DRY_RUN and E.is_admin():
-        return os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "OptimaX", kind)
+        import secfs as SF
+        return os.path.join(SF.data_root(), kind)
     return os.path.join(E.DATA_DIR, kind)
 
 
@@ -659,10 +660,13 @@ def mesa_root() -> str:
 
 
 def _secure(path: str, log=lambda *_: None) -> None:
-    os.makedirs(path, exist_ok=True)
+    """Власник — адміністратори, запис — лише адміністраторам і SYSTEM, решта лише читає (secfs.secure_dir: заодно
+    відкладає посилання, підкинуте на місце папки, і забирає папку, яку хтось створив наперед)."""
     if E.IS_WIN and not E.DRY_RUN and E.is_admin():
-        E.run(["icacls", path, "/inheritance:r", "/grant:r", "*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F",
-               "*S-1-5-32-545:(OI)(CI)RX"], 20, log)
+        import secfs as SF
+        SF.secure_dir(path, users_read=True, log=log)
+    else:
+        os.makedirs(path, exist_ok=True)
 
 
 def _vt(v: str) -> tuple:

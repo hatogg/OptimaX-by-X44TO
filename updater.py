@@ -178,12 +178,13 @@ def check(log=lambda *_: None):
 
 def download_dir() -> str:
     """Куди класти оновлення. OptimaX працює з правами адміністратора, тож файл, який вона запустить, не повинен
-    лежати там, де його може підмінити будь-яка програма користувача (%TEMP%). Папку в ProgramData, створену
-    адміністратором, звичайні програми лише читають."""
+    лежати там, де його може підмінити будь-яка програма користувача (%TEMP%). Папка в ProgramData — власність
+    адміністраторів, звичайні програми її лише читають (secfs.secure_dir)."""
     if E.IS_WIN and not E.DRY_RUN and E.is_admin():
-        d = os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "OptimaX", "updates")
-    else:
-        d = os.path.join(tempfile.gettempdir(), "OptimaX-updates")
+        # 6.7: папку захищаємо явно — у ProgramData будь-хто може створити її наперед і стати власником, а власник
+        # міг би підмінити перевірений інсталятор між перевіркою й запуском
+        return E.admin_dir("updates")
+    d = os.path.join(tempfile.gettempdir(), "OptimaX-updates")
     os.makedirs(d, exist_ok=True)
     return d
 
