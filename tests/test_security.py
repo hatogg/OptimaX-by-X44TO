@@ -149,9 +149,17 @@ def test_write_never_follows_a_planted_tmp_link():
     assert json.load(open(path)) == {"applied": {}}
 
 
-def test_secfs_helpers_outside_windows():
+def test_secfs_helpers():
     import secfs as SF
-    assert SF.sysexe("schtasks") == "schtasks" and SF.sysexe(r"C:\x\y.exe") == r"C:\x\y.exe"
+    assert SF.sysexe(r"C:\x\y.exe") == r"C:\x\y.exe", "a path with a folder stays as is"
+    if IS_WIN:  # справжня Windows: системна програма — повним шляхом із System32
+        full = SF.sysexe("schtasks")
+        assert os.path.isabs(full) and full.lower().endswith(r"\system32\schtasks.exe"), full
+        assert SF.sysexe("powershell.exe").lower().endswith(r"\windowspowershell\v1.0\powershell.exe")
+        assert SF.system_target(SF.system_dir()) is True
+        assert SF.is_under(SF.data_root(), SF.program_data())
+        return
+    assert SF.sysexe("schtasks") == "schtasks"
     assert SF.is_under("/a/b/c", "/a/b") and SF.is_under("/a/b", "/a/b") and not SF.is_under("/a/bc", "/a/b")
     assert SF.self_trusted() is True and SF.system_target("/anything") is False
     d = tempfile.mkdtemp(prefix="oxsd_")
