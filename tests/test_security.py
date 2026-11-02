@@ -80,6 +80,8 @@ GOOD = [
     {"t": "live", "k": "explorer"},
     {"t": "file", "p": os.path.abspath("game/d3d9.dll"), "sha": "a" * 64,
      "bak": os.path.abspath("game/d3d9.dll") + ".optimax-bak"},
+    {"t": "file", "p": r"C:\Program Files (x86)\Steam\steamapps\common\Half-Life\opengl32.dll", "sha": "b" * 64,
+     "bak": None},  # шлях Windows — і в демо-режимі поза Windows
 ]
 BAD = [
     {"t": "evil", "c": "calc"},

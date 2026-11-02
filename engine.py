@@ -768,7 +768,9 @@ def valid_undo(rec) -> bool:
         return rec.get("k") in _LIVE
     if t == "file":
         p, bak, sha = rec.get("p"), rec.get("bak"), rec.get("sha") or ""
-        return (isinstance(p, str) and os.path.isabs(p) and isinstance(sha, str) and (not sha or _HEX64.match(sha))
+        import ntpath  # шляхи до ігор — шляхи Windows (і в демо-режимі поза Windows)
+        return (isinstance(p, str) and (ntpath.isabs(p) or os.path.isabs(p)) and isinstance(sha, str)
+                and (not sha or _HEX64.match(sha))
                 and (bak is None or (isinstance(bak, str) and bak.startswith(p + ".optimax-bak"))))
     return False
 
