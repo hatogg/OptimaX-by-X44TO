@@ -195,6 +195,18 @@ STRINGS = {
 
     # ── «Що нового» ──
     "wn.title": ("Що нового в OptimaX {v}", "Что нового в OptimaX {v}", "What's new in OptimaX {v}"),
+    "wn.681.hybrid": ("P106 разом з іншою відеокартою NVIDIA (наприклад, GT 710 для монітора): OptimaX сама каже Windows, "
+                      "що ігри має малювати P106, і після перезавантаження перевіряє, чи Windows її послухала.",
+                      "P106 вместе с другой видеокартой NVIDIA (например, GT 710 для монитора): OptimaX сама говорит "
+                      "Windows, что игры должна рисовать P106, и после перезагрузки проверяет, послушалась ли Windows.",
+                      "A P106 next to another NVIDIA card (say, a GT 710 for the monitor): OptimaX tells Windows the P106 "
+                      "should render games and, after a restart, checks that Windows listened."),
+    "wn.681.check": ("Перевірка «на якій карті малює гра» з двома картами NVIDIA більше не каже «малює P106», коли малює "
+                     "карта з монітором.",
+                     "Проверка «на какой карте рисует игра» с двумя картами NVIDIA больше не говорит «рисует P106», "
+                     "когда рисует карта с монитором.",
+                     "With two NVIDIA cards, the “which card renders the game” check no longer says “the P106” when the "
+                     "card with the monitor renders."),
     "wn.68.hwc": ("Hardware Center у групі «Пристрій»: тести процесора, пам'яті, відеопам'яті, дисків (SMART і NVMe), "
                   "батареї, екрана й периферії, стрес-тести з аварійною зупинкою за температурою і звіти HTML, JSON "
                   "та PDF.",

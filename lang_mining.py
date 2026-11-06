@@ -174,4 +174,91 @@ STRINGS = {
                    "баллами с Mesa.",
                    "The test will render on the {gpu} via Mesa (OpenGL → DirectX 12). Mesa scores are compared only "
                    "with other Mesa scores."),
+    # ── монітор на другій NVIDIA (P106 + GT 710): EnableMsHybrid ──
+    "mg.t_hybrid": ("Пріоритет карт: {gpu} — висока продуктивність, {display} — енергозбереження (EnableMsHybrid)",
+                    "Приоритет карт: {gpu} — высокая производительность, {display} — энергосбережение (EnableMsHybrid)",
+                    "Card priority: {gpu} is high performance, {display} is power saving (EnableMsHybrid)"),
+    "mg.hybrid_done": ("  · пріоритет карт: {gpu} — висока продуктивність, {display} — енергозбереження. Діє після "
+                       "перезавантаження ПК.",
+                       "  · приоритет карт: {gpu} — высокая производительность, {display} — энергосбережение. Действует "
+                       "после перезагрузки ПК.",
+                       "  · card priority: {gpu} is high performance, {display} is power saving. Takes effect after a "
+                       "restart."),
+    "mg.hybrid_missing": ("  · пріоритет карт: у реєстрі немає розділу драйвера {gpu} чи {display} — пропускаємо",
+                          "  · приоритет карт: в реестре нет раздела драйвера {gpu} или {display} — пропускаем",
+                          "  · card priority: no driver key for the {gpu} or the {display} in the registry — skipped"),
+    "mg.hybrid_admin": ("  · пріоритет карт: потрібні права адміністратора (розділи драйверів лежать у HKLM)",
+                        "  · приоритет карт: нужны права администратора (разделы драйверов лежат в HKLM)",
+                        "  · card priority: administrator rights are needed (driver keys live in HKLM)"),
+    "mg.hy.btn": ("Налаштувати пріоритет", "Настроить приоритет", "Set the priority"),
+    "mg.hy.q": ("OptimaX поставить EnableMsHybrid у розділи драйверів: {gpu} — висока продуктивність, карта з монітором "
+                "— енергозбереження. Зміна потрапить у журнал відкату й повертається кнопкою «Повернути все». Діє після "
+                "перезавантаження ПК.",
+                "OptimaX поставит EnableMsHybrid в разделы драйверов: {gpu} — высокая производительность, карта с "
+                "монитором — энергосбережение. Изменение попадёт в журнал отката и возвращается кнопкой «Вернуть всё». "
+                "Действует после перезагрузки ПК.",
+                "OptimaX will set EnableMsHybrid in the driver keys: the {gpu} as high performance, the card with the "
+                "monitor as power saving. The change goes to the rollback journal and Revert all undoes it. It takes "
+                "effect after a restart."),
+    "mg.hy.reboot": ("Пріоритет карт налаштовано. Перезавантажте ПК — після цього ігри малюватиме {gpu}.",
+                     "Приоритет карт настроен. Перезагрузите ПК — после этого игры будет рисовать {gpu}.",
+                     "Card priority is set. Restart the PC, and games will render on the {gpu} after that."),
+    "mg.hy.fail": ("Не вдалося налаштувати пріоритет карт — подробиці в журналі програми.",
+                   "Не удалось настроить приоритет карт — подробности в журнале программы.",
+                   "Couldn't set the card priority — see the program log for details."),
+    "mg.hy.ok.t": ("«Висока продуктивність» — {gpu}, монітор — {display}",
+                   "«Высокая производительность» — {gpu}, монитор — {display}",
+                   "High performance is the {gpu}, the monitor is on the {display}"),
+    "mg.hy.ok.d": ("Перевірено: Windows дає {gpu} іграм, призначеним на «Високу продуктивність».",
+                   "Проверено: Windows отдаёт {gpu} играм, назначенным на «Высокую производительность».",
+                   "Verified: Windows gives the {gpu} to games set to High performance."),
+    "mg.hy.off.t": ("Windows віддає «Високу продуктивність» {display}, а не {gpu}",
+                    "Windows отдаёт «Высокую производительность» {display}, а не {gpu}",
+                    "Windows gives High performance to the {display}, not the {gpu}"),
+    "mg.hy.off.d": ("Монітор на другій карті NVIDIA, і Windows не знає, котра з двох має малювати ігри. OptimaX поставить "
+                    "EnableMsHybrid у розділи драйверів обох карт (з відкатом) — сама, коли шукає ігри, або цією "
+                    "кнопкою. Діє після перезавантаження.",
+                    "Монитор на второй карте NVIDIA, и Windows не знает, какая из двух должна рисовать игры. OptimaX "
+                    "поставит EnableMsHybrid в разделы драйверов обеих карт (с откатом) — сама, когда ищет игры, или "
+                    "этой кнопкой. Действует после перезагрузки.",
+                    "The monitor is on a second NVIDIA card, and Windows can't tell which of the two should render "
+                    "games. OptimaX sets EnableMsHybrid in both cards' driver keys (with rollback) — on its own when it "
+                    "looks for games, or with this button. Takes effect after a restart."),
+    "mg.hy.pending.t": ("Пріоритет карт налаштовано — перезавантажте ПК",
+                        "Приоритет карт настроен — перезагрузите ПК",
+                        "Card priority is set — restart the PC"),
+    "mg.hy.pending.d": ("EnableMsHybrid стоїть, але Windows перечитає його лише після перезавантаження. Потім натисніть "
+                        "«Перевірити ще раз»: «Висока продуктивність» має дістатися {gpu}.",
+                        "EnableMsHybrid стоит, но Windows перечитает его только после перезагрузки. Потом нажмите "
+                        "«Проверить ещё раз»: «Высокая производительность» должна достаться {gpu}.",
+                        "EnableMsHybrid is set, but Windows only rereads it after a restart. Then press Check again: "
+                        "High performance should go to the {gpu}."),
+    "mg.hy.set.t": ("Пріоритет карт налаштовано (EnableMsHybrid)", "Приоритет карт настроен (EnableMsHybrid)",
+                    "Card priority is set (EnableMsHybrid)"),
+    "mg.hy.set.d": ("Яку карту Windows вважає високопродуктивною, ця Windows не каже (потрібна 10 1803 чи новіша) — "
+                    "перевірте запущену гру кнопкою «Перевірити».",
+                    "Какую карту Windows считает высокопроизводительной, эта Windows не сообщает (нужна 10 1803 или "
+                    "новее) — проверьте запущенную игру кнопкой «Проверить».",
+                    "This Windows doesn't say which card it treats as high performance (that needs 10 1803 or newer) "
+                    "— check a running game with the Check button."),
+    "mg.hy.wrong.t": ("Windows і далі віддає «Високу продуктивність» {display}",
+                      "Windows по-прежнему отдаёт «Высокую производительность» {display}",
+                      "Windows still gives High performance to the {display}"),
+    "mg.hy.wrong.d": ("EnableMsHybrid стоїть, ПК перезавантажувався, але не допомогло. Перевірте в Диспетчері пристроїв, "
+                      "що обидві карти працюють на одному драйвері NVIDIA без жовтих знаків (Kepler, як GT 710, разом з "
+                      "P106 — 472.12).",
+                      "EnableMsHybrid стоит, ПК перезагружался, но не помогло. Проверьте в Диспетчере устройств, что "
+                      "обе карты работают на одном драйвере NVIDIA без жёлтых значков (Kepler, как GT 710, вместе с "
+                      "P106 — 472.12).",
+                      "EnableMsHybrid is set and the PC has restarted since, but it didn't help. Check in Device "
+                      "Manager that both cards run on the same NVIDIA driver with no yellow marks (Kepler, like the "
+                      "GT 710, together with the P106 needs 472.12)."),
+    "mg.hy.missing.t": ("Драйвер однієї з карт NVIDIA не знайдено", "Драйвер одной из карт NVIDIA не найден",
+                        "No driver found for one of the NVIDIA cards"),
+    "mg.hy.missing.d": ("У реєстрі немає розділу драйвера {gpu} чи {display}. Обом картам потрібен один драйвер NVIDIA, "
+                        "що підтримує обидві (Kepler, як GT 710, разом з P106 — 472.12).",
+                        "В реестре нет раздела драйвера {gpu} или {display}. Обеим картам нужен один драйвер NVIDIA, "
+                        "поддерживающий обе (Kepler, как GT 710, вместе с P106 — 472.12).",
+                        "There is no driver key for the {gpu} or the {display}. Both cards need one NVIDIA driver that "
+                        "supports both (Kepler, like the GT 710, together with the P106 needs 472.12)."),
 }

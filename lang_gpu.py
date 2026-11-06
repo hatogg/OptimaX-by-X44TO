@@ -115,9 +115,10 @@ STRINGS = {
     "gr.v.mining": ("Малює {gpu}: 3D {d3}%, копіювання кадрів {copy}%, відеопам'ять гри {vram} ГБ.",
                     "Рисует {gpu}: 3D {d3}%, копирование кадров {copy}%, видеопамять игры {vram} ГБ.",
                     "The {gpu} renders: 3D {d3}%, frame copy {copy}%, game VRAM {vram} GB."),
-    "gr.v.igpu": ("Гра малює НЕ на {gpu}: на майнінговій карті 3D-роботи немає — малює вбудована графіка.",
-                  "Игра рисует НЕ на {gpu}: на майнинговой карте 3D-работы нет — рисует встроенная графика.",
-                  "The game does NOT render on the {gpu}: no 3D work on the mining card — the integrated GPU renders."),
+    "gr.v.igpu": ("Гра малює НЕ на {gpu}: на майнінговій карті 3D-роботи немає — малює карта з монітором.",
+                  "Игра рисует НЕ на {gpu}: на майнинговой карте 3D-работы нет — рисует карта с монитором.",
+                  "The game does NOT render on the {gpu}: no 3D work on the mining card — the card with the monitor "
+                  "renders."),
     "gr.v.warp": ("Гра малює програмно (Microsoft Basic Render / WARP або Mesa llvmpipe) — процесором, а не "
                   "відеокартою. Для Mesa: поверніть DirectX 12 замість Zink або вимкніть Mesa для гри.",
                   "Игра рисует программно (Microsoft Basic Render / WARP или Mesa llvmpipe) — процессором, а не "
@@ -141,9 +142,9 @@ STRINGS = {
     "gr.st.dxvk_dx11": ("DirectX 11 через DXVK", "DirectX 11 через DXVK", "DirectX 11 via DXVK"),
     "gr.last.mining": ("✓ перевірено {when} ({mode}): малює {gpu}", "✓ проверено {when} ({mode}): рисует {gpu}",
                        "✓ checked {when} ({mode}): renders on the {gpu}"),
-    "gr.last.igpu": ("✗ перевірено {when} ({mode}): малює вбудована, не {gpu}",
-                     "✗ проверено {when} ({mode}): рисует встроенная, не {gpu}",
-                     "✗ checked {when} ({mode}): the integrated GPU renders, not the {gpu}"),
+    "gr.last.igpu": ("✗ перевірено {when} ({mode}): малює карта з монітором, не {gpu}",
+                     "✗ проверено {when} ({mode}): рисует карта с монитором, не {gpu}",
+                     "✗ checked {when} ({mode}): the card with the monitor renders, not the {gpu}"),
     "gr.last.warp": ("✗ перевірено {when} ({mode}): програмний рендеринг (WARP)",
                      "✗ проверено {when} ({mode}): программный рендеринг (WARP)",
                      "✗ checked {when} ({mode}): software rendering (WARP)"),
@@ -454,6 +455,17 @@ STRINGS = {
                             "пропатченный драйвер для майнинговых карт.",
                             "Games cannot render on it. Usually the stock NVIDIA driver disabled 3D: a patched driver "
                             "for mining cards is needed."),
+    "diag.f.gd_no_dxgi_pair.t": ("DirectX поки не бачить {model}", "DirectX пока не видит {model}",
+                                 "DirectX doesn't see the {model} yet"),
+    "diag.f.gd_no_dxgi_pair.d": ("Монітор на {display}, і драйвер NVIDIA не дає майнінговій карті DirectX, доки картам не "
+                                 "задано пріоритет. Ігри → «Ігри на {model}» → «Налаштувати пріоритет», потім "
+                                 "перезавантаження.",
+                                 "Монитор на {display}, и драйвер NVIDIA не даёт майнинговой карте DirectX, пока картам "
+                                 "не задан приоритет. Игры → «Игры на {model}» → «Настроить приоритет», потом "
+                                 "перезагрузка.",
+                                 "The monitor is on the {display}, and the NVIDIA driver gives the mining card no "
+                                 "DirectX until the cards get a priority. Games → Games on the {model} → Set the "
+                                 "priority, then restart."),
     "diag.f.gd_no_vulkan.t": ("Vulkan на {model} не знайдено", "Vulkan на {model} не найден", "No Vulkan on the {model}"),
     "diag.f.gd_no_vulkan.d": ("DXVK (DirectX 9 → Vulkan) і Zink без Vulkan не працюють. Перевстановіть пропатчений "
                               "драйвер з Vulkan.",
@@ -465,14 +477,17 @@ STRINGS = {
     "diag.f.gd_no_dx12.d": ("Ігри DirectX 12 і Mesa d3d12 на ній не запустяться; для OpenGL лишається Zink.",
                             "Игры DirectX 12 и Mesa d3d12 на ней не запустятся; для OpenGL остаётся Zink.",
                             "DirectX 12 games and Mesa d3d12 will not run on it; Zink remains for OpenGL."),
-    "diag.f.gd_igpu_basic.t": ("Вбудована графіка без драйвера ({name})", "Встроенная графика без драйвера ({name})",
-                               "Integrated GPU has no driver ({name})"),
-    "diag.f.gd_igpu_basic.d": ("Монітор підключено до вбудованої, а на ній стандартний драйвер Microsoft: кадри з "
-                               "майнінгової карти виводяться повільно. Встановіть драйвер Intel / AMD для вбудованої.",
-                               "Монитор подключён к встроенной, а на ней стандартный драйвер Microsoft: кадры с "
-                               "майнинговой карты выводятся медленно. Установите драйвер Intel / AMD для встроенной.",
-                               "The monitor is on the integrated GPU, which runs the basic Microsoft driver: frames from "
-                               "the mining card are shown slowly. Install the Intel / AMD driver for it."),
+    "diag.f.gd_igpu_basic.t": ("Карта з монітором без драйвера ({name})", "Карта с монитором без драйвера ({name})",
+                               "The card with the monitor has no driver ({name})"),
+    "diag.f.gd_igpu_basic.d": ("Монітор підключено до карти зі стандартним драйвером Microsoft: кадри з майнінгової "
+                               "карти виводяться повільно. Встановіть драйвер Intel / AMD, а для другої NVIDIA — той "
+                               "самий драйвер, що й для майнінгової, з підтримкою обох (GT 710 разом з P106 — 472.12).",
+                               "Монитор подключён к карте со стандартным драйвером Microsoft: кадры с майнинговой карты "
+                               "выводятся медленно. Установите драйвер Intel / AMD, а для второй NVIDIA — тот же "
+                               "драйвер, что и для майнинговой, с поддержкой обеих (GT 710 вместе с P106 — 472.12).",
+                               "The monitor is on a card running the basic Microsoft driver: frames from the mining card "
+                               "are shown slowly. Install the Intel / AMD driver, or for a second NVIDIA card the same "
+                               "driver as the mining card, one that supports both (GT 710 with a P106 needs 472.12)."),
     "diag.f.gd_vram_small.t": ("{model}: DirectX бачить лише {mb} МБ відеопам'яті",
                                "{model}: DirectX видит лишь {mb} МБ видеопамяти",
                                "{model}: DirectX sees only {mb} MB of VRAM"),
@@ -500,6 +515,14 @@ STRINGS = {
                      "Драйвер с nvidia.com не ставьте: он отключает 3D.",
                      "Without a patched driver 3D is disabled on a mining card — games cannot render on it. Don't "
                      "install the nvidia.com driver: it disables 3D."),
+    "gd.no_dxgi_pair.t": ("DirectX поки не бачить {model}", "DirectX пока не видит {model}",
+                          "DirectX doesn't see the {model} yet"),
+    "gd.no_dxgi_pair.d": ("Монітор на {display}: поки картам не задано пріоритет (EnableMsHybrid), драйвер NVIDIA не дає "
+                          "майнінговій карті DirectX. Див. рядок про пріоритет карт нижче.",
+                          "Монитор на {display}: пока картам не задан приоритет (EnableMsHybrid), драйвер NVIDIA не "
+                          "даёт майнинговой карте DirectX. См. строку о приоритете карт ниже.",
+                          "The monitor is on the {display}: until the cards get a priority (EnableMsHybrid), the NVIDIA "
+                          "driver gives the mining card no DirectX. See the card priority row below."),
     "gd.dx12.t": ("DirectX 12: так", "DirectX 12: да", "DirectX 12: yes"),
     "gd.dx12.d": ("", "", ""),
     "gd.no_dx12.t": ("DirectX 12 на карті не створюється", "DirectX 12 на карте не создаётся",
@@ -519,14 +542,17 @@ STRINGS = {
     "gd.vram_small.t": ("DirectX бачить лише {mb} МБ відеопам'яті", "DirectX видит лишь {mb} МБ видеопамяти",
                         "DirectX sees only {mb} MB of VRAM"),
     "gd.vram_small.d": ("У P106-100 — 6 ГБ.", "У P106-100 — 6 ГБ.", "A P106-100 has 6 GB."),
-    "gd.igpu_basic.t": ("Вбудована графіка без драйвера ({name})", "Встроенная графика без драйвера ({name})",
-                        "Integrated GPU without a driver ({name})"),
-    "gd.igpu_basic.d": ("Монітор на вбудованій, а драйвер — стандартний Microsoft: кадри виводяться повільно. "
-                        "Встановіть драйвер Intel / AMD.",
-                        "Монитор на встроенной, а драйвер — стандартный Microsoft: кадры выводятся медленно. "
-                        "Установите драйвер Intel / AMD.",
-                        "The monitor is on the integrated GPU running the basic Microsoft driver: frames are shown "
-                        "slowly. Install the Intel / AMD driver."),
+    "gd.igpu_basic.t": ("Карта з монітором без драйвера ({name})", "Карта с монитором без драйвера ({name})",
+                        "The card with the monitor has no driver ({name})"),
+    "gd.igpu_basic.d": ("Монітор на карті зі стандартним драйвером Microsoft: кадри виводяться повільно. Встановіть "
+                        "драйвер Intel / AMD, а для другої NVIDIA — той самий драйвер, що й для майнінгової карти, з "
+                        "підтримкою обох (Kepler, як GT 710, разом з P106 — 472.12).",
+                        "Монитор на карте со стандартным драйвером Microsoft: кадры выводятся медленно. Установите "
+                        "драйвер Intel / AMD, а для второй NVIDIA — тот же драйвер, что и для майнинговой карты, с "
+                        "поддержкой обеих (Kepler, как GT 710, вместе с P106 — 472.12).",
+                        "The monitor is on a card running the basic Microsoft driver: frames are shown slowly. Install "
+                        "the Intel / AMD driver, or for a second NVIDIA card the same driver as the mining card, one "
+                        "that supports both (Kepler, like the GT 710, together with the P106 needs 472.12)."),
     "gd.display.t": ("Монітор: {name}", "Монитор: {name}", "Monitor: {name}"),
     "gd.display.d": ("", "", ""),
     "gd.no_display.t": ("Карту з монітором DirectX не знайшов", "Карту с монитором DirectX не нашёл",

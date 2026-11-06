@@ -2,6 +2,29 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [6.8.1] — 2026-11-06
+
+Майнінгова карта разом з другою відеокартою NVIDIA, до якої підключено монітор (P106 + GT 710).
+
+### Додано
+
+- **Пріоритет карт для пари NVIDIA + NVIDIA.** Коли монітор на другій карті NVIDIA, драйвер у карт спільний і Windows не знає, котра з них «висока продуктивність»: у «Графіці» обидва пункти показували GT 710, а P106 там не було зовсім, тож призначення ігор на «Високу продуктивність» вело їх на карту з монітором. Тепер OptimaX, шукаючи ігри (кнопкою чи автоматично), ставить у розділи драйверів обох карт (`Class\{4d36e968…}\000X`, знайдені за PCI ID, а не за назвою) `EnableMsHybrid`: майнінговій — 1, карті з монітором — 2. Через журнал відкату, лише відсутні значення (ваші власні не перезаписуються й «Повернути все» їх не чіпає), лише з правами адміністратора, і OptimaX-Rescue.cmd уміє їх прибрати. В Universal GPU Renderer — рядок зі станом і кнопка «Налаштувати пріоритет».
+- **Перевірка, що Windows послухала.** Перевірка DirectX / Vulkan тепер питає DXGI (`IDXGIFactory6::EnumAdapterByGpuPreference`), яку карту Windows дає на «Високу продуктивність» і на «Енергозбереження». Стан у розділі: «перевірено», «перезавантажте ПК», «не допомогло» (з порадою про спільний драйвер — для Kepler разом з P106 це 472.12) або «перевірити нічим» на Windows старшій за 10 1803. Результат перевірки більше не живе в кеші довше, ніж до перезавантаження.
+
+### Виправлено
+
+- **З двома картами NVIDIA перевірка «на якій карті малює гра» могла сказати «малює P106»**, коли малювала GT 710: вона вірила тому, що гра завантажила драйвер NVIDIA, а він в обох карт той самий. Тепер у такій парі вирішують лише лічильники «GPU Engine» за LUID карти. Повідомлення «малює вбудована» стали «малює карта з монітором», а підказка про карту з монітором на стандартному драйвері Microsoft — і про другу NVIDIA.
+- **Карту з монітором NVIDIA OptimaX вважала майнінговою**, коли DirectX бачив лише її (до EnableMsHybrid драйвер NVIDIA не дає P106 DirectX зовсім): Universal GPU Renderer показував «P106-100 — драйвер бачить її як GeForce GT 710», а перевірка гри міряла не ту карту. Тепер єдина карта з виходами ніколи не стає «майнінговою», P106 знаходиться за PCI ID у розділах драйверів, а замість поради «драйвер з nvidia.com не ставте» з'являється «DirectX поки не бачить P106» з посиланням на пріоритет карт.
+
+<details>
+<summary>English</summary>
+
+**Added — card priority for an NVIDIA + NVIDIA pair.** With the monitor on a second NVIDIA card both cards share one driver and Windows can't tell which is “high performance”: both Graphics options showed the GT 710, the P106 wasn't listed, and games assigned to High performance went to the card with the monitor. OptimaX now, while looking for games (by button or automatically), sets `EnableMsHybrid` in both cards' driver keys (`Class\{4d36e968…}\000X`, found by PCI ID, not by name): 1 for the mining card, 2 for the card with the monitor — through the rollback journal, only the missing values (your own are never overwritten, and Revert all leaves them), only with administrator rights, and OptimaX-Rescue.cmd can remove them. Universal GPU Renderer shows the state with a Set the priority button. The DirectX / Vulkan check now asks DXGI (`IDXGIFactory6::EnumAdapterByGpuPreference`) which card Windows gives to High performance and to Power saving, so the state reads verified, restart the PC, didn't help (with a shared-driver hint: Kepler with a P106 needs 472.12) or can't be checked on Windows older than 10 1803; the check result no longer outlives a restart in the cache.
+
+**Fixed:** with two NVIDIA cards the “which card renders the game” check could say “the P106” while the GT 710 rendered — it trusted the loaded NVIDIA driver, which both cards share. In such a pair only the GPU Engine counters per card LUID decide now. “The integrated GPU renders” messages now say “the card with the monitor”, and the hint about a monitor card on the basic Microsoft driver covers a second NVIDIA card too. When DirectX saw only the NVIDIA card with the monitor (before EnableMsHybrid the NVIDIA driver gives a P106 no DirectX at all), OptimaX took it for the mining card (“P106-100 — the driver sees it as GeForce GT 710”) and the game check measured the wrong card; a lone card with outputs is never treated as the mining card now, the P106 is found by PCI ID among the driver keys, and instead of “don't install the nvidia.com driver” the section says DirectX doesn't see the P106 yet and points to the card priority.
+
+</details>
+
 ## [6.8] — 2026-11-06
 
 Hardware Center: діагностика, тести й звіти про залізо в одному місці, FPS-оверлей в іграх і перевірка ПК перед покупкою. Докладно — [docs/uk/hardware-center.md](docs/uk/hardware-center.md).

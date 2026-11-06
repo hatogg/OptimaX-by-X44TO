@@ -60,7 +60,10 @@ class _DESC1(ctypes.Structure):
 
 
 IID_FACTORY1 = "770aae78-f26f-4dba-a829-253c83d1b387"
+IID_FACTORY6 = "c1b6694f-ff09-44a9-b03c-77900a0a1d17"
+IID_ADAPTER1 = "29038f61-3839-4626-91fd-086879011a05"
 IID_D3D12DEVICE = "189819f1-1db6-4b57-be54-1821339b85f7"
+DXGI_GPU_PREFERENCE = {"low": 1, "high": 2}  # MINIMUM_POWER, HIGH_PERFORMANCE
 DXGI_NOT_FOUND = -2005270526  # 0x887A0002
 DXGI_ADAPTER_FLAG_SOFTWARE = 2
 
@@ -125,6 +128,38 @@ def _dxgi_adapters() -> list:
                 _release(ad)
             i += 1
     finally:
+        _release(factory)
+    return out
+
+
+def _gpu_preference() -> dict:
+    """Яку карту сама Windows дає на «Енергозбереження» і «Високу продуктивність» (IDXGIFactory6::
+    EnumAdapterByGpuPreference, Windows 10 1803+): {"low": LUID, "high": LUID}. Те саме ранжування бере налаштування
+    «Графіка», тож це перевірка факту, а не здогадка за назвами карт. Старіша Windows — {}."""
+    dxgi = ctypes.WinDLL("dxgi.dll")
+    factory = ctypes.c_void_p()
+    if dxgi.CreateDXGIFactory1(ctypes.byref(_guid(IID_FACTORY1)), ctypes.byref(factory)) != 0:
+        return {}
+    f6 = ctypes.c_void_p()
+    out = {}
+    try:
+        qi = _method(factory, 0, ctypes.POINTER(_GUID), ctypes.POINTER(ctypes.c_void_p))  # IUnknown::QueryInterface
+        if qi(ctypes.byref(_guid(IID_FACTORY6)), ctypes.byref(f6)) != 0 or not f6:
+            return {}
+        by_pref = _method(f6, 29, ctypes.c_uint, ctypes.c_int, ctypes.POINTER(_GUID),
+                          ctypes.POINTER(ctypes.c_void_p))  # IDXGIFactory6::EnumAdapterByGpuPreference
+        for key, pref in DXGI_GPU_PREFERENCE.items():
+            ad = ctypes.c_void_p()
+            if by_pref(0, pref, ctypes.byref(_guid(IID_ADAPTER1)), ctypes.byref(ad)) != 0 or not ad:
+                continue
+            try:
+                d = _DESC1()
+                _method(ad, 10, ctypes.POINTER(_DESC1))(ctypes.byref(d))  # IDXGIAdapter1::GetDesc1
+                out[key] = luid_key(d.AdapterLuid.HighPart, d.AdapterLuid.LowPart)
+            finally:
+                _release(ad)
+    finally:
+        _release(f6)
         _release(factory)
     return out
 
@@ -202,8 +237,8 @@ def _vulkan_devices() -> list:
 def probe_child(argv) -> int:
     """Точка входу процесу перевірки: OptimaX.exe --gpu-probe --out=<json>."""
     out = next((a.split("=", 1)[1] for a in argv if a.startswith("--out=")), "")
-    res = {"ts": int(time.time()), "dxgi": [], "vulkan": [], "errors": []}
-    for key, fn in (("dxgi", _dxgi_adapters), ("vulkan", _vulkan_devices)):
+    res = {"ts": int(time.time()), "dxgi": [], "vulkan": [], "pref": {}, "errors": []}
+    for key, fn in (("dxgi", _dxgi_adapters), ("vulkan", _vulkan_devices), ("pref", _gpu_preference)):
         try:
             res[key] = fn()
         except Exception as e:
@@ -244,11 +279,25 @@ DEMO_PROBE = {
 }
 
 
+def boot_time() -> float:
+    """Коли запустилася Windows (секунди epoch); поза Windows — 0."""
+    if not E.IS_WIN:
+        return 0.0
+    try:
+        k32 = ctypes.WinDLL("kernel32")
+        k32.GetTickCount64.restype = ctypes.c_uint64
+        return time.time() - k32.GetTickCount64() / 1000.0
+    except (OSError, AttributeError, TypeError):
+        return 0.0
+
+
 def probe(force: bool = False) -> dict:
-    """Що бачать DirectX і Vulkan. Результат кешується до перезавантаження чи зміни драйвера (тут — на 6 годин)."""
+    """Що бачать DirectX і Vulkan. Результат кешується на 6 годин, але не довше, ніж до перезавантаження: після нього
+    драйвер міг перечитати свої налаштування (EnableMsHybrid) чи оновитися."""
     import features as F
     cached = F.CFG["gpu_probe"]
-    if not force and isinstance(cached, dict) and time.time() - cached.get("ts", 0) < 6 * 3600:
+    if (not force and isinstance(cached, dict) and time.time() - cached.get("ts", 0) < 6 * 3600
+            and cached.get("ts", 0) >= boot_time()):
         return cached
     if not E.IS_WIN:
         res = dict(DEMO_PROBE.get(E.DEMO) or {"dxgi": [], "vulkan": []}, ts=int(time.time()), errors=[])
@@ -256,7 +305,7 @@ def probe(force: bool = False) -> dict:
         import gpubench as GB
         out = os.path.join(tempfile.gettempdir(), f"optimax-gpuprobe-{os.getpid()}-{int(time.time() * 1000)}.json")
         here = None if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
-        res = {"ts": int(time.time()), "dxgi": [], "vulkan": [], "errors": []}
+        res = {"ts": int(time.time()), "dxgi": [], "vulkan": [], "pref": {}, "errors": []}
         try:
             p = subprocess.run(GB.self_command() + ["--gpu-probe", f"--out={out}"], cwd=here, timeout=PROBE_TIMEOUT,
                                creationflags=E.CREATE_NO_WINDOW)
@@ -290,9 +339,17 @@ def headless(a: dict) -> bool:
 
 
 def mining_adapter(pr: dict) -> dict:
-    """Майнінгова карта серед адаптерів DXGI: відома модель без виходів, інакше NVIDIA без виходів."""
-    nv = [a for a in pr.get("dxgi") or [] if a.get("ven") == NVIDIA and not a.get("software")]
-    return next((a for a in nv if headless(a)), next((a for a in nv if not a.get("outputs")), nv[0] if nv else {}))
+    """Майнінгова карта серед адаптерів DXGI: відома модель без виходів, інакше NVIDIA без виходів. Якщо DirectX бачить
+    лише одну карту, і в неї є виходи, — це карта з монітором (P106 + GT 710, коли драйвер ще не дав P106 DirectX), а
+    майнінгової DXGI не бачить: {}."""
+    cards = [a for a in pr.get("dxgi") or [] if not a.get("software")]
+    nv = [a for a in cards if a.get("ven") == NVIDIA]
+    hit = next((a for a in nv if headless(a)), None) or next((a for a in nv if not a.get("outputs")), None)
+    if hit:
+        return hit
+    if len(cards) <= 1:
+        return {}
+    return nv[0] if nv else {}
 
 
 def display_adapter(pr: dict) -> dict:
@@ -320,14 +377,18 @@ def vulkan_for(pr: dict, adapter: dict) -> dict:
                  if d.get("ven") == adapter.get("ven") and d.get("dev") == adapter.get("dev")), {})
 
 
+VENDOR_IDS = {NVIDIA: "nvidia", INTEL: "intel", AMD: "amd", 0x1022: "amd"}
+
+
 def summary(pr: dict) -> dict:
-    """Короткий стан для майнінгового ПК: {gpu, dx12, vulkan, vk_api, driver, display, display_counters}."""
+    """Короткий стан для майнінгового ПК: {gpu, dx12, vulkan, vk_api, driver, display, display_vendor, …}."""
     m = mining_adapter(pr)
     vk = vulkan_for(pr, m) if m else {}
     disp = display_adapter(pr)
     return dict(gpu=m.get("name", ""), luid=m.get("luid", ""), dx12=m.get("dx12"), vulkan=bool(vk),
                 vk_api=vk.get("api", ""), driver=vk.get("driver", ""), vram_mb=m.get("vram_mb", 0),
-                display=disp.get("name", ""), display_luid=disp.get("luid", ""), errors=pr.get("errors") or [])
+                display=disp.get("name", ""), display_luid=disp.get("luid", ""),
+                display_vendor=VENDOR_IDS.get(disp.get("ven"), "") if disp else "", errors=pr.get("errors") or [])
 
 
 # ───────────────────────── хто малює гру: лічильники GPU Engine ─────────────────────────
@@ -479,15 +540,19 @@ def render_path(mods: list, game_dir: str = "") -> dict:
     return dict(apis=apis, layer=layer, drivers=drivers, known=bool(mods))
 
 
-def path_verdict(path: dict, mining_vendor: str = "nvidia") -> str:
+def path_verdict(path: dict, mining_vendor: str = "nvidia", display_vendor: str = "") -> str:
     """mining — драйвер майнінгової карти завантажено, а драйвера вбудованої для графічного API — ні; igpu — навпаки;
-    "" — бібліотеки не дають однозначної відповіді (обидва драйвери, нічого не прочитано)."""
+    "" — бібліотеки не дають однозначної відповіді (обидва драйвери, нічого не прочитано).
+    Монітор на карті того самого виробника (P106 + GT 710): драйвер у них один, тож «завантажено драйвер NVIDIA» нічого
+    не доводить — відповідають лише лічильники GPU Engine."""
     drv = path.get("drivers") or {}
     others = {v for v in drv if v != mining_vendor}
     if not path.get("known"):
         return ""
     if path.get("layer") == "mesa-soft":
         return "warp"
+    if display_vendor and display_vendor == mining_vendor:
+        return "warp" if others == {"warp"} and mining_vendor not in drv else ""
     if mining_vendor in drv and not others:
         return "mining"
     if others and mining_vendor not in drv:
@@ -545,9 +610,11 @@ def pids_of(exe_names: set) -> set:
 DEMO_PATH = dict(apis=["dx9", "vulkan"], layer="dxvk", drivers={"nvidia": ["gl"]}, known=True)
 
 
-def check(exe_names: set, mining_luid: str, seconds: int = 5, should_stop=None, game_dir: str = "") -> dict:
+def check(exe_names: set, mining_luid: str, seconds: int = 5, should_stop=None, game_dir: str = "",
+          display_vendor: str = "") -> dict:
     """Замір на кілька секунд: на якому адаптері малює гра — за лічильниками GPU Engine і за драйвером, який завантажив
-    процес. Якщо вони розходяться, вірити драйверу: лічильників у HD 4000 немає зовсім. Поза Windows — імітація."""
+    процес. Якщо вони розходяться, вірити драйверу: лічильників у HD 4000 немає зовсім. Виняток — монітор на карті того
+    самого виробника (display_vendor): там драйвер спільний і вірити можна лише лічильникам. Поза Windows — імітація."""
     if not E.IS_WIN:
         res = dict(verdict="mining", engines={mining_luid: {"3d": 64.0, "copy": 18.0, "other": 0.0}}, mining_3d=64.0,
                    other_3d=0.0, copy=18.0, vram_mb=3100, shared_mb=140, fg_share=100, path=dict(DEMO_PATH),
@@ -578,7 +645,7 @@ def check(exe_names: set, mining_luid: str, seconds: int = 5, should_stop=None, 
             best = path
     res["path"] = best
     res["path_text"] = describe_path(best) if best else ""
-    pv = path_verdict(best) if best else ""
+    pv = path_verdict(best, display_vendor=display_vendor) if best else ""
     if pv in ("igpu", "warp"):
         res["verdict"] = pv  # драйвер іншої карти — гра точно малює не на майнінговій
     elif pv == "mining" and res["verdict"] in ("igpu", "idle"):

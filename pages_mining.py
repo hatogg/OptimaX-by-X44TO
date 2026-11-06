@@ -329,7 +329,34 @@ class MiningCard(QFrame):
             if level == "ok":
                 continue  # зелене вже сказано в рядку вище
             self.drv_box.addWidget(info_row(level, tr(f"gd.{key}.t", **kw), tr(f"gd.{key}.d", **kw)))
+        self.show_hybrid(pr)
         self.refresh_rows()
+
+    # ── монітор на другій NVIDIA (P106 + GT 710): яку карту Windows вважає «високопродуктивною» ──
+    HYBRID_LEVEL = {"ok": "ok", "off": "warn", "pending": "info", "set": "info", "wrong": "bad", "missing": "warn"}
+
+    def show_hybrid(self, pr):
+        st = MG.hybrid_state(pr or {})
+        s = st["state"]
+        if s not in self.HYBRID_LEVEL:
+            return
+        kw = dict(gpu=self.gpu, display=st.get("display") or "?")
+        btn = button(tr("mg.hy.btn"), "primary", lambda: self.set_hybrid(pr)) if s == "off" else None
+        self.drv_box.addWidget(info_row(self.HYBRID_LEVEL[s], tr(f"mg.hy.{s}.t", **kw), tr(f"mg.hy.{s}.d", **kw), btn))
+
+    def set_hybrid(self, pr):
+        if not Ask.ask(self, tr("mg.hy.btn"), tr("mg.hy.q", gpu=self.gpu), tr("mg.hy.btn")):
+            return
+
+        def done(res):
+            if self._busy(res) or not isinstance(res, dict):
+                return
+            self.show_probe(pr)
+            if res.get("applied"):
+                self.main.toast(tr("mg.hy.reboot", gpu=self.gpu))
+            elif res.get("error"):
+                self.main.toast(tr("mg.hy.fail"), "warn")
+        self.main.run_quick(tr("mg.hy.btn"), lambda log, p: MG.set_hybrid(log, pr), silent=True, on_done=done)
 
     def sync_fso(self):
         clear_layout(self.fso_box)
@@ -405,6 +432,9 @@ class MiningCard(QFrame):
             self._listed(res)
             if isinstance(res, dict) and not res.get("error"):
                 self.main.toast(tr("mg.done", gpu=self.gpu, n=res.get("assigned", 0) + res.get("already", 0)))
+            if isinstance(res, dict) and res.get("hybrid_applied"):
+                self.show_probe(F.CFG["gpu_probe"] if isinstance(F.CFG["gpu_probe"], dict) else None)
+                self.main.toast(tr("mg.hy.reboot", gpu=self.gpu))
         self.main.run_quick(tr("mg.scan"), job, busy=self.btn_scan, on_done=done, silent=True)
 
     def revert(self):
@@ -494,9 +524,10 @@ class MiningCard(QFrame):
             return
 
         def job(log, p):
-            luid = GI.summary(GI.probe()).get("luid") or ""
+            s = GI.summary(GI.probe())
             log(tr("gr.checking", game=g["name"]))
-            res = GI.check(exes, luid, 6, should_stop=E.CANCEL.is_set, game_dir=g["dir"])
+            res = GI.check(exes, s.get("luid") or "", 6, should_stop=E.CANCEL.is_set, game_dir=g["dir"],
+                           display_vendor=s.get("display_vendor") or "")
             if res.get("verdict") in ("mining", "igpu", "warp"):
                 MG.record_check(g, res)
             log("  " + GI.explain(res, self.gpu) + (f" ({res['path_text']})" if res.get("path_text") else ""))

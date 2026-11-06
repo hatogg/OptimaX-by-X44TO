@@ -672,6 +672,10 @@ class Main(QWidget):
                 fresh = (r or {}).get("fresh") if isinstance(r, dict) else None
                 if fresh:
                     self.toast(tr("mg.new_games", n=len(fresh), names=", ".join(fresh[:3])))
+                if isinstance(r, dict) and r.get("hybrid_applied"):
+                    if card:
+                        card.show_probe(F.CFG["gpu_probe"] if isinstance(F.CFG["gpu_probe"], dict) else None)
+                    self.toast(tr("mg.hy.reboot", gpu=MG.model(hw)))
             self.run_quick(tr("mg.title", gpu=MG.model(hw)), job, silent=True, on_done=done)
         elif (F.CFG["booster"].get("found") and F.game_exes_due() and not self._workers
               and QApplication.activeModalWidget() is None):
@@ -706,8 +710,9 @@ class Main(QWidget):
 
         def job(log, p):
             import gpuinfo as GI
-            luid = GI.summary(GI.probe()).get("luid") or ""
-            res = GI.check(exes, luid, 5, game_dir=g["dir"])
+            s = GI.summary(GI.probe())
+            res = GI.check(exes, s.get("luid") or "", 5, game_dir=g["dir"],
+                           display_vendor=s.get("display_vendor") or "")
             if res.get("verdict") in ("mining", "igpu", "warp"):
                 MG.record_check(g, res)
             return res
