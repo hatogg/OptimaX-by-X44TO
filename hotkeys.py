@@ -40,8 +40,9 @@ class Listener:
     """Потік із власною чергою повідомлень. on_action(name) викликається з цього потоку —
     у Qt передавайте далі сигналом (він сам перейде в головний потік)."""
 
-    def __init__(self, on_action):
+    def __init__(self, on_action, table: dict = None):
         self.on_action = on_action
+        self.table = table if table is not None else HOTKEYS  # власний набір клавіш (FPS-оверлей) або загальний
         self.busy: list = []
         self._tid = None
         self._ready = threading.Event()
@@ -67,7 +68,7 @@ class Listener:
         msg = wintypes.MSG()
         u.PeekMessageW(ctypes.byref(msg), None, 0, 0, 0)  # створює чергу повідомлень потоку
         ok = []
-        for hid, (action, mods, vk, _text) in HOTKEYS.items():
+        for hid, (action, mods, vk, _text) in self.table.items():
             if u.RegisterHotKey(None, hid, mods | MOD_NOREPEAT, vk):
                 ok.append(hid)
             else:
@@ -77,9 +78,9 @@ class Listener:
             return
         try:
             while u.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
-                if msg.message == WM_HOTKEY and msg.wParam in HOTKEYS:
+                if msg.message == WM_HOTKEY and msg.wParam in self.table:
                     try:
-                        self.on_action(HOTKEYS[msg.wParam][0])
+                        self.on_action(self.table[msg.wParam][0])
                     except Exception:
                         pass
         finally:

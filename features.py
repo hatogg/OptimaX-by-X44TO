@@ -61,6 +61,15 @@ DEFAULTS = {
     "seen_version": None,  # версія, для якої вже показано «Що нового»
     "simple_ui": False,  # простий вигляд
     "gpu_probe": None,  # що бачать DirectX і Vulkan (gpuinfo.probe)
+    "hwc_last": {},  # Hardware Center: останній результат кожного тесту {test: result} (hwtests.result)
+    "hwc_hist": [],  # Hardware Center: історія результатів (без рядів для графіків)
+    "hwc_reports": [],  # Hardware Center: збережені звіти {path, ts, status, title}
+    "pm_sessions": [],  # фонові процеси під час ігор (procmon.analyze), останні 20
+    "pm_auto": True,  # записувати фон під час ігор із бібліотеки
+    "inspect": None,  # перевірка ПК перед покупкою: {ts, claimed, steps: {id: status}}
+    "overlay": {"enabled": False, "mode": "standard", "corner": "tl", "size": 100, "opacity": 85, "hotkey": 0,
+                "white": [], "black": [], "auto": True},  # FPS-оверлей (overlay.py)
+    "overlay_sessions": [],  # записані сесії оверлея: {path, game, ts, stats, diag}
     "diag_hist": [],  # історія «Чому лагає?»: що обмежувало FPS і на якій карті малювала гра
 }
 
