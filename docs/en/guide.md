@@ -140,6 +140,8 @@ Without the menu: `OptimaX-Rescue.cmd /last` or `/all` (the exit code is the num
 
 The **OptimaX GPU test** is a scene of its own: a neon city with the OptimaX logo, ray tracing in a fragment shader, soft shadows, reflections and glow. The test runs as a separate process in its own window (Esc stops it), so even a graphics driver crash won't close the program.
 
+On a laptop with two GPUs or a PC with a mining card there is a **Graphics card** row above the start button: “Auto — high performance” or a specific card. OptimaX asks for the chosen card in the way that suits it (the NVIDIA Optimus driver, the Windows Graphics setting with your consent, Mesa for a mining card), and after the run checks who actually rendered: the result is labelled “confirmed”, “per the OpenGL driver” or “wrong card”. Runs on different cards are never compared with each other.
+
 | Mode | What is measured |
 | --- | --- |
 | **Benchmark** (1 min, 1080p / 1440p / 4K) | Score = average FPS × 100, minimum FPS, 1% low, temperature, clocks and power draw (NVIDIA). The scene renders at a fixed resolution whatever the window size, so results are comparable |

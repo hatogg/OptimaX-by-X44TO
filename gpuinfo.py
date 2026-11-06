@@ -223,6 +223,24 @@ DEMO_PROBE = {
                              luid="0x00000000_0x0000F0F0", software=True, outputs=0, dx12=True)],
                "vulkan": [dict(name="NVIDIA GeForce GTX 1060 6GB", ven=NVIDIA, dev=0x1C07, type="discrete",
                                api="1.4.303", driver="582.78", luid="0x00000000_0x0000D6B5")]},
+    # ноутбук з Optimus: монітор на вбудованій графіці, NVIDIA без виходів (GPU-тест має сам попросити NVIDIA)
+    "laptop": {"dxgi": [dict(name="Intel(R) Iris(R) Xe Graphics", ven=INTEL, dev=0xA7A0, sub=0x1E1F1043, vram_mb=128,
+                             shared_mb=7900, luid="0x00000000_0x0000B1A2", software=False, outputs=1, dx12=True),
+                        dict(name="NVIDIA GeForce RTX 4050 Laptop GPU", ven=NVIDIA, dev=0x28A1, sub=0x1E1F1043,
+                             vram_mb=5920, shared_mb=7900, luid="0x00000000_0x0000C3D4", software=False, outputs=0,
+                             dx12=True),
+                        dict(name="Microsoft Basic Render Driver", ven=0x1414, dev=0x8C, vram_mb=0, shared_mb=7900,
+                             luid="0x00000000_0x0000F0F0", software=True, outputs=0, dx12=True)],
+               "vulkan": [dict(name="NVIDIA GeForce RTX 4050 Laptop GPU", ven=NVIDIA, dev=0x28A1, type="discrete",
+                               api="1.4.303", driver="581.57", luid="0x00000000_0x0000C3D4"),
+                          dict(name="Intel(R) Iris(R) Xe Graphics", ven=INTEL, dev=0xA7A0, type="integrated",
+                               api="1.3.289", driver="101.6130", luid="0x00000000_0x0000B1A2")]},
+    "gaming": {"dxgi": [dict(name="NVIDIA GeForce RTX 4070", ven=NVIDIA, dev=0x2786, sub=0x51361458, vram_mb=12010,
+                             shared_mb=16300, luid="0x00000000_0x0000A0B1", software=False, outputs=2, dx12=True),
+                        dict(name="Microsoft Basic Render Driver", ven=0x1414, dev=0x8C, vram_mb=0, shared_mb=16300,
+                             luid="0x00000000_0x0000F0F0", software=True, outputs=0, dx12=True)],
+               "vulkan": [dict(name="NVIDIA GeForce RTX 4070", ven=NVIDIA, dev=0x2786, type="discrete", api="1.4.303",
+                               driver="581.57", luid="0x00000000_0x0000A0B1")]},
 }
 
 

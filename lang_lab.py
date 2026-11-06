@@ -48,12 +48,89 @@ STRINGS = {
     "gb.hud_esc": ("Esc — зупинити", "Esc — остановить", "Esc — stop"),
     "gb.hud_idle": ("⚠ Малює {gpu} — NVIDIA простоює", "⚠ Рисует {gpu} — NVIDIA простаивает",
                     "⚠ Rendering on {gpu} — NVIDIA is idle"),
-    "gb.idle_gpu": ("Тест малювала {gpu}, а {dgpu} простоювала, тож це бали вбудованої графіки. Щоб оцінити ігрову "
-                    "карту, міряйте FPS у самій грі.",
-                    "Тест рисовала {gpu}, а {dgpu} простаивала, так что это баллы встроенной графики. Чтобы оценить "
-                    "игровую карту, меряйте FPS в самой игре.",
-                    "The test ran on {gpu} while {dgpu} sat idle, so this is the integrated graphics score. To judge "
-                    "the gaming GPU, measure FPS in the game itself."),
+    "gb.idle_gpu": ("Тест малювала {gpu}, а {dgpu} простоювала, тож це бали вбудованої графіки. Виберіть ігрову карту в "
+                    "рядку «Відеокарта» вище або міряйте FPS у самій грі.",
+                    "Тест рисовала {gpu}, а {dgpu} простаивала, так что это баллы встроенной графики. Выберите игровую "
+                    "карту в строке «Видеокарта» выше или меряйте FPS в самой игре.",
+                    "The test ran on {gpu} while {dgpu} sat idle, so this is the integrated graphics score. Pick the "
+                    "gaming GPU in the Graphics card row above, or measure FPS in the game itself."),
+    "gb.hud_wrong": ("⚠ Малює {gpu}, а вибрано {want}", "⚠ Рисует {gpu}, а выбрана {want}",
+                     "⚠ Rendering on {gpu}, but {want} was selected"),
+
+    # ── вибір відеокарти для GPU-тесту (gpuselect.py) ──
+    "gs.gpu": ("Відеокарта", "Видеокарта", "Graphics card"),
+    "gs.auto_s": ("Автоматично", "Автоматически", "Auto"),
+    "gs.auto": ("Автоматично — висока продуктивність ({gpu})", "Автоматически — высокая производительность ({gpu})",
+                "Auto — high performance ({gpu})"),
+    "gs.kind.igpu": ("вбудована", "встроенная", "integrated"),
+    "gs.kind.dgpu": ("дискретна", "дискретная", "discrete"),
+    "gs.kind.mining": ("майнінгова", "майнинговая", "mining card"),
+    "gs.display": ("монітор", "монитор", "display"),
+    "gs.rescan": ("Оновити перелік відеокарт", "Обновить список видеокарт", "Refresh the list of graphics cards"),
+    "gs.m.optimus": ("Ноутбук із двома відеокартами: тест попросить {gpu} через драйвер NVIDIA (Optimus), а після заміру "
+                     "OptimaX перевірить, яка карта справді малювала.",
+                     "Ноутбук с двумя видеокартами: тест попросит {gpu} через драйвер NVIDIA (Optimus), а после замера "
+                     "OptimaX проверит, какая карта на самом деле рисовала.",
+                     "A laptop with two GPUs: the test asks for the {gpu} through the NVIDIA driver (Optimus), and after "
+                     "the run OptimaX checks which card actually rendered."),
+    "gs.m.winpref": ("Щоб тест малювала {gpu}, Windows має дати OptimaX «Високу продуктивність» (налаштування «Графіка»). "
+                     "Після заміру OptimaX перевірить, яка карта справді малювала.",
+                     "Чтобы тест рисовала {gpu}, Windows должна дать OptimaX «Высокую производительность» (настройка "
+                     "«Графика»). После замера OptimaX проверит, какая карта на самом деле рисовала.",
+                     "For the {gpu} to render the test, Windows has to give OptimaX High performance (the Graphics "
+                     "setting). After the run OptimaX checks which card actually rendered."),
+    "gs.m.mesa": ("Тест малюватиме {gpu} через Mesa (OpenGL → DirectX 12). Це повільніше за рідний драйвер, тож бали "
+                  "порівнюються лише з іншими замірами через Mesa.",
+                  "Тест будет рисовать {gpu} через Mesa (OpenGL → DirectX 12). Это медленнее родного драйвера, поэтому "
+                  "баллы сравниваются только с другими замерами через Mesa.",
+                  "The test will render on the {gpu} via Mesa (OpenGL → DirectX 12). That is slower than the native "
+                  "driver, so the score is compared only with other Mesa runs."),
+    "gs.m.none": ("OpenGL не бачить {gpu}: без Mesa тест малюватиме карта з монітором. Mesa завантажується на сторінці "
+                  "«Ігри».",
+                  "OpenGL не видит {gpu}: без Mesa тест будет рисовать карта с монитором. Mesa загружается на странице "
+                  "«Игры».",
+                  "OpenGL can't see the {gpu}: without Mesa the card with the display renders the test. Mesa is "
+                  "downloaded on the Games page."),
+    "gs.need_pref": ("Зараз «Висока продуктивність» для OptimaX не ввімкнена — перед тестом OptimaX запитає дозволу.",
+                     "Сейчас «Высокая производительность» для OptimaX не включена — перед тестом OptimaX спросит "
+                     "разрешения.",
+                     "High performance for OptimaX is off right now, so OptimaX will ask before the test."),
+    "gs.battery": ("Ноутбук працює від батареї: дискретна відеокарта може бути обмежена. Для чесного заміру підключіть "
+                   "зарядку.",
+                   "Ноутбук работает от батареи: дискретная видеокарта может быть ограничена. Для честного замера "
+                   "подключите зарядку.",
+                   "The laptop is on battery, so the discrete GPU may be held back. Plug in the charger for a fair run."),
+    "gs.power": ("Живлення", "Питание", "Power"),
+    "gs.on_battery": ("від батареї", "от батареи", "on battery"),
+    "gs.st.confirmed": ("підтверджено", "подтверждено", "confirmed"),
+    "gs.st.renderer": ("за драйвером OpenGL", "по драйверу OpenGL", "per the OpenGL driver"),
+    "gs.st.likely": ("ймовірно", "вероятно", "likely"),
+    "gs.st.wrong": ("не та карта", "не та карта", "wrong card"),
+    "gs.wrong_d": ("Тест малювала {got}, а вибрано {want}. Такий результат не порівнюється з іншими. Спробуйте інший "
+                   "спосіб нижче або виберіть карту вручну.",
+                   "Тест рисовала {got}, а выбрана {want}. Такой результат не сравнивается с другими. Попробуйте другой "
+                   "способ ниже или выберите карту вручную.",
+                   "The test ran on {got}, but {want} was selected. This result is not compared with others. Try another "
+                   "way below or pick the card yourself."),
+    "gs.fix_mesa": ("Спробувати через Mesa", "Попробовать через Mesa", "Try via Mesa"),
+    "gs.fix_pref": ("Дозволити «Високу продуктивність»", "Разрешить «Высокую производительность»", "Allow High performance"),
+    "gs.fix_pick": ("Вибрати відеокарту", "Выбрать видеокарту", "Pick a graphics card"),
+    "gs.pref_t": ("Висока продуктивність для OptimaX", "Высокая производительность для OptimaX",
+                  "High performance for OptimaX"),
+    "gs.pref_q": ("Windows дозволить OptimaX малювати на дискретній відеокарті (Параметри → Дисплей → Графіка, «Висока "
+                  "продуктивність») для файлу:\n{exe}\n\nЗміна записується в журнал відкату, її можна повернути на "
+                  "сторінці «Резервні копії». Для портативної версії налаштування діє лише для цього розташування "
+                  "файлу.",
+                  "Windows разрешит OptimaX рисовать на дискретной видеокарте (Параметры → Дисплей → Графика, «Высокая "
+                  "производительность») для файла:\n{exe}\n\nИзменение записывается в журнал отката, его можно вернуть "
+                  "на странице «Резервные копии». Для портативной версии настройка действует только для этого "
+                  "расположения файла.",
+                  "Windows will let OptimaX render on the discrete GPU (Settings → Display → Graphics, High "
+                  "performance) for this file:\n{exe}\n\nThe change goes into the rollback journal and can be undone on "
+                  "the Backups page. For the portable version the setting applies only to this file location."),
+    "gs.pref_ok": ("Дозволити", "Разрешить", "Allow"),
+    "gs.pref_title": ("GPU-тест: «Висока продуктивність» для OptimaX", "GPU-тест: «Высокая производительность» для OptimaX",
+                      "GPU test: High performance for OptimaX"),
     "gb.cancelled": ("Тест зупинено", "Тест остановлен", "Test stopped"),
     "gb.err_t": ("Тест не запустився", "Тест не запустился", "The test didn't start"),
     "gb.err_d": ("{err}\n\nПотрібна відеокарта з OpenGL 3.3 і свіжий драйвер. Через віддалений робочий стіл (RDP) "

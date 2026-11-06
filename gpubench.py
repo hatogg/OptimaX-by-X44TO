@@ -769,6 +769,8 @@ def run_child(argv) -> int:
     quality = QUALITIES.get(_arg(argv, "quality", "bench"), QUALITY)
     seconds = int(_arg(argv, "seconds", "0") or 0)
     duration = seconds or (BENCH_SECONDS if mode == "bench" else minutes * 60)
+    # карта, яку вибрали в програмі (gpuselect.py): після створення контексту звіряємо з нею GL_RENDERER
+    want = dict(name=_arg(argv, "want-name", ""), vendor=_arg(argv, "want-vendor", ""), key=_arg(argv, "want-key", ""))
     if os.environ.get("OPTIMAX_BENCH_FAST"):
         duration = min(duration, 5 if mode == "bench" else 12)
 
@@ -784,7 +786,8 @@ def run_child(argv) -> int:
     app = QGuiApplication(sys.argv)
     nv = Nvml()
     state = dict(state="starting", preset=preset, mode=mode, minutes=minutes, duration=duration, t=0.0, fps=0.0,
-                 frames=0, errors=0, checks=0, sensors={}, series_fps=[], series_temp=[], series_clock=[], mesa=mesa)
+                 frames=0, errors=0, checks=0, sensors={}, series_fps=[], series_temp=[], series_clock=[], mesa=mesa,
+                 pid=os.getpid())  # PID того, хто малює: у портативній версії це дочірній процес exe
     _write(out, state)
 
     def font(pt: int, bold: bool = False) -> QFont:
@@ -822,6 +825,11 @@ def run_child(argv) -> int:
                              vendor=info["vendor"])
                 if self.target["idle"]:
                     state["idle_gpu"] = self.target["idle"]
+                if want["name"]:
+                    import gpuselect as GS
+                    state["render_match"] = GS.render_match(want, info["vendor"], info["renderer"])
+                    if state["render_match"] == "other":
+                        state["want_gpu"] = want["name"]
                 self.r.check()  # еталонний контрольний кадр
             except Exception as e:
                 state.update(state="error", error=str(e)[:400])
@@ -888,9 +896,11 @@ def run_child(argv) -> int:
                     s = self.sensors
                     rows.append((tr("gb.hud_sens", t=s.get("temp", "—"), c=s.get("clock", "—"),
                                     w=s.get("power", "—")), "#9AA3B8"))
-                if self.target["idle"]:
+                if state.get("want_gpu"):
+                    rows.append((tr("gb.hud_wrong", gpu=self.target["gpu"] or "?", want=state["want_gpu"]), "#FFB547"))
+                elif self.target["idle"]:
                     rows.append((tr("gb.hud_idle", gpu=self.target["gpu"] or "?"), "#FFB547"))
-                wide = 460 if self.target["idle"] else 330
+                wide = 460 if (self.target["idle"] or state.get("want_gpu")) else 330
                 bar_y = 50 + 22 * len(rows) + 4
                 p = QPainter(self)
                 p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -946,6 +956,9 @@ def run_child(argv) -> int:
                 res["idle_gpu"] = state["idle_gpu"]
             if mesa:
                 res["mesa"] = True
+            if state.get("render_match") is not None:
+                res["render_match"] = state["render_match"]
+                res["vendor"] = state.get("vendor")
             res["score"] = int(round(st["avg"] * SCORE_K)) if how == "done" and mode == "bench" else None
             if self.temps:
                 res["temp_max"] = max(self.temps)
@@ -1023,29 +1036,92 @@ def self_command() -> list:
     return [exe, os.path.join(os.path.dirname(os.path.abspath(__file__)), "optimizer.py")]
 
 
+def _plan_args(adapter: dict, mesa: str) -> tuple:
+    """План вибору карти (gpuselect.plan) -> (аргументи процесу тесту, змінні середовища, папка Mesa)."""
+    args, env = [], {}
+    a = adapter or {}
+    if a.get("name"):
+        args += [f"--want-name={a['name']}", f"--want-vendor={a.get('vendor', '')}", f"--want-key={a.get('key', '')}"]
+    env.update(a.get("env") or {})
+    if a.get("method") == "mesa" and a.get("mesa"):
+        mesa = a["mesa"]
+    return args, env, mesa
+
+
+def power_state() -> str:
+    """"battery" — ноутбук працює від батареї (дискретна карта може бути обмежена), інакше "ac"."""
+    try:
+        import power
+        return "ac" if power.on_ac() else "battery"
+    except Exception:
+        return ""
+
+
 class Run:
-    """Запущений тест: читає прогрес із файлу, який пише процес тесту."""
+    """Запущений тест: читає прогрес із файлу, який пише процес тесту.
+
+    adapter — план із gpuselect.plan(): яку карту попросити, якими змінними, і що потім звірити. Поки тест іде, Run
+    раз на секунду читає лічильники «GPU Engine» процесу тесту — так видно, на якому адаптері справді йшло 3D."""
 
     def __init__(self, preset: str, mode: str, minutes: int, fullscreen: bool = False, quality: str = "bench",
-                 seconds: int = 0, mesa: str = ""):
+                 seconds: int = 0, mesa: str = "", adapter: dict = None):
         import i18n
         self.preset, self.mode, self.minutes = preset, mode, minutes
+        self.adapter = dict(adapter or {})
+        self.power = power_state()
         self.out = os.path.join(tempfile.gettempdir(), f"optimax-gpubench-{os.getpid()}-{int(time.time() * 1000)}.json")
         cmd = self_command() + ["--gpu-bench", f"--preset={preset}", f"--mode={mode}", f"--minutes={minutes}",
                                 f"--out={self.out}", f"--lang={i18n.LANG}", f"--quality={quality}",
                                 f"--seconds={seconds}"]
         if fullscreen:
             cmd.append("--fullscreen")
+        extra, plan_env, mesa = _plan_args(self.adapter, mesa)
+        cmd += extra
         env = None
+        if mesa or plan_env or self.adapter:
+            import gpuselect as GS
+            env = GS.child_env(self.adapter)
         if mesa:  # Mesa сама обере адаптер за назвою: вбудована графіка (часто без DirectX 12) їй не підходить
             import mining as MG
             cmd.append(f"--mesa={mesa}")
-            env = dict(os.environ)
             env.setdefault(MG.ADAPTER_VAR, MG.ADAPTER_NAME)
+        self.mesa = bool(mesa)
         here = None if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
         self.proc = subprocess.Popen(cmd, cwd=here, env=env)
         self.started = time.time()
         self.stopped = False
+        self.child_pid = 0
+        self.eng = []  # [{luid: {"3d": %, ...}}] — лише під час заміру (після прогріву)
+        self.mon = None
+        self.next_sample = 0.0
+
+    def _sample(self, data: dict) -> None:
+        """Лічильники GPU Engine для процесу тесту (і для exe-обгортки портативної версії)."""
+        if not E.IS_WIN or data.get("state") != "running" or time.time() < self.next_sample:
+            return
+        self.next_sample = time.time() + 1.0
+        try:
+            if self.mon is None:
+                import gpuinfo as GI
+                self.mon = GI.RenderMonitor()
+            pids = {self.proc.pid} | ({int(data["pid"])} if data.get("pid") else set())
+            s = self.mon.sample(pids, True)
+            if len(self.eng) < 7200:
+                self.eng.append(s.get("eng") or {})
+        except Exception:
+            self.eng.append({})
+
+    def gpu_check(self, res: dict) -> dict:
+        """Висновок про те, хто малював (gpuselect.confirm), — у підсумок тесту."""
+        import gpuselect as GS
+        a = self.adapter
+        if not a.get("name"):
+            return {}
+        eng = GS.engine_share(self.eng, a.get("luid", ""))
+        match = res.get("render_match")
+        if match is None:  # старіший процес тесту або Mesa без назви — звіряємо самі
+            match = GS.render_match(a, res.get("vendor") or "", res.get("renderer") or res.get("gpu") or "")
+        return GS.confirm(a, match, eng, res.get("renderer") or res.get("gpu") or "")
 
     def poll(self) -> dict:
         data = {}
@@ -1054,6 +1130,9 @@ class Run:
                 data = json.load(f)
         except (OSError, ValueError):
             data = {"state": "starting"}
+        self._sample(data)
+        if data.get("result") and data.get("state") in ("done", "lost", "cancelled") and self.adapter.get("name"):
+            data["result"] = self._decorate(data["result"])
         rc = self.proc.poll()
         if rc is not None and self.stopped and data.get("state") not in ("done", "error", "lost"):
             return dict(data, state="cancelled")
@@ -1066,7 +1145,17 @@ class Run:
                                   gpu=data.get("gpu"), verdict="crash", exit_code=rc)
         if data.get("state") == "lost" and data.get("result"):
             data["result"]["verdict"] = "crash"
+        if data.get("result") and self.power == "battery":
+            data["result"]["power"] = "battery"
         return data
+
+    def _decorate(self, res: dict) -> dict:
+        res = dict(res)
+        chk = self.gpu_check(res)
+        if chk:
+            res["gpu_check"] = chk
+            res["adapter_key"] = self.adapter.get("key", "")
+        return res
 
     @property
     def alive(self) -> bool:
@@ -1078,6 +1167,12 @@ class Run:
             self.proc.terminate()
 
     def cleanup(self) -> None:
+        if self.mon is not None:
+            try:
+                self.mon.close()
+            except Exception:
+                pass
+            self.mon = None
         for p in (self.out, self.out + ".tmp"):
             try:
                 os.remove(p)
@@ -1118,16 +1213,19 @@ class DemoRun:
     SPEED = 40.0
 
     def __init__(self, preset: str, mode: str, minutes: int, fullscreen: bool = False, crash: bool = False,
-                 quality: str = "bench", seconds: int = 0, mesa: str = ""):
+                 quality: str = "bench", seconds: int = 0, mesa: str = "", adapter: dict = None):
         self.preset, self.mode, self.minutes = preset, mode, minutes
-        self.mesa = bool(mesa)
+        self.adapter = dict(adapter or {})
+        self.mesa = bool(mesa) or self.adapter.get("method") == "mesa"
         self.duration = seconds or (BENCH_SECONDS if mode == "bench" else minutes * 60)
         self.started = time.time()
         self.crash = crash
         self.stopped = False
         base = DEMO_FPS.get(E.DEMO, 150.0) * DEMO_SCALE.get(preset, 1.0)
-        self.base = base * demo_factor()
-        self.nv = E.DEMO in ("gaming", "laptop", "xeon")
+        self.igpu = self.adapter.get("kind") == "igpu"  # демо: вибрали вбудовану — вона й малює, у рази повільніше
+        self.base = base * demo_factor() * (0.21 if self.igpu else 1.0)
+        self.nv = E.DEMO in ("gaming", "laptop", "xeon") and not self.igpu
+        self.power = power_state()
 
     def _series(self, n: int) -> tuple:
         fps, temp = [], []
@@ -1148,7 +1246,8 @@ class DemoRun:
         st = dict(state="warmup" if el <= 0 else "running", preset=self.preset, mode=self.mode, duration=self.duration,
                   t=round(max(0.0, min(el, self.duration)), 1), fps=fps[-1] if fps else 0.0, frames=int(sum(fps)),
                   errors=0, checks=int(n // CHECK_EVERY) if self.mode == "stress" else 0,
-                  gpu=DEMO_GPU.get(E.DEMO, "GPU"), gl="4.6.0", series_fps=fps, series_temp=temp,
+                  gpu=self.adapter.get("name") or DEMO_GPU.get(E.DEMO, "GPU"), gl="4.6.0", series_fps=fps,
+                  series_temp=temp,
                   sensors=dict(temp=temp[-1], clock=2610 - (120 if E.DEMO == "laptop" and n > 200 else 0),
                                power=186.0) if (self.nv and temp) else {})
         if self.crash and el > self.duration * 0.4:
@@ -1173,6 +1272,15 @@ class DemoRun:
             res["drop"] = fps_drop(fps)
             res["series_fps"], res["series_temp"] = fps, temp
             res["verdict"] = verdict(res)
+            if self.adapter.get("name"):
+                import gpuselect as GS
+                luid = self.adapter.get("luid", "")
+                res["render_match"] = "match"
+                res["gpu_check"] = GS.confirm(self.adapter, "match",
+                                              GS.engine_share([{luid: {"3d": 92.0}}] * 5, luid), res["gpu"])
+                res["adapter_key"] = self.adapter.get("key", "")
+            if self.power == "battery":
+                res["power"] = "battery"
             st.update(state="done", result=res)
         return st
 
@@ -1189,15 +1297,22 @@ class DemoRun:
 
 
 def start(preset: str, mode: str, minutes: int = 5, fullscreen: bool = False, quality: str = "bench", seconds: int = 0,
-          mesa: str = ""):
+          mesa: str = "", adapter: dict = None):
+    """adapter — план вибору відеокарти (gpuselect.selection / plan); None — як раніше, малює та, що дасть OpenGL."""
     if not E.IS_WIN:
-        return DemoRun(preset, mode, minutes, fullscreen, quality=quality, seconds=seconds, mesa=mesa)
-    return Run(preset, mode, minutes, fullscreen, quality=quality, seconds=seconds, mesa=mesa)
+        return DemoRun(preset, mode, minutes, fullscreen, quality=quality, seconds=seconds, mesa=mesa, adapter=adapter)
+    return Run(preset, mode, minutes, fullscreen, quality=quality, seconds=seconds, mesa=mesa, adapter=adapter)
 
 
 # ───────────────────────── історія результатів ─────────────────────────
 def same_gpu(a: dict, b: dict) -> bool:
     """Чи на одній відеокарті зроблені два заміри (за назвою карти, що малювала, і ознакою «NVIDIA простоювала»)."""
+    ka, kb = a.get("adapter_key"), b.get("adapter_key")
+    if ka and kb and ka != kb:  # вибрано різні карти (ключ VEN/DEV/SUBSYS не залежить від перезавантаження)
+        return False
+    for r in (a, b):  # тест малювала не та карта, яку вибрали, — з таким заміром нічого не порівнюємо
+        if (r.get("gpu_check") or {}).get("status") == "wrong":
+            return False
     ga, gb = a.get("gpu"), b.get("gpu")
     if not (ga and gb):
         return True  # невідомо — як раніше

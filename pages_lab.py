@@ -16,6 +16,7 @@ import benchtools as BT
 import engine as E
 import features as F
 import gpubench as GB
+import gpuselect as GS
 import mining as MG
 from i18n import tr
 from pages_extra import page_body, log_strip, stat_cell, PickRow
@@ -82,6 +83,20 @@ class BenchPage(QWidget):
             pl.setFixedSize(320, 180)
             top.addWidget(pl, 0, Qt.AlignmentFlag.AlignTop)
         hv.addLayout(top)
+        # ── відеокарта (ноутбук з двома картами, ПК з майнінговою картою): gpuselect.py ──
+        self.gpu_row = QWidget()
+        gr = hbox(self.gpu_row, spacing=10)
+        gr.addWidget(label(tr("gs.gpu"), "desc"))
+        self.btn_gpu = button("", None, self._gpu_menu)
+        gr.addWidget(self.btn_gpu)
+        gr.addStretch()
+        self.gpu_row.hide()
+        hv.addWidget(self.gpu_row)
+        self.gpu_note = label("", "desc", wrap=True)
+        self.gpu_note.hide()
+        hv.addWidget(self.gpu_note)
+        self.ads = []
+        self.probing = False
         r1 = hbox(spacing=10)
         r1.addWidget(label(tr("gb.res"), "desc"))
         self.seg_res = Segmented(["1080p", "1440p", "4K"])
@@ -145,6 +160,16 @@ class BenchPage(QWidget):
         vb.addWidget(self.verdict_d)
         rt.addLayout(vb, 1)
         rv.addLayout(rt)
+        self.fix_row = QWidget()  # тест малювала не та карта: як спробувати ще раз (gpuselect.py)
+        fr = hbox(self.fix_row, (14, 0, 14, 4), 8)
+        self.btn_fix_mesa = button(tr("gs.fix_mesa"), None, lambda: self.start(prefer_mesa=True))
+        self.btn_fix_pref = button(tr("gs.fix_pref"), None, self.allow_pref)
+        self.btn_fix_pick = button(tr("gs.fix_pick"), "ghost", self._gpu_menu)
+        for b in (self.btn_fix_mesa, self.btn_fix_pref, self.btn_fix_pick):
+            fr.addWidget(b)
+        fr.addStretch()
+        self.fix_row.hide()
+        rv.addWidget(self.fix_row)
         self.grid = QGridLayout()
         self.grid.setContentsMargins(14, 4, 14, 8)
         self.grid.setHorizontalSpacing(18)
@@ -216,9 +241,95 @@ class BenchPage(QWidget):
     def on_show(self):
         self.smart.sync()
         self.sync_mesa()
+        self.load_gpus()
         if not self.loaded:
             self.loaded = True
             self.scan()
+
+    # ── вибір відеокарти (gpuselect.py) ──
+    def load_gpus(self, force: bool = False):
+        """Перелік адаптерів: з кешу одразу, а перевірку DirectX/Vulkan (окремий процес) — у фоні."""
+        pr = GS.cached_probe()
+        if pr and not force:
+            self.ads = GS.adapters(pr)
+            self.sync_gpu()
+            return
+        if self.probing:
+            return
+        self.probing = True
+        import gpuinfo as GI
+        from ui_kit import Worker
+        w = Worker(lambda log, p: GI.probe(force))
+
+        def done(res):
+            self.probing = False
+            self.ads = GS.adapters(res if isinstance(res, dict) else {})
+            self.sync_gpu()
+        w.result.connect(done)
+        self._probe_worker = w  # тримаємо посилання, доки потік не завершиться
+        w.start()
+
+    def plan(self, prefer_mesa: bool = False) -> dict:
+        return GS.selection(self.main.hw or {}, choice=F.CFG["bench_gpu"] or GS.AUTO, prefer_mesa=prefer_mesa) \
+            if self.ads else {}
+
+    def sync_gpu(self):
+        """Рядок «Відеокарта» — лише коли карт кілька; під ним — як OptimaX попросить вибрану й попередження."""
+        many = len(self.ads) > 1
+        self.gpu_row.setVisible(many)
+        notes = []
+        p = self.plan() if many else {}
+        if many:
+            target = GS.resolve(F.CFG["bench_gpu"] or GS.AUTO, self.ads)
+            auto = (F.CFG["bench_gpu"] or GS.AUTO) == GS.AUTO or target.get("key") != F.CFG["bench_gpu"]
+            name = target.get("name") or "?"
+            self.btn_gpu.setText(f"{tr('gs.auto_s') + ' · ' if auto else ''}{name}  ▾")
+            m = p.get("method")
+            if m in ("optimus", "winpref", "mesa", "none"):
+                notes.append(tr(f"gs.m.{m}", gpu=name))
+            if m == "winpref" and p.get("needs_pref"):
+                notes.append(tr("gs.need_pref", gpu=name))
+        hw = self.main.hw or {}
+        if hw.get("laptop") and GB.power_state() == "battery":
+            notes.append(tr("gs.battery"))
+        self.gpu_note.setText("\n".join(notes))
+        self.gpu_note.setVisible(bool(notes))
+        # майнінгова карта: старий рядок про Mesa лишається, якщо вибору немає (одна карта у переліку)
+        if many and MG.active(hw):
+            self.mesa_note.hide()
+
+    def _gpu_menu(self):
+        if not self.ads:
+            self.load_gpus(True)
+            return
+        m = QMenu(self)
+        cur = F.CFG["bench_gpu"] or GS.AUTO
+        hp = GS.high_performance(self.ads)
+        a = m.addAction(("✓  " if cur == GS.AUTO else "    ") + tr("gs.auto", gpu=hp.get("name") or "?"))
+        a.triggered.connect(lambda _=False: self._pick(GS.AUTO))
+        m.addSeparator()
+        for ad in self.ads:
+            a = m.addAction(("✓  " if cur == ad["key"] else "    ") + GS.describe(ad))
+            a.triggered.connect(lambda _=False, k=ad["key"]: self._pick(k))
+        m.addSeparator()
+        a = m.addAction("    " + tr("gs.rescan"))
+        a.triggered.connect(lambda _=False: self.load_gpus(True))
+        m.exec(self.btn_gpu.mapToGlobal(self.btn_gpu.rect().bottomLeft()))
+        self.menu = m
+
+    def _pick(self, key: str):
+        F.CFG["bench_gpu"] = key
+        self.sync_gpu()
+
+    def allow_pref(self, then_start: bool = False):
+        """Налаштування «Графіка» Windows «Висока продуктивність» для exe OptimaX — за згодою, через журнал відкату."""
+        exe = GS.exe_path()
+        if not Ask.ask(self, tr("gs.pref_t"), tr("gs.pref_q", exe=exe), tr("gs.pref_ok")):
+            return False
+        t = GS.pref_tweak(exe)
+        self.main.run_quick(t.title, lambda log, p: E.apply_tweaks([t], log, header=False),
+                            on_done=lambda _: (self.sync_gpu(), self.start() if then_start else None))
+        return True
 
     def sync_mesa(self):
         """Майнінгова карта: тест на OpenGL малює вбудована графіка, якщо немає Mesa (mining.py)."""
@@ -245,7 +356,7 @@ class BenchPage(QWidget):
     def preset(self) -> str:
         return PRESET_KEYS[self.res_i]
 
-    def start(self):
+    def start(self, prefer_mesa: bool = False):
         if self.run:
             return
         mode = ("bench", "stress")[self.mode_i]
@@ -253,14 +364,22 @@ class BenchPage(QWidget):
         if mode == "stress" and not Ask.ask(self, tr("gb.stress_t"), tr("gb.stress_q", m=minutes), tr("gb.start_stress"),
                                             "danger"):
             return
+        plan = self.plan(prefer_mesa) if len(self.ads) > 1 else {}
+        if plan.get("method") == "winpref" and plan.get("needs_pref") and not prefer_mesa and E.IS_WIN and \
+                not F.CFG.data.get("bench_pref_asked"):
+            F.CFG["bench_pref_asked"] = True  # питаємо один раз; далі — кнопка під результатом
+            if self.allow_pref(then_start=True):
+                return
         try:
+            # з планом вибору карти Mesa для майнінгової карти вмикає сам план (і не вмикає, якщо вибрано іншу карту)
             self.run = GB.start(self.preset, mode, minutes, self.sw_full.isChecked(),
-                                mesa=MG.bench_mesa(self.main.hw or {}))
+                                mesa="" if plan else MG.bench_mesa(self.main.hw or {}), adapter=plan or None)
         except Exception as e:
             Ask.info(self, tr("gb.err_t"), tr("gb.err_d", err=e))
             return
         LOG.write(f"[►] {tr('gb.title')}: {self.preset}, "
-                  f"{tr('gb.mode_bench') if mode == 'bench' else tr('gb.mode_stress') + ' ' + tr('u.min_n', n=minutes)}")
+                  f"{tr('gb.mode_bench') if mode == 'bench' else tr('gb.mode_stress') + ' ' + tr('u.min_n', n=minutes)}"
+                  + (f" · {plan.get('name')}" if plan.get("name") else ""))
         self.btn_run.setEnabled(False)
         self.prog.show()
         self.bar.setRange(0, 0)
@@ -370,10 +489,19 @@ class BenchPage(QWidget):
             cells.append((tr("gb.s.drop"), f"−{r.get('drop') or 0:.1f}%"))
         if r.get("dur"):
             cells.append((tr("gb.s.dur"), mmss(r["dur"])))
+        chk = r.get("gpu_check") or {}
         if r.get("gpu"):
-            cells.append((tr("gb.s.gpu"), r["gpu"]))
-        if r.get("idle_gpu"):
+            st = chk.get("status")
+            mark = {"confirmed": tr("gs.st.confirmed"), "renderer": tr("gs.st.renderer"), "likely": tr("gs.st.likely"),
+                    "wrong": tr("gs.st.wrong")}.get(st, "")
+            cells.append((tr("gb.s.gpu"), r["gpu"] + (f" ({mark})" if mark else "")))
+        if r.get("power") == "battery":
+            cells.append((tr("gs.power"), tr("gs.on_battery")))
+        if chk.get("status") == "wrong":
+            self.verdict_d.setText(tr("gs.wrong_d", got=r.get("gpu") or chk.get("got") or "?", want=chk.get("want") or "?"))
+        elif r.get("idle_gpu"):
             self.verdict_d.setText(tr("gb.idle_gpu", gpu=r.get("gpu") or "?", dgpu=r["idle_gpu"]))
+        self._sync_fix(r)
         for i, (c, val) in enumerate(cells):
             stat_cell(self.grid, i, c, val)
         fs = r.get("series_fps") or []
@@ -383,6 +511,18 @@ class BenchPage(QWidget):
         self.chart_t.set_series([(ts, T["warn"])])
         self.chart_t.setVisible(bool(ts))
         self.legend.setText(tr("gb.legend_t") if ts else tr("gb.legend") if fs else "")
+
+    def _sync_fix(self, r: dict):
+        """Кнопки під результатом, коли тест малювала не та карта (або NVIDIA простоювала)."""
+        wrong = (r.get("gpu_check") or {}).get("status") == "wrong" or bool(r.get("idle_gpu"))
+        if not wrong or len(self.ads) < 2:
+            self.fix_row.hide()
+            return
+        p = self.plan()
+        has_mesa = bool(GS.selection(self.main.hw or {}, prefer_mesa=True).get("mesa")) if E.IS_WIN else False
+        self.btn_fix_mesa.setVisible(has_mesa and not r.get("mesa"))
+        self.btn_fix_pref.setVisible(E.IS_WIN and GS.winpref() != 2 and p.get("method") in ("optimus", "winpref"))
+        self.fix_row.show()
 
     def fill_history(self):
         clear_layout(self.hist_box)

@@ -24,6 +24,8 @@
 
 **Is the stress test safe?** It loads the graphics card the same way a heavy game does, and the card's own overheating protection always works. You can stop the test any time with Esc. On laptops it's better to test on the charger and on a flat surface.
 
+**On my laptop the GPU test runs on the integrated graphics, not the RTX / Radeon. How do I switch?** The Benchmarks page shows a **Graphics card** row when there is more than one card. The default is “Auto — high performance”: the test asks for the discrete card itself (on NVIDIA Optimus through the driver, for the test process only; on AMD / Intel Arc through the Windows Graphics setting, with your consent and a rollback-journal record). After the run OptimaX checks which card actually rendered (by the OpenGL driver and the Windows “GPU Engine” counters) and shows “Ran on: … (confirmed)”. If another card rendered, the result is marked and not compared with others, and ways to try again appear under it. On battery the discrete card may be held back, so plug in the charger for a fair run.
+
 **Why doesn't my GPU test result look like 3DMark?** It's a different scene and a different API (OpenGL). OptimaX scores are for comparing your PC before and after, not with the tables of other benchmarks.
 
 **What happens to my internet if the ad blocker stops?** Windows switches to the router's DNS as a fallback (except in strict mode), and OptimaX restarts the filter when it starts. Turning the filter off restores your previous DNS servers.

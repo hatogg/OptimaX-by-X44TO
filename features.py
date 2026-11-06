@@ -41,6 +41,7 @@ DEFAULTS = {
     "net": {},
     "updates": {"auto": True, "last_check": 0, "last_try": 0, "latest": None, "snooze": None, "notified": None},
     "bench": [],  # результати тестів відеокарти
+    "bench_gpu": "auto",  # на якій карті малює GPU-тест: auto (висока продуктивність) або ключ карти (gpuselect.py)
     "adblock": {"mode": "off", "light": None},  # off | filter | light
     "safety": None,  # останній пакет змін для перевірки стабільності {ts, ids, kind, boot, checked}
     "smart": None,  # незавершена розумна оптимізація (продовжується після перезавантаження)

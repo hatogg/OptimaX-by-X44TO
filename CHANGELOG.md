@@ -2,6 +2,19 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [Unreleased]
+
+### Виправлено
+
+- **GPU-тест на ноутбуці з двома відеокартами малював вбудована графіка**, а RTX 4060 простоювала, і перемкнути це було ніяк (відгук користувача портативної версії). На сторінці «Бенчмарки» тепер є рядок **«Відеокарта»** (коли карт кілька): «Автоматично — висока продуктивність» або конкретна карта. Вибір зберігається за моделлю карти (VEN/DEV/SUBSYS), а не за LUID, який змінюється після перезавантаження. OptimaX просить карту способом, що їй підходить: NVIDIA Optimus — змінна драйвера лише для процесу тесту (система не змінюється); AMD / Intel Arc — налаштування «Графіка» Windows для exe OptimaX за згодою й через журнал відкату; майнінгова карта — Mesa, як і раніше. Після заміру OptimaX звіряє GL_RENDERER з вибраною картою і лічильники Windows «GPU Engine» процесу тесту (3D за LUID адаптера) й підписує результат «підтверджено», «за драйвером OpenGL», «ймовірно» або «не та карта». Результат на не тій карті не порівнюється з іншими (ні в історії, ні в розумній оптимізації), а під ним з'являються кнопки «Спробувати через Mesa», «Дозволити «Високу продуктивність»» і «Вибрати відеокарту». Ноутбук від батареї — попередження й позначка в результаті. Розумна оптимізація міряє на тій самій вибраній карті.
+
+<details>
+<summary>English</summary>
+
+**Fixed:** on a laptop with two GPUs the GPU test ran on the integrated graphics while the RTX 4060 sat idle, with no way to switch (a portable-version user report). The Benchmarks page now has a **Graphics card** row when there is more than one card: “Auto — high performance” or a specific card, remembered by the card's model (VEN/DEV/SUBSYS) rather than the LUID, which changes after a reboot. OptimaX asks for the card the way that suits it: NVIDIA Optimus — a driver variable for the test process only (nothing in the system changes); AMD / Intel Arc — the Windows Graphics setting for the OptimaX exe, with consent and through the rollback journal; a mining card — Mesa, as before. After the run OptimaX matches GL_RENDERER with the chosen card and reads the Windows “GPU Engine” counters of the test process (3D per adapter LUID), labelling the result confirmed / per the OpenGL driver / likely / wrong card. A run on the wrong card is never compared with others (in the history or in smart optimization), and Try via Mesa, Allow High performance and Pick a graphics card buttons appear under it. On battery the laptop shows a warning and the result is marked. Smart optimization measures on the same chosen card.
+
+</details>
+
 ## [6.7] — 2026-11-02
 
 Безпека й швидкість самої програми: усе, що OptimaX з правами адміністратора читає й запускає, тепер лежить у захищеній папці.

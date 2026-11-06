@@ -200,8 +200,11 @@ class SmartDialog(QDialog):
             self._measure_game()
             return
         try:
+            import gpuselect as GS
+            plan = GS.selection(self.main.hw or {})  # та сама карта, що вибрана для GPU-тесту (кеш переліку адаптерів)
+            plan = plan if plan.get("count", 0) > 1 else {}
             self.run = GB.start("ab", "bench", quality="ab", seconds=GB.AB_SECONDS,
-                                mesa=MG.bench_mesa(self.main.hw or {}))
+                                mesa="" if plan else MG.bench_mesa(self.main.hw or {}), adapter=plan or None)
         except Exception as e:
             self._fail(str(e))
             return
@@ -251,6 +254,9 @@ class SmartDialog(QDialog):
         if s == "done" and res.get("idle_gpu"):
             # тест малювала вбудована графіка, а ігрова NVIDIA простоювала: такий замір нічого не скаже про ігри
             self._fail(tr("sm.idle_gpu", gpu=res.get("gpu") or "?", dgpu=res["idle_gpu"]))
+        elif s == "done" and (res.get("gpu_check") or {}).get("status") == "wrong":
+            # вибрали одну карту, а малювала інша (gpuselect.py): заміри на різних картах між собою не порівнюються
+            self._fail(tr("gs.wrong_d", got=res.get("gpu") or "?", want=res["gpu_check"].get("want") or "?"))
         elif s == "done" and res.get("avg"):
             self._fed({"avg": res["avg"], "low1": res.get("low1") or res["avg"], "low01": res.get("low01")})
         elif s == "cancelled" and self.stopping:
