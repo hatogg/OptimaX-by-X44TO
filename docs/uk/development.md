@@ -100,6 +100,20 @@ OptimaX/
 ├── fpstest.py          ← тест FPS через PresentMon
 ├── netlab.py           ← DNS, пінг до регіонів, bufferbloat
 ├── gpubench.py         ← GPU-тест: шейдер, OpenGL, вікно тесту, стрес-тест, датчики NVIDIA
+├── gpuselect.py        ← на якій карті малює GPU-тест (гібридні ноутбуки, майнінгова карта), перевірка, хто малював
+├── hwtests.py          ← Hardware Center: тести процесора, пам'яті й диска окремим процесом, датчики, аварійна зупинка
+├── vramtest.py         ← Hardware Center: перевірка відеопам'яті через буфери OpenGL
+├── storagehealth.py    ← SMART, журнал здоров'я NVMe, лічильники надійності Windows
+├── hwinfo.py           ← інструкції процесора, SMBIOS (плата, BIOS, слоти пам'яті), EDID, мережеві адаптери
+├── dumpanalyzer.py     ← дампи синіх екранів через cdb.exe (якщо встановлений), діагностика Windows, SFC / DISM
+├── procmon.py          ← фонові процеси під час ігор
+├── overlay.py          ← FPS-оверлей: потік PresentMon, визначення гри, звіт сесії
+├── overlay_ui.py       ← вікно FPS-оверлея і керування ним (Qt)
+├── perfdiag.py         ← що обмежує продуктивність, поради щодо андервольтингу
+├── inspection.py       ← перевірка ПК перед покупкою
+├── hwreport.py         ← звіти Hardware Center: HTML, JSON, PDF, порівняння
+├── pages_hwcenter.py   ← сторінка Hardware Center
+├── pages_hwc2.py       ← Hardware Center: фонові процеси, перевірка перед покупкою, звіти, оверлей
 ├── benchtools.py       ← FurMark 2, Superposition, Cinebench, OCCT, CrystalDiskMark, 3DMark
 ├── adblock.py          ← DNS-фільтр: сервер, списки, кеш, DoH, статистика, служба, системні DNS
 ├── guard.py            ← сторож налаштувань, пробний режим, обслуговування за розкладом

@@ -413,7 +413,16 @@ def _demo_frametimes(seconds: int) -> list:
 
 
 def capture(exe: str, seconds: int, log, progress) -> dict:
-    """Записує кадри гри exe протягом seconds секунд. Гра має бути запущена."""
+    """Записує кадри гри exe протягом seconds секунд. Гра має бути запущена. FPS-оверлей на час заміру ховається."""
+    import overlay as OV
+    OV.PAUSED.set()
+    try:
+        return _capture(exe, seconds, log, progress)
+    finally:
+        OV.PAUSED.clear()
+
+
+def _capture(exe: str, seconds: int, log, progress) -> dict:
     pm = find_presentmon()
     if not pm:
         raise RuntimeError(tr("fps.no_pm"))

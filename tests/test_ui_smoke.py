@@ -39,6 +39,7 @@ def check_hwc(st: dict) -> None:
         assert h[t] in ("pass", "warn"), (t, h)
     assert h["report"][1] >= 5 and h["report"][2] > 3000 and h["report"][3] > 1000, h["report"]
     assert h["tiles"] >= 9 and h["inspect"], h
+    assert isinstance(h["pdf"], int) and h["pdf"] > 1500, h["pdf"]
 
 
 @cases("demo,lang", CONFIGS)

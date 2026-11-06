@@ -139,6 +139,7 @@ The portable `OptimaX-<version>-portable.exe` runs without installation. You nee
 
 | Page | What's inside |
 | --- | --- |
+| [Hardware Center](docs/en/hardware-center.md) | Hardware diagnostics and tests, the FPS overlay, the pre-purchase PC check, reports, what existed and what was added |
 | [Guide](docs/en/guide.md) | Everything it can do: smart optimization, emergency rollback, benchmarks, ad blocker, install and uninstall |
 | [All optimizations](docs/en/tweaks.md) | 136 changes with explanations, profiles and a rollback mark, generated from the program code |
 | [FAQ](docs/en/faq.md) | Administrator rights, antivirus, SmartScreen, what to do if Windows doesn't start |

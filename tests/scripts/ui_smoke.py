@@ -402,6 +402,12 @@ P2.save_claimed(hc)
 hwc["inspect"] = hc.insp_state.text()
 rep = P2.current_report(hc)
 hwc["report"] = [rep["status"], len(rep["results"]), len(HR.to_html(rep)), len(HR.to_json(rep))]
+pdf = os.path.join(tempfile.mkdtemp(prefix="oxpdf_"), "report.pdf")
+try:
+    P2.pdf_writer(HR.to_html(rep, for_pdf=True), pdf)
+    hwc["pdf"] = os.path.getsize(pdf)
+except Exception as e:  # noqa: BLE001 — звіт про причину в результаті тесту
+    hwc["pdf"] = f"{type(e).__name__}: {e}"
 hc.show_section("overview")
 hc.refresh_overview()
 hwc["tiles"] = hc.ov_grid.count()

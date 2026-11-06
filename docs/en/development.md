@@ -100,6 +100,20 @@ OptimaX/
 ├── fpstest.py          ← FPS test through PresentMon
 ├── netlab.py           ← DNS, ping to regions, bufferbloat
 ├── gpubench.py         ← GPU test: shader, OpenGL, test window, stress test, NVIDIA sensors
+├── gpuselect.py        ← which GPU the GPU test renders on (hybrid laptops, mining card), checking who rendered
+├── hwtests.py          ← Hardware Center: CPU, RAM and disk tests in a separate process, sensors, emergency stop
+├── vramtest.py         ← Hardware Center: video memory check through OpenGL buffers
+├── storagehealth.py    ← SMART, NVMe health log, Windows reliability counters
+├── hwinfo.py           ← CPU instruction sets, SMBIOS (board, BIOS, memory slots), EDID, network adapters
+├── dumpanalyzer.py     ← blue screen dumps via cdb.exe (if installed), Windows diagnostics, SFC / DISM
+├── procmon.py          ← background processes during games
+├── overlay.py          ← FPS overlay: PresentMon stream, game detection, session report
+├── overlay_ui.py       ← FPS overlay window and its controller (Qt)
+├── perfdiag.py         ← what limits performance, undervolting advice
+├── inspection.py       ← pre-purchase PC check
+├── hwreport.py         ← Hardware Center reports: HTML, JSON, PDF, comparison
+├── pages_hwcenter.py   ← Hardware Center page
+├── pages_hwc2.py       ← Hardware Center: background processes, pre-purchase check, reports, overlay
 ├── benchtools.py       ← FurMark 2, Superposition, Cinebench, OCCT, CrystalDiskMark, 3DMark
 ├── adblock.py          ← DNS filter: server, lists, cache, DoH, statistics, service, system DNS
 ├── guard.py            ← settings guard, trial mode, scheduled maintenance

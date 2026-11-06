@@ -53,6 +53,7 @@ NEVER = {"explorer.exe", "chrome.exe", "msedge.exe", "firefox.exe", "opera.exe",
          "powerpnt.exe", "scrnsave.scr", "logonui.exe"}
 EXCLUSIVE = ("legacy flip", "legacy copy")
 SESSIONS_DIR = os.path.join(E.DATA_DIR, "sessions")
+PAUSED = threading.Event()  # тест FPS «до і після» чи розумна оптимізація міряє гру: оверлей ховається, щоб не впливати
 
 
 # ───────────────────────── кадри: статистика за вікно ─────────────────────────

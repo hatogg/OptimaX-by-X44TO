@@ -433,14 +433,16 @@ def current_report(page) -> dict:
 
 def pdf_writer(html_text: str, path: str) -> None:
     """HTML -> PDF засобами Qt (QTextDocument + QPdfWriter), без нових залежностей."""
+    from PyQt6.QtCore import QSizeF
     from PyQt6.QtGui import QPdfWriter, QTextDocument, QPageSize
     doc = QTextDocument()
     doc.setHtml(html_text)
     w = QPdfWriter(path)
     w.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
     w.setResolution(110)
-    doc.setPageSize(__import__("PyQt6.QtCore", fromlist=["QSizeF"]).QSizeF(w.width(), w.height()))
-    doc.print(w)
+    doc.setPageSize(QSizeF(w.width(), w.height()))
+    printer = getattr(doc, "print", None) or getattr(doc, "print_")  # PyQt6: print, PyQt5: print_
+    printer(w)
 
 
 def save_report(page, fmt: str):

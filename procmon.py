@@ -154,7 +154,8 @@ class Recorder:
 
     def finish(self, fps_series: list = None) -> dict:
         self.close()
-        return analyze(self.samples, self.game, fps_series, manual=self.manual, start=int(self.t0))
+        return analyze(self.samples, self.game, fps_series, manual=self.manual, start=int(self.t0),
+                       startup=startup_names())
 
 
 def _demo_sample(game: str, i: int) -> dict:
@@ -264,12 +265,20 @@ def save_session(cfg, sess: dict) -> list:
 
 
 def startup_names() -> set:
-    """exe програм з автозапуску (features.startup_items) — щоб порадити «вимкнути автозапуск», а не «закрити»."""
+    """exe програм з автозапуску (ключі Run у реєстрі) — щоб порадити «вимкнути автозапуск», а не «закрити».
+    Лише реєстр: швидко, без PowerShell (виклик — наприкінці гри, у потоці інтерфейсу)."""
+    if not E.IS_WIN:
+        return {"onedrive.exe", "discord.exe"}
     try:
         import features as F
         import ntpath
-        return {ntpath.basename(i.get("file") or i.get("cmd") or "").lower().strip('"') for i in F.startup_items()
-                if i.get("enabled")}
+        out = set()
+        for hive, path, _sub, _src in F.RUN_SOURCES:
+            for name, val, _t in E.reg_values(f"{hive}\\{path}"):
+                exe = ntpath.basename(F._exe_from_cmd(str(val))).lower()
+                if exe:
+                    out.add(exe)
+        return out
     except Exception:
         return set()
 

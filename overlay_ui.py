@@ -195,6 +195,10 @@ class OverlayController(QObject):
     # ── цикл ──
     def tick(self) -> None:
         c = self.cfg
+        if OV.PAUSED.is_set():  # іде замір FPS (fpstest): оверлей не має на нього впливати
+            if self.win and self.win.isVisible():
+                self.win.hide()
+            return
         if time.time() - self.known_ts > 60:
             self.known, self.known_ts = OV.known_games(), time.time()
         fg = OV.foreground() if E.IS_WIN else (self.game or {})

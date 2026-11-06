@@ -71,7 +71,7 @@ def build(hw: dict, info: dict = None, last: dict = None, bench: list = None, in
     rep = dict(format=FORMAT, version=E.VERSION, created=int(time.time()),
                computer=os.environ.get("COMPUTERNAME") if include_name else None,
                hardware=dict(cpu=hw.get("cpu"), cores=hw.get("cores"), threads=hw.get("threads"),
-                             gpus=[dict(name=n, vram_gb=round(v, 1)) for n, v, _ in hw.get("gpus") or []],
+                             gpus=[dict(name=n, vram_gb=round(v, 1), driver=d or None) for n, v, d in hw.get("gpus") or []],
                              ram_gb=round(hw.get("ram_gb") or 0, 1), ram_type=hw.get("ram_type"),
                              ram_speed=hw.get("ram_speed"), os=hw.get("os"), build=hw.get("build"),
                              vendor=hw.get("vendor"), model=hw.get("model"), laptop=hw.get("laptop"),
@@ -128,7 +128,10 @@ def to_html(rep: dict, for_pdf: bool = False) -> str:
            f'<p>{_e(tr("rep.overall"))}: {_badge(rep.get("status", HT.NA))}</p>',
            f'<h2>{_e(tr("rep.hw"))}</h2><table>']
     rows = [(tr("hwc.i.cpu"), f"{hwd.get('cpu') or ''} ({hwd.get('cores')}/{hwd.get('threads')})"),
-            (tr("hwc.i.gpu"), ", ".join(f"{g['name']} {g['vram_gb'] or ''} GB" for g in hwd.get("gpus") or [])),
+            (tr("hwc.i.gpu"), ", ".join(f"{g['name']} {g['vram_gb'] or ''} GB" + (f" · {tr('hwc.i.driver_date')} "
+                                                                                    f"{g['driver']}" if g.get("driver")
+                                                                                    else "")
+                                        for g in hwd.get("gpus") or [])),
             (tr("hwc.i.ram"), f"{hwd.get('ram_gb')} GB {hwd.get('ram_type') or ''} {hwd.get('ram_speed') or ''}"),
             (tr("hwc.i.system"), " ".join(x for x in (hwd.get("vendor"), hwd.get("model")) if x)),
             (tr("hwc.i.os"), f"{hwd.get('os') or ''} {hwd.get('build') or ''}")]
