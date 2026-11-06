@@ -2,7 +2,7 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
-## [Unreleased]
+## [6.8] — 2026-11-06
 
 Hardware Center: діагностика, тести й звіти про залізо в одному місці, FPS-оверлей в іграх і перевірка ПК перед покупкою. Докладно — [docs/uk/hardware-center.md](docs/uk/hardware-center.md).
 
@@ -408,6 +408,10 @@ A safety review of the whole tweak catalogue: ready-made profiles and the wizard
 
 </details>
 
+[6.8]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.8
+[6.7]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.7
+[6.6]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.6
+[6.5]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.5
 [6.4.3]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.4.3
 [6.4.2]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.4.2
 [6.4.1]: https://github.com/hatogg/OptimaX-by-X44TO/releases/tag/v6.4.1

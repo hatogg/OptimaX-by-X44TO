@@ -195,6 +195,36 @@ STRINGS = {
 
     # ── «Що нового» ──
     "wn.title": ("Що нового в OptimaX {v}", "Что нового в OptimaX {v}", "What's new in OptimaX {v}"),
+    "wn.68.hwc": ("Hardware Center у групі «Пристрій»: тести процесора, пам'яті, відеопам'яті, дисків (SMART і NVMe), "
+                  "батареї, екрана й периферії, стрес-тести з аварійною зупинкою за температурою і звіти HTML, JSON "
+                  "та PDF.",
+                  "Hardware Center в группе «Устройство»: тесты процессора, памяти, видеопамяти, дисков (SMART и "
+                  "NVMe), батареи, экрана и периферии, стресс-тесты с аварийной остановкой по температуре и отчёты "
+                  "HTML, JSON и PDF.",
+                  "Hardware Center in the Device group: CPU, RAM, VRAM, disk (SMART and NVMe), battery, screen and "
+                  "peripheral tests, stress tests with an emergency stop on temperature, and HTML, JSON and PDF "
+                  "reports."),
+    "wn.68.overlay": ("FPS-оверлей в іграх: FPS, 1% low, час кадру й датчики поверх гри, без втручання в її процес. "
+                      "Увімкнути — у Hardware Center, показати чи сховати — Ctrl+Shift+F10.",
+                      "FPS-оверлей в играх: FPS, 1% low, время кадра и датчики поверх игры, без вмешательства в её "
+                      "процесс. Включить — в Hardware Center, показать или скрыть — Ctrl+Shift+F10.",
+                      "An in-game FPS overlay: FPS, 1% lows, frametime and sensors on top of the game without touching "
+                      "its process. Turn it on in Hardware Center; Ctrl+Shift+F10 shows or hides it."),
+    "wn.68.gpu": ("Ноутбук із двома відеокартами: у GPU-тесті можна вибрати дискретну, а OptimaX перевіряє, яка карта "
+                  "справді малювала.",
+                  "Ноутбук с двумя видеокартами: в GPU-тесте можно выбрать дискретную, а OptimaX проверяет, какая "
+                  "карта действительно рисовала.",
+                  "Laptops with two GPUs: the GPU test lets you pick the discrete card, and OptimaX checks which card "
+                  "really rendered."),
+    "wn.68.buy": ("Перевірка ПК перед покупкою: 14 кроків і порівняння з тим, що обіцяє продавець.",
+                  "Проверка ПК перед покупкой: 14 шагов и сравнение с тем, что обещает продавец.",
+                  "Pre-purchase PC check: 14 steps and a comparison with what the seller promises."),
+    "wn.68.diag": ("Хто заважав грі у фоні, що обмежує продуктивність, аналіз дампів синіх екранів і SFC / DISM — "
+                   "за вашим підтвердженням.",
+                   "Кто мешал игре в фоне, что ограничивает производительность, анализ дампов синих экранов и "
+                   "SFC / DISM — по вашему подтверждению.",
+                   "What got in the game's way in the background, what limits performance, blue screen dump "
+                   "analysis, and SFC / DISM after you confirm."),
     "wn.67.safe": ("Безпечніше: журнал відкату, PresentMon і оновлення тепер лежать у захищеній папці, куди інші "
                    "програми не можуть нічого підкинути.",
                    "Безопаснее: журнал отката, PresentMon и обновления теперь лежат в защищённой папке, куда другие "
