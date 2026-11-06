@@ -340,11 +340,6 @@ def test_dxgi_d3d12_vulkan_probe_on_real_windows():
         assert a["dx12"] in (True, False, None)
     for d in data["vulkan"]:  # на віртуальних машинах Vulkan зазвичай немає — тоді список порожній
         assert d["name"] and re.match(r"^\d+\.\d+\.\d+$", d["api"]), d
-    # «Висока продуктивність» / «Енергозбереження» за DXGI (IDXGIFactory6): LUID з того самого переліку адаптерів
-    assert not [e for e in data["errors"] if e.startswith("pref")], data["errors"]
-    luids = {a["luid"] for a in data["dxgi"]}
-    assert isinstance(data["pref"], dict) and set(data["pref"]) <= {"high", "low"}, data["pref"]
-    assert all(v in luids for v in data["pref"].values()), (data["pref"], luids)
     s = GI.summary(data)
     assert set(s) >= {"gpu", "luid", "dx12", "vulkan", "display"}
 

@@ -195,12 +195,12 @@ STRINGS = {
 
     # ── «Що нового» ──
     "wn.title": ("Що нового в OptimaX {v}", "Что нового в OptimaX {v}", "What's new in OptimaX {v}"),
-    "wn.681.hybrid": ("P106 разом з іншою відеокартою NVIDIA (наприклад, GT 710 для монітора): OptimaX сама каже Windows, "
-                      "що ігри має малювати P106, і після перезавантаження перевіряє, чи Windows її послухала.",
-                      "P106 вместе с другой видеокартой NVIDIA (например, GT 710 для монитора): OptimaX сама говорит "
-                      "Windows, что игры должна рисовать P106, и после перезагрузки проверяет, послушалась ли Windows.",
-                      "A P106 next to another NVIDIA card (say, a GT 710 for the monitor): OptimaX tells Windows the P106 "
-                      "should render games and, after a restart, checks that Windows listened."),
+    "wn.681.nvpair": ("Монітор на іншій відеокарті NVIDIA (наприклад, GT 710) поруч з P106: OptimaX тепер прямо каже, що "
+                      "для ігор це не працює, і що зробити — замість поради перевстановити драйвер.",
+                      "Монитор на другой видеокарте NVIDIA (например, GT 710) рядом с P106: OptimaX теперь прямо "
+                      "говорит, что для игр это не работает, и что сделать, — вместо совета переустановить драйвер.",
+                      "Monitor on another NVIDIA card (say, a GT 710) next to a P106: OptimaX now says plainly that this "
+                      "doesn't work for games and what to do, instead of telling you to reinstall the driver."),
     "wn.681.check": ("Перевірка «на якій карті малює гра» з двома картами NVIDIA більше не каже «малює P106», коли малює "
                      "карта з монітором.",
                      "Проверка «на какой карте рисует игра» с двумя картами NVIDIA больше не говорит «рисует P106», "

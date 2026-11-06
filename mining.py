@@ -1,15 +1,15 @@
 """
 OptimaX — ігри на майнінговій відеокарті (P106 / P104 / P102, CMP HX).
 
-У таких карт немає відеовиходів: монітор підключено до материнської плати (картинку виводить вбудована графіка) або
-до другої, слабшої відеокарти (P106 + GT 710). Щоб гру малювала майнінгова карта:
+У таких карт немає відеовиходів: монітор підключено до материнської плати, і картинку виводить вбудована
+графіка. Щоб гру малювала майнінгова карта:
 
 • DirectX 10 / 11 / 12 (більшість ігор). Windows уміє малювати на одній карті, а показувати через іншу, — треба лише
   призначити exe гри на «Високу продуктивність» (HKCU\\…\\DirectX\\UserGpuPreferences, GpuPreference=2). OptimaX сама
   знаходить встановлені ігри (Steam, Epic, GOG, Ubisoft і «Мої ігри») і призначає кожен їхній exe — з відкатом через
-  журнал. Значення, яке вже хтось задав (користувач у «Графіці» чи «Мої ігри»), не чіпаємо. Якщо монітор на карті
-  того самого виробника, Windows сама не знає, котра з двох NVIDIA «висока продуктивність», — тоді OptimaX спершу
-  ставить EnableMsHybrid у розділи драйверів обох карт (hybrid_state / _apply_hybrid).
+  журнал. Значення, яке вже хтось задав (користувач у «Графіці» чи «Мої ігри»), не чіпаємо. Монітор на другій карті
+  NVIDIA для цього не годиться: офіційний драйвер дає майнінговій карті малювати лише з вбудованою Intel / AMD
+  (nv_pair_state) — OptimaX про це попереджає.
 • DirectX 9 / 8 і OpenGL. Вони бачать лише відеокарту, до якої підключено монітор, тож налаштування «Графіка» на них
   не діє (перевірено на P106 + HD 4000: CS:Source з «Високою продуктивністю» однаково малює HD 4000). Обхід — шар-
   перекладач у папці гри, лише за згодою й для кожної гри окремо:
@@ -490,18 +490,14 @@ def gpu_tweak(game: str, exe: str, gpu: str) -> E.Tweak:
     return t
 
 
-# ───────────────────────── яку карту Windows вважає «високопродуктивною» ─────────────────────────
+# ───────────────────────── монітор на другій NVIDIA (P106 + GT 710) ─────────────────────────
 # Монітор на вбудованій графіці: Windows сама вважає її енергоощадною, а майнінгову карту — високопродуктивною, тож
-# GpuPreference=2 веде гру на майнінгову карту. Монітор на дискретній карті того самого виробника (P106 + GT 710):
-# драйвер у них спільний, обидві для Windows «дискретні», і «Висока продуктивність» дістається карті з монітором —
-# майнінгової в налаштуванні «Графіка» немає взагалі. Драйвер NVIDIA читає з розділу кожної карти
-# (Class\{4d36e968…}\000X) параметр EnableMsHybrid: 1 — висока продуктивність, 2 — енергозбереження. Діє після
-# перезавантаження. Що вийшло, OptimaX не вгадує, а питає DXGI, яку карту Windows дає на «Високу продуктивність»
-# (gpuinfo._gpu_preference). Драйвер обом картам потрібен один і той самий (GT 710 / Kepler разом з P106 — 472.12).
-HYBRID_ID = "mining:hybrid"
-HYBRID_VALUE = "EnableMsHybrid"
-HYBRID_RENDER, HYBRID_DISPLAY = 1, 2
-HYBRID_VENDORS = ("nvidia",)  # перевірено лише з драйвером NVIDIA; у пари карт різних виробників драйвери різні
+# GpuPreference=2 веде гру на майнінгову карту. Монітор на другій карті NVIDIA — інша річ: офіційний драйвер NVIDIA
+# дає майнінговій карті малювати лише в парі з вбудованою графікою Intel / AMD. Поруч з іншою NVIDIA вона працює в
+# режимі TCC (лише обчислення, DirectX її не бачить), а переведена в WDDM (nvidia-smi -dm 0) зупиняється з кодом 43.
+# EnableMsHybrid (1 — майнінговій, 2 — карті з монітором) цього не змінює: перевірено на P106-100 + GT 710 з драйвером
+# 472.12. Тож OptimaX тут нічого не пише в розділи драйверів, а чесно каже, що ця пара для ігор не працює, і що робити.
+NV_PAIR_VENDORS = ("nvidia",)
 _DEV_RE = re.compile(r"ven_([0-9a-f]{4})&dev_([0-9a-f]{4})", re.I)
 
 
@@ -513,31 +509,26 @@ def _cached_probe() -> dict:
 
 
 def class_keys() -> list:
-    """Розділи драйверів відеокарт: [{sub, path, desc, ven, dev, hybrid}]. Розділи без PCI-ідентифікатора (стандартний
+    """Розділи драйверів відеокарт: [{sub, path, desc, ven, dev}]. Розділи без PCI-ідентифікатора (стандартний
     адаптер Microsoft, віддалений робочий стіл) пропускаємо. Лише читання."""
     out = []
     for sub in E.reg_subkeys(E.GPU_CLASS):
         if not sub.isdigit():
             continue
         path = E.GPU_CLASS + "\\" + sub
-        mid, desc, hy = (E.reg_get(path, n) for n in ("MatchingDeviceId", "DriverDesc", HYBRID_VALUE))
+        mid, desc = (E.reg_get(path, n) for n in ("MatchingDeviceId", "DriverDesc"))
         m = _DEV_RE.search(str(mid[1]) if mid else "")
         if not m:
             continue
         out.append(dict(sub=sub, path=path, desc=str(desc[1]) if desc else "", ven=int(m.group(1), 16),
-                        dev=int(m.group(2), 16), hybrid=hy[1] if hy and isinstance(hy[1], int) else None))
+                        dev=int(m.group(2), 16)))
     return out
 
 
-def _keys_for(keys: list, a: dict) -> list:
-    return [k for k in keys if k["ven"] == a.get("ven") and k["dev"] == a.get("dev")]
-
-
-def hybrid_pair(pr: dict, keys: list = None) -> dict:
-    """Майнінгова карта й карта з монітором того самого виробника — випадок, коли Windows сама не знає, котра з них
-    «висока продуктивність». -> {render, display: адаптери DXGI, vendor} або {}.
-    Поки EnableMsHybrid немає, драйвер NVIDIA часто не дає майнінговій карті DirectX зовсім — DXGI її не бачить. Тоді
-    вона знаходиться за PCI ID серед розділів драйверів (keys — class_keys()), без LUID."""
+def nv_pair(pr: dict, keys: list = None) -> dict:
+    """Майнінгова карта NVIDIA, а монітор — на іншій карті NVIDIA. -> {render, display: адаптери, vendor} або {}.
+    DirectX майнінгової карти тут зазвичай не бачить (TCC / код 43) — тоді вона знаходиться за PCI ID серед розділів
+    драйверів (keys — class_keys()), без LUID."""
     import gpuinfo as GI
     pr = pr or {}
     m, d = GI.mining_adapter(pr), GI.display_adapter(pr)
@@ -552,88 +543,19 @@ def hybrid_pair(pr: dict, keys: list = None) -> dict:
     if m.get("luid") and m.get("luid") == d.get("luid"):
         return {}
     vendor = GI.VENDOR_IDS.get(d.get("ven"), "")
-    if vendor not in HYBRID_VENDORS or GI.VENDOR_IDS.get(m.get("ven")) != vendor:
+    if vendor not in NV_PAIR_VENDORS or GI.VENDOR_IDS.get(m.get("ven")) != vendor:
         return {}
     return dict(render=m, display=d, vendor=vendor)
 
 
-def hybrid_state(pr: dict = None) -> dict:
-    """Чи дає Windows «Високу продуктивність» майнінговій карті. -> {state, render, display, …}; state:
-    na — налаштовувати нічого (монітор на вбудованій графіці чи на карті іншого виробника);
-    ok — перевірено DXGI: «Висока продуктивність» = майнінгова карта;
-    off — значень EnableMsHybrid немає чи вони не ті, а Windows віддає «Високу продуктивність» карті з монітором;
-    pending — значення стоять, Windows їх ще не перечитала: потрібне перезавантаження;
-    wrong — OptimaX поставила значення, ПК відтоді перезавантажувався, а Windows і далі обирає карту з монітором;
-    set — значення стоять, а перевірити нічим (Windows старша за 1803 чи перевірка DXGI не вдалася);
-    missing — розділу драйвера однієї з карт у реєстрі немає (драйвер не встановлено?)."""
-    import features as F
-    import gpuinfo as GI
+def nv_pair_state(pr: dict = None) -> dict:
+    """-> {state: "na" | "nvpair", render, display, visible}: visible — чи бачить майнінгову карту DirectX."""
     pr = pr if pr is not None else _cached_probe()
-    keys = class_keys()
-    pair = hybrid_pair(pr, keys)
+    pair = nv_pair(pr)
     if not pair:
         return dict(state="na")
-    res = dict(render=pair["render"].get("name", ""), display=pair["display"].get("name", ""),
-               visible=bool(pair["render"].get("luid")))
-    kr, kd = _keys_for(keys, pair["render"]), _keys_for(keys, pair["display"])
-    res.update(keys_render=[k["sub"] for k in kr], keys_display=[k["sub"] for k in kd])
-    high = (pr.get("pref") or {}).get("high")
-    if high and res["visible"] and high == pair["render"]["luid"]:
-        return dict(res, state="ok")
-    if not kr or not kd:
-        return dict(res, state="missing")
-    if not (all(k["hybrid"] == HYBRID_RENDER for k in kr) and all(k["hybrid"] == HYBRID_DISPLAY for k in kd)):
-        return dict(res, state="off")
-    if not high:
-        return dict(res, state="set")
-    at = float((F.CFG["mining"] or {}).get("hybrid_at") or 0)
-    rebooted = bool(at) and GI.boot_time() > at and float(pr.get("ts") or 0) > at
-    return dict(res, state="wrong" if rebooted else "pending")
-
-
-def hybrid_tweak(pr: dict = None) -> E.Tweak:
-    """Твік лише з тими значеннями, яких ще бракує (без операцій, якщо все вже стоїть)."""
-    pr = pr if pr is not None else _cached_probe()
-    keys = class_keys()
-    pair = hybrid_pair(pr, keys)
-    ops = []
-    if pair:
-        for a, val in ((pair["render"], HYBRID_RENDER), (pair["display"], HYBRID_DISPLAY)):
-            ops += [E.R(k["path"], HYBRID_VALUE, val) for k in _keys_for(keys, a) if k["hybrid"] != val]
-    t = E.Tweak(HYBRID_ID, "game", ops, reboot=True)
-    t._title = tr("mg.t_hybrid", gpu=(pair.get("render") or {}).get("name", "GPU"),
-                  display=(pair.get("display") or {}).get("name", "?"))
-    return t
-
-
-def _apply_hybrid(log, pr: dict = None) -> dict:
-    """Поставити EnableMsHybrid, якщо це той випадок і значень ще немає. Через журнал: «Повернути все» прибирає їх."""
-    import features as F
-    pr = pr if pr is not None else _cached_probe()
-    st = hybrid_state(pr)
-    if st["state"] == "missing":
-        log(tr("mg.hybrid_missing", gpu=st["render"], display=st["display"]))
-    if st["state"] != "off":
-        return st
-    t = hybrid_tweak(pr)
-    if not t.ops:
-        return st
-    if not E.DRY_RUN and not E.is_admin():  # розділи драйверів — у HKLM; фонова перевірка повторювала б це щоразу
-        log(tr("mg.hybrid_admin"))
-        return dict(st, error="admin")
-    r = E.apply_tweaks([t], log, header=False, by="mining")
-    if not r.get("ok"):
-        return dict(st, error=r.get("error") or "fail")
-    m = dict(F.CFG["mining"] or {})
-    m["hybrid_at"] = int(time.time())
-    F.CFG["mining"] = m
-    log(tr("mg.hybrid_done", gpu=st["render"], display=st["display"]))
-    return dict(st, state="pending", applied=True)
-
-
-@_exclusive
-def set_hybrid(log, pr: dict = None) -> dict:
-    return _apply_hybrid(log, pr)
+    return dict(state="nvpair", render=pair["render"].get("name", ""), display=pair["display"].get("name", ""),
+                visible=bool(pair["render"].get("luid")))
 
 
 # ───────────────────────── шари-перекладачі: Mesa (OpenGL) і DXVK (DirectX 9) ─────────────────────────
@@ -733,15 +655,15 @@ def game_status(g: dict) -> dict:
 def assign(log, hw: dict, games: list = None, pr: dict = None) -> dict:
     """Призначає всі ще не призначені exe ігор на майнінгову карту. DirectX 9 і Adobe AIR пропускаємо: Windows їх на
     карту без виходів не перенесе (DirectX 9 бачить лише карту з монітором) — для DirectX 9 є DXVK.
-    Монітор на карті того самого виробника (P106 + GT 710) — спершу EnableMsHybrid, інакше «Висока продуктивність»
-    дістанеться карті з монітором (_apply_hybrid)."""
+    Монітор на другій NVIDIA (nv_pair_state): призначення однаково робимо — запрацюють, щойно монітор перейде на
+    вбудовану графіку, — але в журнал пишемо, що зараз ігри малюватиме карта з монітором."""
     gpu = model(hw)
     games = discover() if games is None else games
     todo, res = [], dict(games=len(games), assigned=0, already=0, kept=0, dx9=0, gl=0, failed=0)
-    hy = _apply_hybrid(log, pr)
-    res["hybrid"] = hy["state"]
-    if hy.get("applied"):
-        res["hybrid_applied"] = True
+    pair = nv_pair_state(pr)
+    if pair["state"] == "nvpair":
+        res["nvpair"] = True
+        log(tr("mg.nvpair_log", gpu=pair["render"] or gpu, display=pair["display"]))
     for g in games:
         if current_mode(g) == "original":
             res["original"] = res.get("original", 0) + 1

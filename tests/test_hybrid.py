@@ -1,5 +1,6 @@
-"""Майнінгова карта + монітор на другій NVIDIA (P106 + GT 710): EnableMsHybrid з відкатом (mining.hybrid_*), і
-перевірка «на якій карті малює гра», яка з двома NVIDIA не може вірити завантаженому драйверу (gpuinfo.path_verdict)."""
+"""Майнінгова карта + монітор на другій NVIDIA (P106 + GT 710): офіційний драйвер дає P106 малювати лише з вбудованою
+Intel / AMD, тож OptimaX чесно каже, що пара для ігор не працює (mining.nv_pair*), нічого не пишучи в розділи драйверів;
+і перевірка «на якій карті малює гра», яка з двома NVIDIA не може вірити завантаженому драйверу (gpuinfo.path_verdict)."""
 import json
 import os
 import subprocess
@@ -21,31 +22,31 @@ RX = dict(name="AMD Radeon RX 550", ven=GI.AMD, dev=0x699F, vram_mb=4000, luid="
 
 # ── хто «пара»: лише майнінгова карта + карта з монітором того самого виробника ──
 def test_pair_only_for_a_second_nvidia_with_the_monitor():
-    pair = MG.hybrid_pair({"dxgi": [GT, P106]})
+    pair = MG.nv_pair({"dxgi": [GT, P106]})
     assert pair["render"]["luid"] == "L_P106" and pair["display"]["luid"] == "L_GT" and pair["vendor"] == "nvidia"
     # порядок у DXGI неважливий
-    assert MG.hybrid_pair({"dxgi": [P106, GT]})["display"]["luid"] == "L_GT"
-    # монітор на HD 4000: Windows сама вважає вбудовану енергоощадною — налаштовувати нічого
-    assert MG.hybrid_pair(GI.DEMO_PROBE["mining"]) == {}
+    assert MG.nv_pair({"dxgi": [P106, GT]})["display"]["luid"] == "L_GT"
+    # монітор на HD 4000 — звичайний випадок, пари немає
+    assert MG.nv_pair(GI.DEMO_PROBE["mining"]) == {}
     # монітор на AMD: драйвери різні, EnableMsHybrid NVIDIA тут не про те
-    assert MG.hybrid_pair({"dxgi": [RX, P106]}) == {}
+    assert MG.nv_pair({"dxgi": [RX, P106]}) == {}
     # ноутбук з Optimus: RTX без виходів — не майнінгова карта
-    assert MG.hybrid_pair(GI.DEMO_PROBE["laptop"]) == {}
-    assert MG.hybrid_pair({}) == {} and MG.hybrid_state({})["state"] == "na"
+    assert MG.nv_pair(GI.DEMO_PROBE["laptop"]) == {}
+    assert MG.nv_pair({}) == {} and MG.nv_pair_state({})["state"] == "na"
 
 
 def test_a_lone_card_with_outputs_is_not_the_mining_card():
-    # P106 ще без DirectX: DXGI бачить лише GT 710 — це карта з монітором, а не майнінгова
+    # P106 без DirectX (TCC / код 43): DXGI бачить лише GT 710 — це карта з монітором, а не майнінгова
     assert GI.mining_adapter({"dxgi": [GT]}) == {}
     assert GI.summary({"dxgi": [GT]})["gpu"] == "" and GI.summary({"dxgi": [GT]})["display"] == GT["name"]
     # P106 з «позиченими» виходами вбудованої — і далі майнінгова (за PCI ID)
     hd = dict(name="Intel(R) HD Graphics 4000", ven=GI.INTEL, dev=0x0162, luid="L_HD", outputs=1)
     assert GI.mining_adapter({"dxgi": [hd, dict(P106, outputs=1)]})["luid"] == "L_P106"
     # без реєстру (не Windows) P106 ніде не знайти — пари немає
-    assert MG.hybrid_pair({"dxgi": [GT]}, keys=[]) == {}
-    keys = [dict(sub="0001", path="x", desc="NVIDIA GeForce GT 710", ven=0x10DE, dev=0x128B, hybrid=None),
-            dict(sub="0002", path="y", desc="NVIDIA P106-100", ven=0x10DE, dev=0x1C07, hybrid=None)]
-    pair = MG.hybrid_pair({"dxgi": [GT]}, keys=keys)
+    assert MG.nv_pair({"dxgi": [GT]}, keys=[]) == {}
+    keys = [dict(sub="0001", path="x", desc="NVIDIA GeForce GT 710", ven=0x10DE, dev=0x128B),
+            dict(sub="0002", path="y", desc="NVIDIA P106-100", ven=0x10DE, dev=0x1C07)]
+    pair = MG.nv_pair({"dxgi": [GT]}, keys=keys)
     assert pair["render"] == dict(name="NVIDIA P106-100", ven=0x10DE, dev=0x1C07, luid="")
     assert pair["display"]["luid"] == "L_GT"
 
@@ -100,50 +101,22 @@ def test_driver_keys_are_matched_by_pci_id():
     r = fake_report()
     assert r["keys"] == [["0001", "10DE:128B", "NVIDIA GeForce GT 710"], ["0002", "10DE:1C07", "NVIDIA P106-100"]], \
         "the basic Microsoft adapter and service subkeys are not cards"
-    assert r["igpu"] == "na" and r["igpu_tweak"] == 0
 
 
-def test_assign_sets_the_priority_once():
+def test_pair_is_reported_as_not_working_for_games():
     r = fake_report()
-    assert r["before"] == "off"
-    assert r["assign1"] == {"hybrid": "pending", "hybrid_applied": True}
-    assert r["after"] == {"gt710": 2, "p106": 1, "basic": None}
-    assert r["journal"] and r["pending"] == "pending"
-    assert r["assign2"] == {"hybrid": "pending", "hybrid_applied": None}
-    assert r["journal_same"], "a second run writes nothing"
-    assert r["set_again"] is False
+    h = r["hidden"]
+    assert (h["state"], h["visible"], h["render"], h["display"], h["summary_gpu"]) == \
+        ("nvpair", False, "NVIDIA P106-100", "NVIDIA GeForce GT 710", "")
+    assert h["rows"] == ["pci", "nv_pair", "display"], h["rows"]
+    assert "no_dxgi" not in h["rows"], "not a broken driver: don't send the user to reinstall it"
+    assert r["findings"] == ["gd_nv_pair"]
+    assert r["visible"]["state"] == "nvpair" and "nv_pair" in r["visible"]["rows"]
+    assert r["igpu"]["state"] == "na" and "nv_pair" not in r["igpu"]["rows"], "monitor on HD 4000 is the normal case"
 
 
-def test_state_follows_what_windows_reports():
+def test_scan_warns_and_writes_nothing_to_driver_keys():
     r = fake_report()
-    assert r["ok"] == "ok", "DXGI gives High performance to the P106"
-    assert r["wrong"] == "wrong", "rebooted since, and Windows still picks the GT 710"
-    assert r["stale_probe"] == "pending", "a check from before the change proves nothing"
-    assert r["no_pref"] == "set", "no EnumAdapterByGpuPreference: OptimaX doesn't claim it works"
-
-
-def test_revert_removes_only_our_values():
-    r = fake_report()
-    assert r["rescue"] == 2, "OptimaX-Rescue.cmd must be able to remove both values"
-    assert r["reverted"] == {"gt710": None, "p106": None, "basic": None} and r["after_revert"] == "off"
-    assert r["manual"] == "pending" and r["manual_assign"] is False
-    assert r["manual_kept"] == {"gt710": 2, "p106": 1, "basic": None}, "values the user set by hand stay"
-    assert r["partial_ops"] == [["0001", 2]], "only the missing value is written"
-    assert r["partial_after"] == {"gt710": 2, "p106": 1, "basic": None}
-    assert r["partial_reverted"] == {"gt710": 0, "p106": 1, "basic": None}, "the user's own 0 comes back"
-
-
-def test_mining_card_hidden_from_directx():
-    r = fake_report()
-    assert r["hidden"] == {"state": "off", "visible": False, "render": "NVIDIA P106-100", "ops": 2, "summary_gpu": "",
-                           "rows": ["pci", "no_dxgi_pair", "display"]}, r["hidden"]
-    assert "no_dxgi" not in r["hidden"]["rows"], "not a broken driver: OptimaX fixes this itself"
-    assert r["hidden_assign"] is True and r["hidden_vals"] == {"gt710": 2, "p106": 1, "basic": None}
-    assert r["hidden_ok"] == "ok", "after the restart DXGI sees the P106 and gives it High performance"
-    assert r["hidden_reverted"] == {"gt710": None, "p106": None, "basic": None}
-
-
-def test_no_admin_and_missing_driver():
-    r = fake_report()
-    assert r["no_admin"] == "admin" and r["no_admin_vals"] == {"gt710": None, "p106": None, "basic": None}
-    assert r["missing"] == "missing" and r["missing_assign"] == "missing" and r["log_missing"]
+    assert r["assign_nvpair"] is True and r["log_nvpair"]
+    assert r["assign_igpu"] is False
+    assert r["driver_keys_untouched"] and not r["journal_hybrid"]

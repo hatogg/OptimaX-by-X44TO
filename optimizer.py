@@ -672,10 +672,6 @@ class Main(QWidget):
                 fresh = (r or {}).get("fresh") if isinstance(r, dict) else None
                 if fresh:
                     self.toast(tr("mg.new_games", n=len(fresh), names=", ".join(fresh[:3])))
-                if isinstance(r, dict) and r.get("hybrid_applied"):
-                    if card:
-                        card.show_probe(F.CFG["gpu_probe"] if isinstance(F.CFG["gpu_probe"], dict) else None)
-                    self.toast(tr("mg.hy.reboot", gpu=MG.model(hw)))
             self.run_quick(tr("mg.title", gpu=MG.model(hw)), job, silent=True, on_done=done)
         elif (F.CFG["booster"].get("found") and F.game_exes_due() and not self._workers
               and QApplication.activeModalWidget() is None):

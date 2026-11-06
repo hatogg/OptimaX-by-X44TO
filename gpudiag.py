@@ -44,13 +44,16 @@ def driver_report(hw: dict, pr: dict) -> dict:
     if not isinstance(pr, dict) or "dxgi" not in pr:  # перевірки ще не було — про DirectX і Vulkan нічого не кажемо
         return dict(model=model, driver_name=drv_name, driver="", dx12=None, vulkan=None, vk_api="", display="",
                     rows=rows, probed=False)
+    import mining as MG
+    # монітор на другій NVIDIA: офіційний драйвер дає майнінговій карті малювати лише з вбудованою Intel / AMD —
+    # це не «поганий драйвер», тож замість поради про драйвер кажемо, що пара для ігор не годиться
+    pair = MG.nv_pair(pr or {})
+    if pair:
+        rows.append(("bad", "nv_pair", dict(model=model or pair["render"].get("name") or "GPU",
+                                            display=pair["display"].get("name", "?"))))
     if not s.get("gpu"):
-        import mining as MG
-        # монітор на другій NVIDIA: DirectX майнінгової карти не бачить, доки немає EnableMsHybrid — це не «поганий
-        # драйвер», а те, що OptimaX налаштовує (рядок «Пріоритет карт» нижче)
-        pair = MG.hybrid_pair(pr or {})
-        rows.append(("warn", "no_dxgi_pair", dict(model=model or "GPU", display=pair["display"].get("name", "?")))
-                    if pair else ("bad", "no_dxgi", dict(model=model or "GPU")))
+        if not pair:
+            rows.append(("bad", "no_dxgi", dict(model=model or "GPU")))
     else:
         if s.get("dx12"):
             rows.append(("ok", "dx12", {}))
@@ -85,7 +88,7 @@ def driver_findings(hw: dict, pr: dict) -> list:
     out = []
     rep = driver_report(hw, pr)
     for level, key, kw in rep["rows"]:
-        if level in ("bad", "warn") and key in ("no_dxgi", "no_dxgi_pair", "no_vulkan", "no_dx12", "igpu_basic",
+        if level in ("bad", "warn") and key in ("no_dxgi", "nv_pair", "no_vulkan", "no_dx12", "igpu_basic",
                                                 "vram_small"):
             out.append(_f(f"gd_{key}", level, ("hint", "mining"), **dict({"model": rep["model"] or "GPU"}, **kw)))
     return out
