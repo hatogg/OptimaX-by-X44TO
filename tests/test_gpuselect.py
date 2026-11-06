@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+import time
 
 from _util import ROOT
 
@@ -146,22 +147,27 @@ def test_child_arguments_and_environment():
     assert GB._plan_args({}, "C:\\old")[2] == "C:\\old", "the mining-card Mesa path still works without a plan"
 
 
+def _finish(run, timeout: float = 10.0) -> dict:
+    """Демо-тест іде за годинником: на Windows time.time() крокує по ~15 мс, тож чекаємо, а не рахуємо опитування."""
+    end = time.time() + timeout
+    st = {}
+    while time.time() < end:
+        st = run.poll()
+        if st.get("state") == "done":
+            break
+        time.sleep(0.005)
+    return st
+
+
 def test_demo_run_on_the_chosen_card():
     os.environ.setdefault("OPTIMAX_DEMO", "laptop")
     GB.DemoRun.SPEED = 100000.0
     nv = GB.DemoRun("1080p", "bench", 1, adapter=GS.plan(laptop()[1], laptop()))
-    st = {}
-    for _ in range(200):
-        st = nv.poll()
-        if st.get("state") == "done":
-            break
+    st = _finish(nv)
     r = st["result"]
     assert r["gpu"] == "NVIDIA GeForce RTX 4050 Laptop GPU" and r["gpu_check"]["status"] == "confirmed", r.get("gpu_check")
     assert r["adapter_key"] == "10DE-28A1-1E1F1043"
     ig = GB.DemoRun("1080p", "bench", 1, adapter=GS.plan(laptop()[0], laptop()))
-    for _ in range(200):
-        st = ig.poll()
-        if st.get("state") == "done":
-            break
+    st = _finish(ig)
     assert st["result"]["avg"] < r["avg"] * 0.5, "the integrated GPU is much slower in the demo, as in real life"
     json.dumps(r)  # результат зберігається в налаштуваннях — лише прості типи
