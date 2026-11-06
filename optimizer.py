@@ -28,6 +28,12 @@ if __name__ == "__main__":
     if "--gpu-probe" in sys.argv:  # що бачать DirectX і Vulkan — окремим процесом, щоб збій драйвера не закрив програму
         import gpuinfo
         sys.exit(gpuinfo.probe_child(sys.argv))
+    if any(a.startswith("--hw-test=") for a in sys.argv):  # Hardware Center: тест процесора, пам'яті чи диска
+        import hwtests
+        sys.exit(hwtests.child_main(sys.argv))
+    if "--vram-test" in sys.argv:  # Hardware Center: перевірка відеопам'яті на вибраній карті
+        import vramtest
+        sys.exit(vramtest.run_child(sys.argv))
     if any(a == "--selftest" or a.startswith("--selftest=") for a in sys.argv):
         import selftest  # самоперевірка збірки (CI): тимчасові налаштування й режим перегляду — до імпорту engine
         selftest.prepare(sys.argv)
@@ -58,6 +64,7 @@ import whatsnew as WN
 from i18n import tr
 from pages_extra import DiagnosePage, NetworkPage, AppsPage
 from pages_lab import BenchPage, AdblockPage
+from pages_hwcenter import HwCenterPage
 import sharecard as SC
 import smart_ui as SM
 from pages_optimize import OptimizePage, HomePage
@@ -75,8 +82,8 @@ NAV = [
                         ("library", "library", "nav.library"), ("games", "gamepad", "nav.games"),
                         ("diagnose", "gauge", "nav.diagnose"),
                         ("bench", "bolt", "nav.bench")]),
-    ("nav.g.device", [("hardware", "chip", "nav.hardware"), ("laptop", "laptop", "nav.laptop"),
-                      ("network", "globe", "nav.network")]),
+    ("nav.g.device", [("hwcenter", "hwc", "nav.hwc"), ("hardware", "chip", "nav.hardware"),
+                      ("laptop", "laptop", "nav.laptop"), ("network", "globe", "nav.network")]),
     ("nav.g.tools", [("cleanup", "broom", "nav.cleanup"), ("adblock", "block", "nav.adblock"),
                      ("apps", "box", "nav.apps"), ("startup", "rocket", "nav.startup"), ("look", "palette", "nav.look")]),
     ("nav.g.system", [("backup", "shield", "nav.backup"), ("settings", "gear", "nav.settings")]),
@@ -155,7 +162,8 @@ class Main(QWidget):
         h.addWidget(self.stack, 1)
         self.pages = {}
         for key, cls in (("home", HomePage), ("optimize", OptimizePage), ("library", LibraryPage), ("games", GamesPage),
-                         ("diagnose", DiagnosePage), ("bench", BenchPage), ("hardware", HardwarePage),
+                         ("diagnose", DiagnosePage), ("bench", BenchPage), ("hwcenter", HwCenterPage),
+                         ("hardware", HardwarePage),
                          ("laptop", LaptopPage), ("network", NetworkPage), ("cleanup", CleanupPage),
                          ("adblock", AdblockPage), ("apps", AppsPage),
                          ("startup", StartupPage), ("look", LookPage), ("backup", BackupPage),
@@ -166,6 +174,13 @@ class Main(QWidget):
         self._toast = Toast(self)
         self._tray()
         self.go("home")
+        # FPS-оверлей в іграх (overlay_ui) і запис фонових процесів під час ігор (procmon)
+        from overlay_ui import OverlayController
+        self.overlay = OverlayController(self)
+        self.overlay.start()
+        self.pm_rec = {}  # exe гри -> procmon.Recorder
+        self.pm_timer = QTimer(self)
+        self.pm_timer.timeout.connect(self._pm_tick)
 
         self.bg_timer = QTimer(self)
         self.bg_timer.timeout.connect(self._background_tick)
@@ -292,6 +307,7 @@ class Main(QWidget):
     def _library_tick(self, names: set):
         """Сесії ігор (час гри, «що працювало під час збою»), режим гри від «Бібліотеки» і запис FPS."""
         res = self.tracker.tick(names)
+        self._pm_sessions(res)
         if res["started"] or res["ended"]:
             lib = self.pages.get("library")
             if lib and lib.isVisible():
@@ -321,6 +337,36 @@ class Main(QWidget):
             LB.add_fps(fg, res)
             return res
         self.run_quick("FPS", job, silent=True)
+
+    def _pm_sessions(self, res: dict):
+        """Фонові процеси під час гри (procmon): запис від запуску гри до її закриття, потім — підсумок."""
+        import procmon as PM
+        if F.CFG["pm_auto"]:
+            for exe in res.get("started") or []:
+                if exe not in self.pm_rec:
+                    self.pm_rec[exe] = PM.Recorder(exe)
+        for exe in res.get("ended") or []:
+            rec = self.pm_rec.pop(exe, None)
+            if rec is None:
+                continue
+            sess = rec.finish(None)  # FPS по секундах є лише в записах FPS-оверлея (там і зіставлення з піками)
+            if sess.get("seconds", 0) >= 60:
+                PM.save_session(F.CFG, sess)
+                import hwtests as HT
+                HT.save(F.CFG, PM.session_result(sess))
+                if any(p.get("suspect") or p.get("avg_cpu", 0) >= PM.HEAVY_AVG for p in sess.get("processes") or []):
+                    self.toast(tr("pm.toast", game=exe, n=len(sess["processes"])), "warn")
+        if self.pm_rec and not self.pm_timer.isActive():
+            self.pm_timer.start(int(PM.INTERVAL * 1000))
+        elif not self.pm_rec and self.pm_timer.isActive():
+            self.pm_timer.stop()
+
+    def _pm_tick(self):
+        for rec in list(self.pm_rec.values()):
+            try:
+                rec.sample()
+            except Exception as e:  # запис фону не повинен ламати програму
+                LOG.write(f"  procmon: {type(e).__name__}: {e}")
 
     # ── бічне меню ──
     def _sidebar(self) -> QFrame:
@@ -512,6 +558,7 @@ class Main(QWidget):
         self.pages["hardware"].set_hw(self.hw, self.checks)
         self.pages["laptop"].set_hw(self.hw)
         self.pages["games"].set_hw(self.hw)
+        self.pages["hwcenter"].set_hw(self.hw)
         self.pages["bench"].sync_mesa()
         self.pages["cleanup"].sync()
         self.pages["look"].sync()
@@ -1195,6 +1242,10 @@ class Main(QWidget):
             F.BOOSTER.stop(LOG.write)
         self.balancer.restore_all(LOG.write)
         self.hk.stop()
+        try:
+            self.overlay.shutdown()
+        except Exception:
+            pass
         try:
             PH.MONITOR.stop(remember=False)  # сервер зупиняється, а ввімкненим лишається до наступного запуску
         except Exception:

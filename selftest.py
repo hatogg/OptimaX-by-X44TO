@@ -27,7 +27,9 @@ MODULES = ("engine", "features", "guard", "hardware", "hwnative", "hotkeys", "li
            "lang_mining", "lang_gpu", "mining", "gpuinfo", "gpudiag", "gamedb", "pages_mining", "crashlog", "library",
            "qr", "phonemon", "bugreport", "whatsnew", "transfer", "pages_library", "pages_life", "lang_life",
            "gpubench", "ui_kit", "pages_optimize", "pages_tools", "pages_extra", "pages_lab", "smart_ui",
-           "sharecard", "verify", "baseline", "modes")
+           "sharecard", "verify", "baseline", "modes", "gpuselect", "hwtests", "storagehealth", "vramtest", "hwinfo",
+           "dumpanalyzer", "procmon", "overlay", "overlay_ui", "perfdiag", "inspection", "hwreport", "lang_hwc",
+           "lang_hwc2", "pages_hwcenter", "pages_hwc2")
 UI_TIMEOUT = 120  # секунд на визначення заліза у вікні
 _PROGRESS = None  # <звіт>-progress.txt: що робилося перед аварійним завершенням
 _CRASH = None     # <звіт>-crash.txt: стек Python у момент нативного збою (faulthandler)

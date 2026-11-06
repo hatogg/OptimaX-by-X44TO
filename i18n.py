@@ -93,6 +93,8 @@ def _load() -> None:
     from lang_mining import STRINGS as mining
     from lang_gpu import STRINGS as gpu
     from lang_life import STRINGS as life
+    from lang_hwc import STRINGS as hwc
+    from lang_hwc2 import STRINGS as hwc2
     from lang_tweaks import TEXTS
     STR.update(eng)
     STR.update(ui)
@@ -104,6 +106,8 @@ def _load() -> None:
     STR.update(mining)
     STR.update(gpu)
     STR.update(life)
+    STR.update(hwc)
+    STR.update(hwc2)
     TWEAK_TEXT.update(TEXTS)
 
 

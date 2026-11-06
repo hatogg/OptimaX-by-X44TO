@@ -31,6 +31,16 @@ def check_66(st: dict) -> None:
     assert st["report"] == ["ok", "ok"], st["report"]
 
 
+def check_hwc(st: dict) -> None:
+    """Hardware Center: 16 розділів, тести на демо-залізі пройдені, звіт і перевірка перед покупкою."""
+    h = st["hwc"]
+    assert h["built"] == 16, h
+    for t in ("cpu_multi", "ram", "vram", "storage_health", "disk_bench"):
+        assert h[t] in ("pass", "warn"), (t, h)
+    assert h["report"][1] >= 5 and h["report"][2] > 3000 and h["report"][3] > 1000, h["report"]
+    assert h["tiles"] >= 9 and h["inspect"], h
+
+
 @cases("demo,lang", CONFIGS)
 def test_main_window(demo, lang):
     if not has_qt():
@@ -53,6 +63,7 @@ def test_main_window(demo, lang):
     assert st["card"] == [1200, 675]
     assert "ShareDialog" in r["dialogs"] and "SmartDialog" in r["dialogs"]
     check_66(st)
+    check_hwc(st)
 
 
 def test_mining_card():

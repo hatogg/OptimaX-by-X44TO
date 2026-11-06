@@ -222,6 +222,10 @@ def icon_pixmap(name: str, color: str, size: int = 20) -> QPixmap:
         for v in (9.5, 14.5):
             path.moveTo(v, 3); path.lineTo(v, 6); path.moveTo(v, 18); path.lineTo(v, 21)
             path.moveTo(3, v); path.lineTo(6, v); path.moveTo(18, v); path.lineTo(21, v)
+    elif name == "hwc":  # Hardware Center: плата з «пульсом» перевірки
+        path.addRoundedRect(QRectF(3.5, 4.5, 17, 15), 2.5, 2.5)
+        path.moveTo(6, 12.5); path.lineTo(9, 12.5); path.lineTo(10.5, 9); path.lineTo(13, 16); path.lineTo(14.5, 12.5)
+        path.lineTo(18, 12.5)
     elif name == "laptop":
         path.addRoundedRect(QRectF(5, 5, 14, 10), 1.5, 1.5)
         path.moveTo(2.5, 18.5); path.lineTo(21.5, 18.5)

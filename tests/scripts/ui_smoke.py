@@ -361,6 +361,52 @@ if SHOTS and not _boot.STUB:
     card.save(os.path.join(SHOTS, f"{DEMO}-{LANG}-share-card.png"))
 w.share_result()
 
+# Hardware Center: усі розділи, тести на демо-залізі (процесор, пам'ять, відеопам'ять, диск, стан дисків), звіт,
+# перевірка перед покупкою з заявленою конфігурацією, FPS-оверлей (налаштування)
+import hwreport as HR  # noqa: E402
+import hwtests as HT  # noqa: E402
+import pages_hwc2 as P2  # noqa: E402
+import pages_hwcenter as PHC  # noqa: E402
+import vramtest as VT  # noqa: E402
+HT.DemoProc.SPEED = 3000.0
+VT.DemoRun.SPEED = 3000.0
+hc = w.pages["hwcenter"]
+w.go("hwcenter")
+hwc = {"built": 0}
+for key in PHC.SECTIONS:
+    hc.show_section(key)
+    pump(timeout=0.05)
+    hwc["built"] += 1
+    shot(w, f"hwc-{key}")
+hc.show_section("cpu")
+hc.cpu_mode.select(1, True)
+hc.start_cpu()
+pump(lambda: not hc.cpu_box.busy, 60)
+hc.show_section("ram")
+hc.start_ram()
+pump(lambda: not hc.ram_box.busy, 60)
+hc.show_section("vram")
+hc.start_vram()
+pump(lambda: not hc.vram_box.busy, 60)
+hc.show_section("storage")
+hc.load_storage()
+pump(lambda: bool((F.CFG["hwc_last"] or {}).get("storage_health")), 30)
+hc.start_disk()
+pump(lambda: not hc.db_box.busy, 60)
+last = F.CFG["hwc_last"] or {}
+for t in ("cpu_multi", "ram", "vram", "storage_health", "disk_bench"):
+    hwc[t] = (last.get(t) or {}).get("status")
+hc.show_section("inspect")
+hc.claim_edits["ram"].setText(str(round((w.hw or {}).get("ram_gb") or 0)))
+P2.save_claimed(hc)
+hwc["inspect"] = hc.insp_state.text()
+rep = P2.current_report(hc)
+hwc["report"] = [rep["status"], len(rep["results"]), len(HR.to_html(rep)), len(HR.to_json(rep))]
+hc.show_section("overview")
+hc.refresh_overview()
+hwc["tiles"] = hc.ov_grid.count()
+steps["hwc"] = hwc
+
 # «Що нового» і звіт про помилку (попередній перегляд: поза Windows браузер не відкривається)
 n_d = len(dialogs)
 PL.show_whats_new(w, E.VERSION)
