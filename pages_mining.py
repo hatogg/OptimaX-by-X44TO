@@ -587,7 +587,7 @@ class MiningCard(QFrame):
                                     power=105.0, clock=1708)] * 10}
             import gpubench as GB
             n = GB.Nvml()
-            if not n.ok():
+            if not n.ok:
                 return {"nv": [], "error": "nvml"}
             try:
                 for i in range(10):

@@ -79,3 +79,16 @@ def test_keep_composited_is_a_noop_off_windows():
     if GB.E.IS_WIN:
         return
     assert GB.keep_composited(12345) is False
+
+
+def test_nvml_ok_is_a_property_everywhere():
+    """Nvml.ok — властивість. Виклик nv.ok() кидав TypeError, який ковтав except: «Чому лагає?» і монітор на телефоні
+    ніколи не бачили датчиків NVIDIA, а «Виміряти» на майнінговому ПК завжди падав."""
+    import os
+    import re
+    assert isinstance(GB.Nvml.__dict__["ok"], property)
+    for name in ("monitor.py", "pages_mining.py", "phonemon.py", "hwtests.py", "overlay.py", "hwinfo.py"):
+        path = os.path.join(ROOT, name)
+        if os.path.exists(path):
+            src = open(path, encoding="utf-8").read()
+            assert not re.search(r"\b(nv|n|self\.nv)\.ok\(\)", src), f"{name}: Nvml.ok is a property, not a method"

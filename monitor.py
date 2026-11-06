@@ -232,7 +232,7 @@ def _nvml():
     try:
         import gpubench as GB
         nv = GB.Nvml()
-        return nv if nv.ok() else None
+        return nv if nv.ok else None
     except Exception:
         return None
 

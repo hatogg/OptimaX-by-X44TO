@@ -140,7 +140,7 @@ class Stats:
             try:
                 import gpubench as GB
                 nv = GB.Nvml()
-                self.nv = nv if nv.ok() else False
+                self.nv = nv if nv.ok else False
             except Exception:
                 self.nv = False
         if not self.nv:
