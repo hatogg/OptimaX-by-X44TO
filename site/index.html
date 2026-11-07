@@ -405,7 +405,10 @@ const store = {
   get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* немає сховища — не страшно */ } },
 };
-let lang = store.get("optimax-lang") || ((navigator.language || "").toLowerCase().startsWith("uk") ? "uk" : "en");
+// зібрана сторінка (tools/build_site.py) має свою мову в адресі: / — українська, en.html — англійська
+const PAGE_LANG = document.documentElement.dataset.lang;
+const PAGES = { uk: "./", en: "en.html" };
+let lang = PAGE_LANG || store.get("optimax-lang") || ((navigator.language || "").toLowerCase().startsWith("uk") ? "uk" : "en");
 let tab = 0;
 let release = null;
 
@@ -530,7 +533,11 @@ function apply(l) {
   drawTrace(); renderTabs(); showShot(); renderLists(); renderRelease();
 }
 
-document.querySelectorAll(".lang button").forEach(b => b.addEventListener("click", () => { store.set("optimax-lang", b.dataset.lang); apply(b.dataset.lang); }));
+document.querySelectorAll(".lang button").forEach(b => b.addEventListener("click", () => {
+  store.set("optimax-lang", b.dataset.lang);
+  if (PAGE_LANG) { if (b.dataset.lang !== PAGE_LANG) location.href = PAGES[b.dataset.lang]; return; }
+  apply(b.dataset.lang);
+}));
 apply(lang);
 requestAnimationFrame(() => document.getElementById("trace").classList.add("play"));
 
