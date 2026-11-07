@@ -2,6 +2,33 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [6.10.1] — 2026-11-08
+
+Виправлення інсталятора, простіше меню й підготовка до підпису коду.
+
+### Виправлено
+
+- **Помилка 740 наприкінці встановлення.** Галочку «Запустити OptimaX» Inno Setup виконував від імені звичайного користувача через `CreateProcess`, а `OptimaX.exe` вимагає прав адміністратора — Windows відповідала «CreateProcess збій; код 740. The requested operation requires elevation». Тепер запуск іде через ShellExecute (`shellexec`): Windows показує запит UAC, і програма відкривається від того самого користувача. Тихе встановлення в CI цей крок пропускає, тож додано окрему перевірку в `test_static.py`.
+
+### Змінено
+
+- **Меню.** «Мережа» й «Блок реклами» перенесено з «Пристрою» в «Інструменти»; «Ноутбук» видно лише на ноутбуці (поки залізо не визначене — пункт лишається); у «Діагностиці» першим іде «Чому лагає?», а «Чому впав комп?» і монітор на телефоні — нижче. Банер про збій ПК і кнопка в Hardware Center прокручують сторінку саме до картки збоїв.
+
+### Додано
+
+- **Підготовка до підпису коду через SignPath** (безкоштовно для відкритого коду): job «Code signing (SignPath)» у `release.yml` підписує `OptimaX.exe` і портативну версію, збирає інсталятор із підписаним exe, підписує його й перераховує `SHA256SUMS.txt` і маніфести winget. Вмикається змінною `SIGNPATH_ORGANIZATION_ID` і секретом `SIGNPATH_API_TOKEN` після схвалення заявки; без них реліз виходить, як і раніше. Політика підпису й приватності — [docs/uk/code-signing.md](docs/uk/code-signing.md), конфігурації артефактів — `.signpath/artifact-configurations`.
+
+<details>
+<summary>English</summary>
+
+**Fixed:** the “Launch OptimaX” box at the end of setup failed with “CreateProcess failed; code 740. The requested operation requires elevation” because Inno Setup ran the admin-manifested exe as the original user through `CreateProcess`; it now uses ShellExecute (`shellexec`), so Windows shows a UAC prompt. Silent installs in CI skip this step, so `test_static.py` now checks it.
+
+**Changed:** Network and Ad blocker moved from Device to Tools; Laptop shows on laptops only; Diagnostics opens with Why is it lagging?, with Why did the PC crash? and the phone monitor below; the crash banner and the Hardware Center button scroll straight to the crash card.
+
+**Added:** groundwork for free open-source code signing through SignPath: a “Code signing (SignPath)” job in `release.yml` signs `OptimaX.exe` and the portable version, rebuilds the installer with the signed exe, signs it and recomputes `SHA256SUMS.txt` and the winget manifests. It turns on with the `SIGNPATH_ORGANIZATION_ID` variable and the `SIGNPATH_API_TOKEN` secret once the application is approved; without them releases go out as before. Policy and privacy: [docs/en/code-signing.md](docs/en/code-signing.md).
+
+</details>
+
 ## [6.10] — 2026-11-07
 
 Точність Hardware Center: справжня температура процесора, датчики потрібної відеокарти, точніші відомості про пам'ять.

@@ -168,8 +168,11 @@ opt.back_from_review()
 w.go("home")
 setp.sw_simple.click()
 pump(timeout=0.1)
-st_s["restored"] = (all(w.nav.button(i).isVisible() for i in range(len(w.nav_keys))) and home.an_card.isVisible()
+st_s["restored"] = (all(w.nav.button(i).isVisible() == w.nav_visible(k) for i, k in enumerate(w.nav_keys))
+                    and all(w.nav_visible(k) for k in w.nav_keys if k != "laptop") and home.an_card.isVisible()
                     and not home.simple.isVisible() and not F.CFG["simple_ui"])
+# «Ноутбук» у меню — лише на ноутбуці
+st_s["laptop_nav"] = [bool((w.hw or {}).get("laptop")), w.nav.button(w.nav_keys.index("laptop")).isVisible()]
 steps["simple"] = st_s
 
 # «Чому впав комп?»: демо-журнал Windows — раптове вимкнення, синій екран, скидання драйвера, апаратна помилка
@@ -183,6 +186,10 @@ steps["crash"] = {"kinds": [i["kind"] for i in cl.get("incidents") or []], "rows
                   "head": dg.crash.head.text(), "gpu": (cl.get("gpu") or {}).get("n"),
                   "whea": (cl.get("whea") or {}).get("n")}
 dg.crash.memtest()  # запитання → у режимі перегляду лише запис у журнал
+# картка збоїв — унизу сторінки, під «Чому лагає?»; банер на головній прокручує до неї
+dg.focus_crash()
+pump(timeout=0.2)
+steps["crash"]["in_view"] = not dg.crash.card.visibleRegion().isEmpty()
 shot(w, "crash-card")
 
 # монітор на телефоні: сервер у домашній мережі, QR-код, сторінка й дані, чужий шлях — 404, новий код, вимкнення

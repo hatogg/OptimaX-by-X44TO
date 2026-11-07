@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath, конфігурація артефакту «app»: перший запит релізу (release.yml, job sign).
+     Артефакт GitHub — zip з OptimaX.exe (тека інсталятора) і OptimaX-<версія>-portable.exe.
+     Назва продукту й версія в метаданих exe (version_info.txt) — обов'язкові для SignPath Foundation. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="OptimaX.exe" product-name="OptimaX">
+      <authenticode-sign />
+    </pe-file>
+    <pe-file-set>
+      <include path="OptimaX-*-portable.exe" product-name="OptimaX" />
+      <for-each>
+        <authenticode-sign />
+      </for-each>
+    </pe-file-set>
+  </zip-file>
+</artifact-configuration>

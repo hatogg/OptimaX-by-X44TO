@@ -223,6 +223,18 @@ STRINGS = {
                        "More reliable rollback: each setting is now changed by one optimization only, so rolling one "
                        "back no longer cancels another, and the culprit search no longer gets confused. The DirectX "
                        "optimizations (windowed, VRR, Auto HDR) restore only their own part."),
+    "wn.6101.menu": ("Меню простіше: «Мережа» й «Блок реклами» тепер в «Інструментах», «Ноутбук» видно лише на ноутбуці, "
+                     "а в «Діагностиці» першим іде «Чому лагає?» — «Чому впав комп?» і монітор на телефоні нижче.",
+                     "Меню проще: «Сеть» и «Блок рекламы» теперь в «Инструментах», «Ноутбук» виден только на ноутбуке, "
+                     "а в «Диагностике» первым идёт «Почему лагает?» — «Почему упал комп?» и монитор на телефоне ниже.",
+                     "A simpler menu: Network and Ad blocker are now under Tools, Laptop shows on laptops only, and "
+                     "Diagnostics opens with Why is it lagging? — Why did the PC crash? and the phone monitor are below."),
+    "wn.6101.setup": ("Інсталятор: галочка «Запустити OptimaX» наприкінці встановлення більше не дає помилку 740 — "
+                      "Windows просто спитає дозвіл, і програма відкриється.",
+                      "Установщик: галочка «Запустить OptimaX» в конце установки больше не даёт ошибку 740 — Windows "
+                      "просто спросит разрешение, и программа откроется.",
+                      "Installer: the “Launch OptimaX” box at the end of setup no longer fails with error 740 — Windows "
+                      "simply asks for permission and the program opens."),
     "wn.610.temp": ("Температура процесора в Hardware Center тепер справжня: OptimaX бере її з Core Temp, HWiNFO, AIDA64 "
                     "чи LibreHardwareMonitor, якщо котрась запущена. Теплова зона ACPI, яка на багатьох платах завжди "
                     "показує 27,8 °C, більше не видається за процесор.",

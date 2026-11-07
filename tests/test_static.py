@@ -96,3 +96,16 @@ def test_powershell_scripts_encoding():
             b.decode("ascii")
         except UnicodeDecodeError:
             assert b.startswith(b"\xef\xbb\xbf"), f"{os.path.relpath(p, ROOT)}: non-ASCII PowerShell script needs a UTF-8 BOM"
+
+
+def test_installer_launches_the_admin_exe_through_shellexecute():
+    """Запуск після встановлення Inno робить від імені звичайного користувача (CreateProcess без підвищення), а exe
+    зібраний з --uac-admin: без shellexec — «CreateProcess збій; код 740. The requested operation requires
+    elevation». Тихе встановлення в CI цей крок пропускає (skipifsilent), тож ловимо його тут."""
+    iss = read(os.path.join("packaging", "OptimaX.iss")).decode("utf-8-sig")
+    run = iss.split("[Run]", 1)[1].split("\n[", 1)[0]
+    post = [ln for ln in run.splitlines() if not ln.lstrip().startswith(";") and "postinstall" in ln]
+    assert post, "no post-install launch entry"
+    for ln in post:
+        flags = re.search(r"Flags:\s*([^;]+)", ln).group(1).split()
+        assert "shellexec" in flags or "runascurrentuser" in flags, ln

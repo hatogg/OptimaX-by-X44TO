@@ -139,12 +139,7 @@ class DiagnosePage(QWidget):
         outer.addWidget(page_header(tr("nav.diagnose"), tr("diag.sub")))
         body, v = page_body()
 
-        # «Чому впав комп?» і монітор на телефоні (pages_life.py)
-        import pages_life as PL
-        self.crash = PL.CrashCard(main, v)
-        self.phone = PL.PhoneCard(main, v)
-
-        # «Чому лагає?»
+        # «Чому лагає?» — головний інструмент сторінки, тож він перший
         dc = card("cardAccent")
         dv = vbox(dc, (24, 20, 24, 20), 12)
         dv.addWidget(label(tr("diag.title"), "h1"))
@@ -264,13 +259,23 @@ class DiagnosePage(QWidget):
         rh.addStretch()
         rcv.addLayout(rh)
         v.addWidget(rc)
+        # «Чому впав комп?» і монітор на телефоні (pages_life.py) — після головного, а не над ним
+        import pages_life as PL
+        self.crash = PL.CrashCard(main, v)
+        self.phone = PL.PhoneCard(main, v)
         v.addStretch()
-        outer.addWidget(scroller(body), 1)
+        self.scroll = scroller(body)
+        outer.addWidget(self.scroll, 1)
         log_strip(outer)
         self.game = None
         if F.CFG["diag_last"]:
             self.show_result(F.CFG["diag_last"])
         self.refresh_fps()
+
+    def focus_crash(self) -> None:
+        """Банер «комп впав» на головній веде сюди: картка збоїв унизу сторінки, тож прокручуємо до неї."""
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(0, lambda: self.scroll.ensureWidgetVisible(self.crash.card, 0, 40))
 
     # ── «Чому лагає?» ──
     def start_diag(self):

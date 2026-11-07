@@ -2,7 +2,7 @@
 ; Збирається через build_installer.bat; версію та шлях до файлів програми підставляє скрипт збірки.
 
 #ifndef MyAppVersion
-  #define MyAppVersion "6.10"
+  #define MyAppVersion "6.10.1"
 #endif
 #ifndef AppBuildDir
   #define AppBuildDir "..\dist\OptimaX"
@@ -113,7 +113,9 @@ Root: HKCU; Subkey: "Software\X44TO"; Flags: uninsdeletekeyifempty
 ; фільтр реклами (якщо був увімкнений) знову стартує з новою версією файлів
 Filename: "{sys}\schtasks.exe"; Parameters: "/Run /TN ""OptimaX DNS"""; StatusMsg: "{cm:StartingDns}"; Flags: runhidden waituntilterminated; Check: DnsTaskWasRunning
 Filename: "{app}\{#MyAppExe}"; Parameters: "--set-autostart"; Tasks: autostart; StatusMsg: "{cm:SettingAutoStart}"; Flags: runhidden waituntilterminated
-Filename: "{app}\{#MyAppExe}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
+; postinstall-запуск Inno робить від імені звичайного користувача через CreateProcess, а OptimaX.exe вимагає прав адміністратора —
+; без shellexec це помилка 740 «потрібне підвищення». ShellExecute показує запит UAC і запускає від того самого користувача.
+Filename: "{app}\{#MyAppExe}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent shellexec
 ; тихе оновлення з самої програми (/UPDATE=1): після встановлення запускаємо нову версію
 Filename: "{app}\{#MyAppExe}"; Parameters: "--restarted"; Flags: nowait; Check: IsSilentUpdate
 
