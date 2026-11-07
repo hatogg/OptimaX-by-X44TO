@@ -144,6 +144,7 @@ The portable `OptimaX-<version>-portable.exe` runs without installation. You nee
 | [All optimizations](docs/en/tweaks.md) | 129 changes with explanations, profiles and a rollback mark, generated from the program code |
 | [FAQ](docs/en/faq.md) | Administrator rights, antivirus, SmartScreen, what to do if Windows doesn't start |
 | [For developers](docs/en/development.md) | Running from source, building the installer, tests, CI, publishing a release |
+| [Code signing and privacy](docs/en/code-signing.md) | The code signing policy (SignPath), roles, which network requests the program makes and why |
 | [Changelog](CHANGELOG.md) | What's new in every version |
 
 ## Contributing
@@ -153,3 +154,5 @@ Found a bug or have an idea for a new optimization? [Open an issue](https://gith
 ## License
 
 [MIT](LICENSE) © X44TO
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org) (from the first signed release; [code signing policy](docs/en/code-signing.md)).

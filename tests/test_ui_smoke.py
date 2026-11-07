@@ -18,8 +18,10 @@ def check_66(st: dict) -> None:
     assert s["card"] and s["full_hidden"] and s["cfg"] and set(s["nav"]) == SIMPLE_NAV, s
     assert s["review"][0] and s["review"][1] >= 10, "the one Optimize button opens the review of the recommended plan"
     assert s["restored"], s
+    assert s["laptop_nav"][0] == s["laptop_nav"][1], "the Laptop page is in the menu on laptops only"
     c = st["crash"]
     assert c["kinds"] == ["power", "bsod"] and c["rows"] >= 4 and c["gpu"] == 2 and c["whea"] == 1, c
+    assert c["in_view"], "the crash banner must scroll the Diagnostics page to the crash card"
     p = st["phone"]
     assert not p.get("http_error"), p
     assert p["running"] and p["url"].startswith("http://") and p["qr"] and p["shown"], p

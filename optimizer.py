@@ -82,10 +82,12 @@ NAV = [
                         ("library", "library", "nav.library"), ("games", "gamepad", "nav.games"),
                         ("diagnose", "gauge", "nav.diagnose"),
                         ("bench", "bolt", "nav.bench")]),
+    # «Ноутбук» видно лише на ноутбуках (nav_visible); мережа й блок реклами — інструменти, а не головне
     ("nav.g.device", [("hwcenter", "hwc", "nav.hwc"), ("hardware", "chip", "nav.hardware"),
-                      ("laptop", "laptop", "nav.laptop"), ("network", "globe", "nav.network")]),
-    ("nav.g.tools", [("cleanup", "broom", "nav.cleanup"), ("adblock", "block", "nav.adblock"),
-                     ("apps", "box", "nav.apps"), ("startup", "rocket", "nav.startup"), ("look", "palette", "nav.look")]),
+                      ("laptop", "laptop", "nav.laptop")]),
+    ("nav.g.tools", [("cleanup", "broom", "nav.cleanup"), ("startup", "rocket", "nav.startup"),
+                     ("apps", "box", "nav.apps"), ("network", "globe", "nav.network"),
+                     ("adblock", "block", "nav.adblock"), ("look", "palette", "nav.look")]),
     ("nav.g.system", [("backup", "shield", "nav.backup"), ("settings", "gear", "nav.settings")]),
 ]
 
@@ -276,7 +278,8 @@ class Main(QWidget):
             if not home.banner.isVisible():
                 home.set_banner("pc_crash", tr("crash.banner_t"), title + (" · " + tr("crash.game", game=inc["game"])
                                                                           if inc.get("game") else ""),
-                                (tr("crash.banner_btn"), lambda: (home.set_banner(None), self.go("diagnose"))),
+                                (tr("crash.banner_btn"), lambda: (home.set_banner(None), self.go("diagnose"),
+                                                                  dg.focus_crash())),
                                 (tr("btn.close"), lambda: home.set_banner(None)))
             if not self.isVisible():
                 self.toast(tr("crash.banner_t"), "warn")
@@ -285,13 +288,25 @@ class Main(QWidget):
     # ── простий вигляд, «Що нового», бібліотека ──
     SIMPLE_NAV = ("home", "library", "games", "diagnose", "backup", "settings")
 
+    def nav_visible(self, key: str) -> bool:
+        """Пункт меню видно: у простому вигляді — лише головне; «Ноутбук» — лише на ноутбуці (поки залізо не
+        визначене, пункт лишається, щоб нічого не зникало через збій аналізу)."""
+        if F.CFG["simple_ui"] and key not in self.SIMPLE_NAV:
+            return False
+        if key == "laptop" and isinstance(self.hw, dict) and self.hw.get("cpu") and not self.hw.get("laptop"):
+            return False
+        return True
+
+    def refresh_nav(self) -> None:
+        for i, key in enumerate(self.nav_keys):
+            self.nav.button(i).setVisible(self.nav_visible(key))
+        for cap, keys in self.nav_caps:
+            cap.setVisible(any(self.nav_visible(k) for k in keys))
+
     def apply_simple(self, on: bool):
         """Простий вигляд: у меню лише головне, на головній — оцінка, одна кнопка й проблеми з «Виправити»."""
         F.CFG["simple_ui"] = bool(on)
-        for i, key in enumerate(self.nav_keys):
-            self.nav.button(i).setVisible(not on or key in self.SIMPLE_NAV)
-        for cap, keys in self.nav_caps:
-            cap.setVisible(not on or any(k in self.SIMPLE_NAV for k in keys))
+        self.refresh_nav()
         self.pages["home"].set_simple(on)
         st = self.pages["settings"]
         if hasattr(st, "sw_simple"):
@@ -593,6 +608,7 @@ class Main(QWidget):
         self.pages["optimize"].set_hw(self.hw)
         self.pages["hardware"].set_hw(self.hw, self.checks)
         self.pages["laptop"].set_hw(self.hw)
+        self.refresh_nav()  # «Ноутбук» ховається на настільному ПК
         self.pages["games"].set_hw(self.hw)
         self.pages["hwcenter"].set_hw(self.hw)
         self.pages["bench"].sync_mesa()

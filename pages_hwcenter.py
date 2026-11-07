@@ -1164,7 +1164,8 @@ class HwCenterPage(QWidget):
         bh = hbox(margins=(14, 4, 14, 8), spacing=8)
         self.wd_btn = button(tr("hwc.wd.analyze"), "primary", self.analyze_windows)
         bh.addWidget(self.wd_btn)
-        bh.addWidget(button(tr("hwc.wd.crash_page"), None, lambda: self.main.go("diagnose")))
+        bh.addWidget(button(tr("hwc.wd.crash_page"), None, lambda: (self.main.go("diagnose"),
+                                                                     self.main.pages["diagnose"].focus_crash())))
         bh.addStretch()
         cv.addLayout(bh)
         self.wd_view = ResultView()

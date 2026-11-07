@@ -7,7 +7,12 @@
 # Саме звідси вбудоване оновлення OptimaX бере нові версії.
 # Якщо реліз уже створено з власної збірки (tools/publish_github.ps1 -Release), CI лише перевіряє код
 # і файли релізу не чіпає.
-# Підпис коду (необов'язково): секрети OPTIMAX_PFX_BASE64 (сертифікат .pfx у base64) і OPTIMAX_PFX_PASS.
+# Підпис коду (необов'язково), два способи:
+#   • SignPath (безкоштовно для відкритого коду, docs/uk/code-signing.md): змінна репозиторію SIGNPATH_ORGANIZATION_ID
+#     і секрет SIGNPATH_API_TOKEN (необов'язково: змінні SIGNPATH_PROJECT_SLUG, SIGNPATH_POLICY_SLUG). Тоді job sign
+#     підписує OptimaX.exe і портативну версію, збирає з підписаним exe інсталятор, підписує й його, перераховує
+#     SHA256SUMS і маніфести winget. Кожен запит треба схвалити в SignPath — job чекає до 3 годин;
+#   • власний сертифікат: секрети OPTIMAX_PFX_BASE64 (.pfx у base64) і OPTIMAX_PFX_PASS — підписує сама збірка.
 name: Release
 
 on:
@@ -50,15 +55,145 @@ jobs:
     with:
       quick: ${{ github.event_name == 'workflow_dispatch' && !inputs.full_checks }}
 
+  sign:
+    name: Code signing (SignPath)
+    needs: [version, ci]
+    if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+    runs-on: windows-2022
+    timeout-minutes: 360
+    permissions:
+      contents: read
+      actions: read  # SignPath читає артефакт і подробиці job, щоб переконатися, що файл зібрав саме цей workflow
+    env:
+      SP_ORG: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+      SP_PROJECT: ${{ vars.SIGNPATH_PROJECT_SLUG || 'OptimaX' }}
+      SP_POLICY: ${{ vars.SIGNPATH_POLICY_SLUG || 'release-signing' }}
+      OPTIMAX_UPDATE_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v8
+        with:
+          name: optimax-build
+          path: Output
+      - uses: actions/download-artifact@v8
+        with:
+          name: optimax-app-dir
+          path: dist/OptimaX
+      - name: Version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = python packaging/release.py version
+          "v=$v" | Add-Content $env:GITHUB_OUTPUT
+          New-Item -ItemType Directory -Force unsigned-app | Out-Null
+          Copy-Item dist/OptimaX/OptimaX.exe unsigned-app/
+          Copy-Item "Output/OptimaX-$v-portable.exe" unsigned-app/
+      - id: up_app
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-app
+          path: unsigned-app
+          retention-days: 1
+      # перший запит: сама програма (тека інсталятора) і портативна версія
+      - uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092  # v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SP_ORG }}
+          project-slug: ${{ env.SP_PROJECT }}
+          signing-policy-slug: ${{ env.SP_POLICY }}
+          artifact-configuration-slug: app
+          github-artifact-id: ${{ steps.up_app.outputs.artifact-id }}
+          wait-for-completion-timeout-in-seconds: 10800
+          output-artifact-directory: signed-app
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          $found = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+                     "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe", "$env:ProgramFiles\Inno Setup 7\ISCC.exe") |
+                   Where-Object { Test-Path $_ }
+          if (-not $found) { choco install innosetup -y --no-progress; if ($LASTEXITCODE) { exit $LASTEXITCODE } }
+      - name: Installer from the signed OptimaX.exe
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.v }}"
+          Copy-Item signed-app/OptimaX.exe dist/OptimaX/OptimaX.exe -Force
+          Copy-Item "signed-app/OptimaX-$v-portable.exe" "Output/OptimaX-$v-portable.exe" -Force
+          foreach ($f in @("dist/OptimaX/OptimaX.exe", "Output/OptimaX-$v-portable.exe")) {
+            $sig = Get-AuthenticodeSignature $f
+            if ($sig.Status -ne "Valid") { Write-Output "::error::$f is not signed: $($sig.Status) $($sig.StatusMessage)"; exit 1 }
+          }
+          $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe", "$env:ProgramFiles\Inno Setup 7\ISCC.exe",
+                    "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") |
+                  Where-Object { Test-Path $_ } | Select-Object -First 1
+          & $iscc "/DMyAppVersion=$v" packaging\OptimaX.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force unsigned-setup | Out-Null
+          Copy-Item "Output/OptimaX-Setup-$v.exe" unsigned-setup/
+      - id: up_setup
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-setup
+          path: unsigned-setup
+          retention-days: 1
+      # другий запит: інсталятор, у якому вже підписаний OptimaX.exe
+      - uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092  # v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SP_ORG }}
+          project-slug: ${{ env.SP_PROJECT }}
+          signing-policy-slug: ${{ env.SP_POLICY }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.up_setup.outputs.artifact-id }}
+          wait-for-completion-timeout-in-seconds: 10800
+          output-artifact-directory: signed-setup
+      - name: Checksums and winget manifests for the signed files
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.v }}"
+          Copy-Item "signed-setup/OptimaX-Setup-$v.exe" "Output/OptimaX-Setup-$v.exe" -Force
+          $sig = Get-AuthenticodeSignature "Output/OptimaX-Setup-$v.exe"
+          if ($sig.Status -ne "Valid") { Write-Output "::error::the installer is not signed: $($sig.Status)"; exit 1 }
+          "**Signed by**: $($sig.SignerCertificate.Subject)" | Add-Content $env:GITHUB_STEP_SUMMARY
+          Remove-Item -Recurse -Force Output/winget -ErrorAction SilentlyContinue
+          python packaging/release.py winget "Output/OptimaX-Setup-$v.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $files = @("Output/OptimaX-Setup-$v.exe", "Output/OptimaX-$v-portable.exe")
+          $files += @(Get-ChildItem Output/OptimaX-Mesa-*.zip, Output/OptimaX-DXVK-*.zip -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+          python packaging/release.py checksums @files
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: optimax-build-signed
+          path: |
+            Output/OptimaX-Setup-*.exe
+            Output/OptimaX-*-portable.exe
+            Output/OptimaX-Rescue.cmd
+            Output/OptimaX-Mesa-*.zip
+            Output/OptimaX-DXVK-*.zip
+            Output/SHA256SUMS.txt
+            Output/winget
+          if-no-files-found: error
+
   publish:
     name: GitHub release
-    needs: [version, ci]
+    needs: [version, ci, sign]
+    # без SignPath job sign пропускається, і реліз виходить з непідписаних файлів, як раніше
+    if: ${{ !cancelled() && needs.ci.result == 'success' && (needs.sign.result == 'success' || needs.sign.result == 'skipped') }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
+        if: ${{ needs.sign.result == 'success' }}
+        with:
+          name: optimax-build-signed
+          path: dist
+      - uses: actions/download-artifact@v8
+        if: ${{ needs.sign.result != 'success' }}
         with:
           name: optimax-build
           path: dist

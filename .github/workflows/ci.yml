@@ -175,6 +175,15 @@ jobs:
       - name: Build the installer
         shell: cmd
         run: call build_installer.bat
+      # підпис через SignPath (release.yml, job sign): інсталятор збирається вдруге вже з підписаним OptimaX.exe,
+      # тож релізу потрібна тека програми — саме звідси, до збірки портативної версії, яка теж пише в dist
+      - uses: actions/upload-artifact@v7
+        if: github.workflow == 'Release'
+        with:
+          name: optimax-app-dir
+          path: dist/OptimaX
+          retention-days: 1
+          if-no-files-found: error
       - name: Build the portable version
         shell: cmd
         run: call build.bat
