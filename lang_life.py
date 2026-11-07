@@ -195,6 +195,40 @@ STRINGS = {
 
     # ── «Що нового» ──
     "wn.title": ("Що нового в OptimaX {v}", "Что нового в OptimaX {v}", "What's new in OptimaX {v}"),
+    "wn.69.honest": ("Чесніші режими: в «Ігровому» більше немає змін, що не прискорюють (очищення історії й пам'яті, "
+                     "мережеві твіки для TCP, фіксована підкачка, прискорення миші). А «доведено» тепер означає, що "
+                     "зміну заміряли окремо, а не що вона просто була в пакеті з приростом.",
+                     "Честнее режимы: в «Игровом» больше нет изменений, которые не ускоряют (очистка истории и памяти, "
+                     "сетевые твики для TCP, фиксированная подкачка, ускорение мыши). А «доказано» теперь значит, что "
+                     "изменение замерили отдельно, а не что оно просто было в пакете с приростом.",
+                     "More honest modes: Gaming no longer includes changes that don't speed anything up (history and "
+                     "RAM cleanup, TCP network tweaks, a fixed page file, mouse acceleration). And “proven” now means "
+                     "the change was measured on its own, not just that it was in a batch that gained FPS."),
+    "wn.69.removed": ("Прибрано 7 змін, які не діють або шкодять: вимкнення Defender (Windows його ігнорує), примусовий "
+                      "HPET, застарілі параметри пам'яті й мережі, дубль пріоритету процесора. Якщо щось із цього "
+                      "застосовано, воно позначене в «Резервних копіях», і його можна відкотити.",
+                      "Убрано 7 изменений, которые не работают или вредят: отключение Defender (Windows его "
+                      "игнорирует), принудительный HPET, устаревшие параметры памяти и сети, дубль приоритета "
+                      "процессора. Если что-то из этого применено, оно отмечено в «Резервных копиях», и его можно "
+                      "откатить.",
+                      "Removed 7 changes that don't work or do harm: turning off Defender (Windows ignores it), forced "
+                      "HPET, obsolete memory and network settings, a duplicate CPU priority tweak. If any of them is "
+                      "applied, it's marked in Backups and can be rolled back."),
+    "wn.69.rollback": ("Надійніший відкат: кожне налаштування тепер змінює лише одна оптимізація, тож відкат однієї "
+                       "більше не скасовує іншу, а пошук винної зміни не плутається. Оптимізації DirectX (вікна, VRR, "
+                       "Auto HDR) повертають лише свій параметр.",
+                       "Надёжнее откат: каждую настройку теперь меняет только одна оптимизация, поэтому откат одной "
+                       "больше не отменяет другую, а поиск виновного изменения не путается. Оптимизации DirectX "
+                       "(окна, VRR, Auto HDR) возвращают только свой параметр.",
+                       "More reliable rollback: each setting is now changed by one optimization only, so rolling one "
+                       "back no longer cancels another, and the culprit search no longer gets confused. The DirectX "
+                       "optimizations (windowed, VRR, Auto HDR) restore only their own part."),
+    "wn.69.fast": ("Швидше: вікно з'являється, не чекаючи всіх сторінок, а вибрані вбудовані додатки видаляються одним "
+                   "запуском PowerShell замість окремого для кожного.",
+                   "Быстрее: окно появляется, не дожидаясь всех страниц, а выбранные встроенные приложения удаляются "
+                   "одним запуском PowerShell вместо отдельного для каждого.",
+                   "Faster: the window appears without waiting for every page, and the selected built-in apps are "
+                   "removed in one PowerShell run instead of one per app."),
     "wn.681.nvpair": ("Монітор на іншій відеокарті NVIDIA (наприклад, GT 710) поруч з P106: OptimaX тепер прямо каже, що "
                       "для ігор це не працює, і що зробити — замість поради перевстановити драйвер.",
                       "Монитор на другой видеокарте NVIDIA (например, GT 710) рядом с P106: OptimaX теперь прямо "

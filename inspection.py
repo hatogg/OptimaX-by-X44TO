@@ -15,7 +15,6 @@ import re
 import time
 
 import hwtests as HT
-from i18n import tr
 
 STEPS = (("specs", "auto"), ("claimed", "manual"), ("cpu", "auto"), ("gpu", "auto"), ("vram", "auto"), ("ram", "auto"),
          ("disk_health", "auto"), ("disk_bench", "auto"), ("battery", "auto"), ("display", "manual"),

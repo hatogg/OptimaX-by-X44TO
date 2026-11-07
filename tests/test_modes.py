@@ -22,9 +22,11 @@ hot = MD.plan("gaming", hw, {"main": "thermal", "share": 70}, {})
 R["hot"] = {"ids": hot["ids"], "dropped": [e["id"] for e in hot["excluded"] if e["why"] == "hot"]}
 weak = MD.plan("gaming", hw, {"main": "gpu", "share": 30}, {})
 R["weak_limit"] = weak["limit"]
-ev = {"core_parking": {"harm": 1}, "rt_boost": {"none": 2}, "cpu_scheduling": {"help": 1}}
+ev = {"core_parking": {"harm": 1}, "system_responsiveness": {"none": 2}, "cpu_scheduling": {"solo": 1},
+      "power_throttling": {"help": 1}, "game_mode_on": {"pack": 2}}
 e = MD.plan("gaming", hw, {}, ev)
-R["ev"] = {"ids": e["ids"], "why": {x["id"]: x["why"] for x in e["excluded"]}, "proven": e["proven"]}
+R["ev"] = {"ids": e["ids"], "why": {x["id"]: x["why"] for x in e["excluded"]}, "proven": e["proven"],
+           "pack": e["pack"]}
 R["ev_safe_harm"] = "game_mode_on" in MD.plan("safe", hw, {}, {"game_mode_on": {"harm": 2, "help": 1}})["ids"]
 ram = MD.plan("lowend", hw, {"main": "ram", "share": 80}, {})
 R["lowend_ram"] = ram["ids"]
@@ -73,8 +75,10 @@ def test_overheating_pc_gets_nothing_that_heats():
 def test_evidence_from_smart_optimization():
     r = run("gaming")
     assert r["ev"]["why"].get("core_parking") == "harmful" and "core_parking" not in r["ev"]["ids"]
-    assert r["ev"]["why"].get("rt_boost") == "no_effect"
-    assert "cpu_scheduling" in r["ev"]["proven"]
+    assert r["ev"]["why"].get("system_responsiveness") == "no_effect"
+    assert r["ev"]["proven"] == ["cpu_scheduling"], "proven = helped when measured on its own"
+    # приріст пакета не робить доведеною кожну його зміну (help — запис до 6.9, теж приріст пакета)
+    assert set(r["ev"]["pack"]) == {"power_throttling", "game_mode_on"}
     assert not r["ev_safe_harm"], "harmful on this PC is never offered, in any mode"
 
 

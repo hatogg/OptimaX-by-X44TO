@@ -32,7 +32,6 @@ import threading
 import time
 
 import engine as E
-from i18n import tr
 
 MODES = ("minimal", "standard", "extended")
 CORNERS = ("tl", "tr", "bl", "br")

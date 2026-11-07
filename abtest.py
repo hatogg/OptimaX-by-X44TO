@@ -340,9 +340,12 @@ class Session:
 
 
 def update_evidence(ev: dict, sm: dict, now: int = None) -> dict:
-    """Що розумна оптимізація довела про зміни на цьому ПК (для режимів оптимізації):
-    harm — зміну знайдено шкідливою (відкочено); help — пакет, у якому вона була, дав приріст понад похибку;
-    none — пакет не дав різниці понад похибку. Лічильники накопичуються між сесіями."""
+    """Що розумна оптимізація довела про зміни на цьому ПК (для режимів оптимізації). Лічильники між сесіями:
+    harm — зміну знайдено шкідливою (відкочено);
+    solo — її заміряли окремо, і вона дала приріст понад похибку: допомогла саме вона;
+    pack — приріст дав пакет, у якому вона була. Яка зміна з пакета допомогла, з цього не видно, тож «доведеною»
+           вона не вважається (до 6.9 такий приріст зараховувався кожній зміні пакета як доведений — ключ help);
+    none — пакет не дав різниці понад похибку."""
     ev = {k: dict(v) for k, v in (ev or {}).items()}
     now = int(time.time()) if now is None else now
     for tid in sm.get("removed") or []:
@@ -350,13 +353,14 @@ def update_evidence(ev: dict, sm: dict, now: int = None) -> dict:
         e["harm"] = e.get("harm", 0) + 1
         e["ts"] = now
     d = (sm.get("delta") or {}).get("avg") or 0
+    measured = list(sm.get("measured") or [])
     outcome = None
     if sm.get("result") in ("better", "fixed") and sm.get("significant") and d > 0:
-        outcome = "help"
+        outcome = "solo" if len(measured) == 1 else "pack"
     elif sm.get("result") == "same":
         outcome = "none"
     if outcome:
-        for tid in sm.get("measured") or []:
+        for tid in measured:
             e = ev.setdefault(tid, {})
             e[outcome] = e.get(outcome, 0) + 1
             e["ts"] = now
@@ -364,12 +368,16 @@ def update_evidence(ev: dict, sm: dict, now: int = None) -> dict:
 
 
 def evidence_state(e: dict) -> str:
-    """harmful | proven | no_effect | unknown — для однієї зміни за накопиченими сесіями."""
+    """harmful | proven | pack | no_effect | unknown — для однієї зміни за накопиченими сесіями.
+    proven — допомогла, коли її міряли окремо; pack — була в пакеті, що дав приріст (заслуга не розподілена)."""
     e = e or {}
-    if e.get("harm", 0) > 0 and e.get("harm", 0) >= e.get("help", 0):
+    solo, pack = e.get("solo", 0), e.get("pack", 0) + e.get("help", 0)  # help — запис до 6.9 = приріст пакета
+    if e.get("harm", 0) > 0 and e.get("harm", 0) >= solo + pack:
         return "harmful"
-    if e.get("help", 0) > 0:
+    if solo > 0:
         return "proven"
+    if pack > 0:
+        return "pack"
     if e.get("none", 0) >= 2:
         return "no_effect"
     return "unknown"

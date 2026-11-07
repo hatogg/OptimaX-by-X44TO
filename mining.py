@@ -890,10 +890,6 @@ def install_layer(kind: str, log, progress=None) -> dict:
             pass
 
 
-def install_mesa(log, progress=None) -> dict:
-    return install_layer("mesa", log, progress)
-
-
 def _demo_layer(kind: str, log) -> dict:
     ver = DEMO_VERSION[kind]
     dest = os.path.join(layer_root(kind), ver)
@@ -945,10 +941,6 @@ def layer_tweak(kind: str, game: str, folder: str, files: dict) -> E.Tweak:
     return t
 
 
-def mesa_tweak(game: str, folder: str, files: dict) -> E.Tweak:
-    return layer_tweak("mesa", game, folder, files)
-
-
 @_exclusive
 def enable_layer(kind: str, g: dict, log, hw: dict) -> dict:
     """Гру — на майнінгову карту через шар: бібліотеки потрібної розрядності в папку гри (для Mesa — ще й змінна з
@@ -980,13 +972,6 @@ def disable_layer(kind: str, g: dict, log) -> dict:
         E.undo_ids([ENV_ID], log, by="mining")  # більше жодної гри з Mesa — прибираємо й змінну
     return res
 
-
-def enable_mesa(g: dict, log, hw: dict) -> dict:
-    return enable_layer("mesa", g, log, hw)
-
-
-def disable_mesa(g: dict, log) -> dict:
-    return disable_layer("mesa", g, log)
 
 
 def bench_mesa(hw: dict) -> str:
@@ -1272,11 +1257,6 @@ def recommend(g: dict) -> dict:
     if apis & {"dx9", "gl"}:
         return dict(mode="auto", why=["dx9" if "dx9" in apis else "gl"])
     return dict(mode="native", why=["direct"])
-
-
-def game_for_exe(games: list, exe: str) -> dict:
-    exe = (exe or "").lower()
-    return next((g for g in games for x in g["exes"] if _base(x["path"]).lower() == exe), None)
 
 
 # ───────────────────────── нові ігри ─────────────────────────

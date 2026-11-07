@@ -291,7 +291,7 @@ def start_memtest(log) -> dict:
         return {"ok": 1}
     exe = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "mdsched.exe")
     try:
-        os.startfile(exe)  # noqa: лише Windows
+        os.startfile(exe)  # лише Windows
         return {"ok": 1}
     except OSError as e:
         return {"error": str(e)}

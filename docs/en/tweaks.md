@@ -2,7 +2,7 @@
 
 [← Back to the main page](../../README.en.md) · [Українська](../uk/tweaks.md)
 
-Generated from the program code (136 optimizations in 16 sections, version 6.8.1). Marks: 🔴 affects everyday habits, 🟡 moderate impact, 🔵 safe. “Rollback” tells whether OptimaX restores the change to your own original value.
+Generated from the program code (129 optimizations in 16 sections, version 6.9). Marks: 🔴 affects everyday habits, 🟡 moderate impact, 🔵 safe. “Rollback” tells whether OptimaX restores the change to your own original value.
 
 Before applying, OptimaX checks compatibility with your hardware and Windows version: irrelevant items are disabled, items harmful to your PC (for example, turning off Game Bar on AMD X3D) are blocked, and the reason is shown under the item.
 
@@ -19,11 +19,9 @@ Power plan, core parking, priorities, page file, memory compression.
 | 🔵 | Aggressive Turbo Boost | The CPU ramps up to its top clocks faster and more often. | Full, Xeon / X99 | yes |
 | 🟡 | 100% minimum processor state | Clocks never drop below base — server Xeons stop dozing off in games. | Xeon / X99 | yes |
 | 🔵 | Lock the power plan | Drivers and Windows updates can't quietly switch your power plan. | Full, Medium, Xeon / X99 | yes |
-| 🔵 | Foreground window priority <sub>(Windows 11)</sub> | The app in front gets a bigger slice of CPU time. | Full, Medium | yes |
-| 🔵 | Real-Time Thread Boost | The active app gets top priority and isn't pushed aside by background tasks. | Full, Medium, Xeon / X99 | yes |
+| 🔵 | Foreground window priority | The app in front gets a bigger slice of CPU time. | Full, Medium, Xeon / X99 | yes |
 | 🔵 | Give resources to games (System Responsiveness) | The multimedia scheduler hands games as much CPU and GPU as possible. | Full, Medium, Xeon / X99 | yes |
-| 🔵 | Keep the Windows kernel in memory <sub>(restart)</sub> | Kernel and driver code is never paged to disk — lower latency. | Full, Medium, Xeon / X99 | yes |
-| 🔵 | Fixed page file (4–8 GB) <sub>(restart)</sub> | No fragmentation or resize stalls; cleared at shutdown. | Full, Medium, Xeon / X99 | yes |
+| 🔵 | Fixed page file (4–8 GB) <sub>(restart)</sub> | No fragmentation or resize stalls. Only for PCs with 32 GB or more: with less, a heavy game can run out of memory. | — | yes |
 | 🔵 | Memory compression by RAM size <sub>(restart)</sub> | 32+ GB — compression off (plenty of RAM, less CPU work); up to 12 GB — on, so Windows pages to disk less. | Full, Medium, Laptop, Old PC, Xeon / X99 | yes |
 | 🔴 | Turn off Spectre and Meltdown mitigations <sub>(restart, lowers security)</sub> | A noticeable boost on old Intel CPUs (up to 8th–9th gen), but the PC becomes more exposed to malicious sites and apps. Only if you accept the risk. | — | yes |
 
@@ -40,8 +38,7 @@ Game Bar, fullscreen, timers, mouse and keyboard, VRR, Auto HDR, GPU scheduling.
 | 🔵 | Optimizations for windowed games <sub>(Windows 11)</sub> | Modern flip model for windowed and borderless games: lower latency and VRR support. | Full, Medium, Xeon / X99 | yes |
 | 🔵 | Precise 0.5 ms timer <sub>(restart)</sub> | 0.5 ms system timer instead of 15.6 ms — lower DPC latency, smoother frame times. | Full, Medium, Xeon / X99 | yes |
 | 🔵 | Disable Dynamic Tick <sub>(restart)</sub> | The timer ticks steadily instead of changing rate — less jitter. | Full, Medium, Xeon / X99 | yes |
-| 🟡 | Forced HPET + TSC sync <sub>(restart, may lower FPS)</sub> | A hardware time counter. Steadier frame times on some PCs, lower FPS on others — test in your games. | — | yes |
-| 🟡 | Turn off mouse acceleration | Linear cursor movement: every millimeter of motion covers the same distance on screen. | Full, Medium, Light, Old PC, Xeon / X99 | yes |
+| 🟡 | Turn off mouse acceleration | Linear cursor movement: every millimeter of motion covers the same distance on screen. | — | yes |
 | 🔵 | Variable refresh rate (VRR) in windowed games <sub>(Windows 11)</sub> | G-Sync and FreeSync also work in games without their own VRR support — less tearing and judder. | Full, Medium, Xeon / X99 | yes |
 | 🟡 | Auto HDR <sub>(Windows 11)</sub> | Windows adds HDR to older DirectX 11/12 games. HDR monitors only. | — | yes |
 | 🟡 | Fast keyboard repeat | Minimum repeat delay and maximum rate — a held key reacts instantly in games and text. | Full | yes |
@@ -66,11 +63,8 @@ Ping, Nagle, buffers, adapter power saving, Wi-Fi and Ethernet for gaming.
 
 | | Optimization | What it does | Profiles | Rollback |
 | --- | --- | --- | --- | --- |
-| 🔵 | TCP/IP and DNS optimization <sub>(restart)</sub> | TCPNoDelay, a bigger DNS cache, window auto-tuning, RSS, DCA and a DNS flush. | Full, Medium, Laptop, Xeon / X99 | yes |
-| 🔵 | Turn off Nagle's algorithm | Nagle bundles small packets and adds up to 200 ms of lag in online games. Turned off per adapter. | Full, Medium, Xeon / X99 | yes |
-| 🔵 | Network stack boost | Packet processing on all cores, data straight to CPU cache, TCP offload to the network card. | Full, Medium, Xeon / X99 | yes |
-| 🔵 | Remove network throttling | Windows stops holding back the network for multimedia. | Full, Medium, Laptop, Xeon / X99 | yes |
-| 🔵 | Compound TCP | Uses bandwidth more efficiently; ECN is off for compatibility with most routers. | Full, Medium, Xeon / X99 | yes |
+| 🔵 | Turn off Nagle's algorithm | Nagle bundles small TCP packets. It helps games that use TCP (WoW and other MMOs); shooters on UDP (CS2, Valorant) gain nothing. Turned off per adapter. | — | yes |
+| 🔵 | Remove network throttling | Windows stops holding back the network for multimedia. | — | yes |
 | 🔵 | Turn off network adapter power saving <sub>(restart)</sub> | Energy Efficient Ethernet, Green Ethernet, Wi-Fi power saving and system power-off — lower ping, fewer drops. | Full, Medium, Laptop, Old PC, Xeon / X99 | yes |
 | 🔵 | Don't share updates with other PCs | Windows stops uploading updates to other computers online — your bandwidth and disk stay free. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
 | 🔴 | Reset DNS and Winsock <sub>(restart)</sub> | Rebuilds the network stack — fixes problems after VPNs and antiviruses. One-time action. | — | no |
@@ -136,7 +130,7 @@ Telemetry, advertising ID, data collection and tracking tasks.
 | | Optimization | What it does | Profiles | Rollback |
 | --- | --- | --- | --- | --- |
 | 🔵 | Turn off telemetry and keylogger | DiagTrack and dmwappushservice services, typing and inking data collection. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
-| 🔵 | Turn off ads and profiling | Advertising ID, diagnostic-based personalization and Cortana. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
+| 🔵 | Turn off ads and profiling | Advertising ID and personalization based on diagnostic data. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
 | 🔵 | Turn off telemetry tasks, Copilot and Recall | 14 data-collection scheduled tasks, Copilot, Windows AI analysis and Recall. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
 | 🟡 | Turn off tracking tasks | Maps, Family Safety, location and the background app broker. | Full, Medium, Laptop, Old PC, Xeon / X99 | yes |
 
@@ -180,7 +174,6 @@ Defender, OneDrive, classic photo viewer, fast startup.
 
 | | Optimization | What it does | Profiles | Rollback |
 | --- | --- | --- | --- | --- |
-| 🔴 | Turn off Windows Defender <sub>(restart, risky)</sub> | Only if another antivirus is installed. Otherwise the PC is left unprotected. | — | yes |
 | 🔴 | Remove OneDrive <sub>(removes the app)</sub> | Uninstalls OneDrive, removes it from Explorer and blocks reinstallation. | — | yes |
 | 🔵 | Turn off Fast Startup | Shut down really powers off: fewer driver glitches, proper dual boot, updates install correctly. On an SSD the boot-time difference is barely noticeable. | Full, Medium, Xeon / X99 | yes |
 | 🔵 | Classic photo viewer | Brings back the fast Windows Photo Viewer for JPG, PNG, BMP, GIF and TIFF. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
@@ -192,7 +185,7 @@ Background services and search indexing.
 | | Optimization | What it does | Profiles | Rollback |
 | --- | --- | --- | --- | --- |
 | 🟡 | Turn off unneeded services | Turns off Windows services most people don't need: telemetry, error reporting, fax, retail demo, offline maps, remote registry, location, wallet. PC and laptop maker services, drivers, anti-cheats and VPNs are left alone. | Full, Medium, Old PC, Xeon / X99 | yes |
-| 🔴 | Turn off search indexing | The drive isn't scanned in the background. Searching files from Start gets slower. | Full, Medium, Laptop, Old PC, Xeon / X99 | yes |
+| 🔴 | Turn off search indexing | The drive isn't scanned in the background. Searching files from Start gets slower. | Old PC | yes |
 
 ## Disk space
 
@@ -210,11 +203,11 @@ One-time actions: cleanup, disk and driver checks.
 
 | | Optimization | What it does | Profiles | Rollback |
 | --- | --- | --- | --- | --- |
-| 🔵 | Clear RAM | Frees cached memory (standby and modified) like RAMMap. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | no |
+| 🔵 | Clear RAM | Frees cached memory (standby and modified) like RAMMap. The effect lasts minutes: Windows gives this cache back on its own as soon as memory runs short, and right after clearing apps open slower for a while. | — | no |
 | 🔵 | Check disk (CHKDSK) <sub>(restart)</sub> | Checks and repairs the file system at the next restart. | — | no |
-| 🔵 | Clean device data | Resets UserAssist and rescans devices. | — | no |
+| 🔵 | Clean device data | Rescans devices so Windows drops entries for ones that are gone. | — | no |
 | 🔵 | Check drivers | Lists devices with errors in the log. | — | no |
-| 🔵 | Clear registry history | Recent documents, Run, typed paths, UserAssist, ShellBags. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | no |
+| 🔵 | Clear Explorer history | Recent documents, Run, typed paths and UserAssist. Also resets every folder's view (ShellBags). For privacy — it doesn't make the PC faster. | — | no |
 | 🔵 | Deep junk cleanup | Windows Update and Edge caches and temporary files, up to a minute. Old update copies (WinSxS) are a separate action under Cleanup because they take long on laptops. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | no |
 
 ## Built-in apps
@@ -256,7 +249,21 @@ Remove unneeded Windows 10 and 11 apps: from Clipchamp and Teams to Copilot.
 | 🔵 | Show hidden files | Folders and files with the Hidden attribute. | — | yes |
 | 🔵 | Windows dark mode | Dark theme for the system and apps. | — | yes |
 | 🔵 | Turn off Aero Shake | Shaking a window no longer minimizes the others. | — | yes |
-| 🔵 | Fast Alt+Tab and menus | No window animations or menu and preview delays. | — | yes |
+| 🔵 | Fast Alt+Tab and menus | Menus and previews open without delay. | — | yes |
 | 🔵 | Turn off Sticky Keys | No Sticky Keys prompt after pressing Shift five times. | — | yes |
 | 🔵 | Mouse selection color | The file selection box and fill. | — | yes |
 | 🔵 | Selected text color | Text color inside a selection. | — | yes |
+
+## Removed from OptimaX
+
+OptimaX no longer offers these changes. If one of them was applied earlier, it stays in the journal and can be rolled back to your original value in Backups.
+
+| Optimization | Why it was removed |
+| --- | --- |
+| Real-Time Thread Boost | It duplicated Foreground window priority and Give resources to games, and two changes to the same value confused rollback. |
+| Keep the Windows kernel in memory | IoPageLockLimit dates back to Windows XP; modern Windows ignores it. |
+| Forced HPET + TSC sync | Forcing the HPET timer lowers FPS and adds latency on most PCs. |
+| TCP/IP and DNS optimization | These settings are either Windows defaults already or obsolete, and shooters use UDP, which they don't affect. |
+| Network stack boost | These settings are either Windows defaults already or obsolete, and shooters use UDP, which they don't affect. |
+| Compound TCP | CTCP replaces CUBIC, the Windows 10/11 default, which is no worse, and shooters use UDP. |
+| Turn off Windows Defender | Modern Windows ignores these policies (Tamper Protection), so it looked applied while Defender kept running. To make Defender slow games down less, use Limit Defender to 20% CPU. |

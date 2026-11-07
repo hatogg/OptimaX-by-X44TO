@@ -4,7 +4,6 @@
 import json
 import os
 import sys
-import time
 
 from _util import ROOT
 

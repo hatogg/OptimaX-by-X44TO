@@ -46,7 +46,8 @@ def _demo_reverted() -> list:
 def guarded(tid: str) -> bool:
     """Чи стежить сторож за цим записом журналу."""
     t = E.BY_ID.get(tid)
-    return bool(t) and t.group not in SKIP_GROUPS and t.reversible and not t.custom
+    # прибрані в 6.9 сторож не пропонує застосувати знову, навіть якщо оновлення Windows їх скинуло
+    return bool(t) and t.group not in SKIP_GROUPS and t.reversible and not t.custom and not t.retired
 
 
 def looks_like_restore(reverted: list) -> bool:
@@ -79,7 +80,7 @@ def check_reverted() -> list:
         t = E.BY_ID.get(tid)
         if not guarded(tid):
             continue
-        regs = [op for op in t.ops if op[0] == "reg" and not callable(op[3])]
+        regs = [op for op in t.ops if op[0] in ("reg", "kv") and not callable(op[3])]
         if regs and not E.probe(t):
             out.append(tid)
         elif not _svc_ok(t):
@@ -101,7 +102,7 @@ def run_check(log=lambda *_: None) -> dict:
 
 def reapply(ids, log, progress=None) -> dict:
     """Застосовує знову. Журнал зберігає перший знімок, тож відкат і далі повертає ваші початкові значення."""
-    items = [E.BY_ID[i] for i in ids if i in E.BY_ID]
+    items = [E.BY_ID[i] for i in ids if i in E.BY_ID and not E.BY_ID[i].retired]
     res = E.apply_tweaks(items, log, progress, header=False)
     if not E.IS_WIN:
         F.CFG["demo_guard_fixed"] = sorted(set(F.CFG["demo_guard_fixed"] or []) | set(ids))

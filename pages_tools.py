@@ -11,7 +11,7 @@ from datetime import datetime
 
 from PyQt6.QtCore import Qt, QRegularExpression
 from PyQt6.QtGui import QColor, QGuiApplication, QRegularExpressionValidator
-from PyQt6.QtWidgets import (QWidget, QFrame, QLabel, QPushButton, QLineEdit, QGridLayout, QSlider, QColorDialog,
+from PyQt6.QtWidgets import (QWidget, QFrame, QPushButton, QLineEdit, QGridLayout, QSlider, QColorDialog,
                              QFileDialog, QMenu, QSpinBox, QStackedWidget)
 
 import engine as E
@@ -599,7 +599,7 @@ class HardwarePage(QWidget):
         for c in cands:
             if os.path.isfile(c):
                 try:
-                    os.startfile(c)  # noqa: лише Windows
+                    os.startfile(c)  # лише Windows
                     self.main.toast(tr("oc.ab_start"))
                 except Exception as e:
                     Ask.info(self, tr("oc.ab_fail"), str(e))
@@ -779,7 +779,7 @@ class LaptopPage(QWidget):
             return
         path = H.battery_html_report()
         if os.path.exists(path):
-            os.startfile(path)  # noqa: лише Windows
+            os.startfile(path)  # лише Windows
 
 
 # ───────────────────────── Очищення та виправлення ─────────────────────────
@@ -1102,6 +1102,10 @@ class BackupRow(QFrame):
         t = E.BY_ID.get(tid)
         if (t and t.reboot) or tid.startswith("msi:"):
             top.addWidget(badge(tr("b.reboot"), "muted"))
+        if t and t.retired:  # 6.9: OptimaX цю зміну більше не пропонує — радимо відкотити
+            rb = badge(tr("b.retired"), "bad")
+            rb.setToolTip(tr("retired.note", why=tr(f"retired.{t.retired}")))
+            top.addWidget(rb)
         if entry.get("partial"):  # відкат пройшов не повністю — кроки, що лишилися, можна повторити
             pb = badge(tr("bk.partial"), "warn")
             pb.setToolTip(tr("bk.partial_d"))
@@ -1614,6 +1618,6 @@ class SettingsPage(QWidget):
     def open_data(self):
         os.makedirs(E.DATA_DIR, exist_ok=True)
         if E.IS_WIN:
-            os.startfile(E.DATA_DIR)  # noqa: лише Windows
+            os.startfile(E.DATA_DIR)  # лише Windows
         else:
             self.main.toast(E.DATA_DIR)

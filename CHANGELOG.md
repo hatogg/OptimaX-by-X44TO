@@ -2,6 +2,44 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [6.9] — 2026-11-07
+
+Ревізія каталогу оптимізацій: чесніші режими, надійніший відкат, нічого, що не діє.
+
+### Виправлено
+
+- **Дві оптимізації змінювали те саме значення** (7 пар в «Ігровому» режимі: `cpu_scheduling` і `rt_boost` — обидві Win32PrioritySeparation, `timer_resolution` і `dynamic_tick` — той самий `bcdedit`, мережеві пакети, Cortana, служби телеметрії тощо). Друга записувала в журнал як «початкове» значення, яке вже поставила перша, тож відкат однієї з пари або нічого не змінював, або мовчки скасовував іншу, а пошук винної зміни половинним поділом міг помилитися. Тепер кожне налаштування має одну оптимізацію-власника, а взаємовиключні режими ноутбука позначені як конфліктні. Тест `test_catalog.py` не дасть цьому повторитися.
+- **Оптимізації DirectX** («Оптимізація вікон», VRR у вікні, Auto HDR) пишуть у спільний рядок `DirectXUserGlobalSettings`, і відкат однієї повертав увесь рядок, скасовуючи інші. Нова операція `KV` змінює й повертає лише свій параметр, зберігаючи порядок решти, і так само працює в `OptimaX-Rescue.cmd`.
+- **«Доведено» отримувала кожна зміна пакета**, якщо пакет загалом дав приріст: одна справжня зміна робила доведеними й сусідні. Тепер «допомогла» — лише зміна, яку заміряли окремо, а приріст пакета рахується окремо («були в пакетах із приростом»). Старі записи вважаються приростом пакета.
+- **README обіцяв «залишає лише те, що допомогло»**, хоча розумна оптимізація залишає все, що не шкодить. Текст виправлено.
+- Опис фіксованої підкачки згадував очищення під час вимкнення, якого немає з 6.3.2; «Очистити дані пристроїв» стирала історію UserAssist, хоча обіцяла лише сканування пристроїв.
+
+### Змінено
+
+- **Не в планах за замовчуванням**: «Очистити історію Провідника» (стирає й вигляд папок — це приватність, а не швидкість) та «Очистити оперативну пам'ять» (ефект на хвилини) — обидві невідворотні; «Вимкнути Nagle» й «Прибрати обмеження мережі» (TCP, а шутери працюють через UDP); фіксована підкачка (без запасу важкій грі може забракнути пам'яті); прискорення миші (звичка — додає лише мета «мінімальна затримка»); вимкнення індексування (лише для старих ПК). Усе це лишається в експертному меню.
+- **Прибрано з каталогу** (застосоване раніше позначене в «Резервних копіях» і відкочується як завжди; сторож не пропонує застосувати знову): «Вимкнути Windows Defender» (захист від підробки ігнорує ці політики), «Примусовий HPET» (знижує FPS), «Ядро Windows завжди в пам'яті» (IoPageLockLimit — параметр часів XP), «Оптимізація TCP/IP і DNS», «Прискорення мережевого стеку», «Compound TCP» (значення за замовчуванням, застарілі параметри або заміна CUBIC), «Real-Time Thread Boost» (дубль двох інших).
+- Пакет служб більше не вимикає DiagTrack і dmwappushservice — це робить «Вимкнути телеметрію».
+
+### Швидкодія
+
+- Вікно з'являється з головною сторінкою, а решта шістнадцяти добудовується у вільні проходи циклу подій (або в момент першого звернення).
+- Вибрані вбудовані додатки видаляються одним запуском PowerShell на весь пакет змін замість окремого PowerShell і `Get-AppxPackage` для кожного.
+
+### Прибирання
+
+- Мертві обгортки в `mining.py`, `phonemon.demo_url`, невикористані імпорти, некоректні `# noqa`.
+
+<details>
+<summary>English</summary>
+
+**Fixed:** pairs of optimizations changing the same value (7 in the Gaming mode) — the second recorded the first one's value as the “original”, so rolling one back either did nothing or silently cancelled the other, and the culprit search could go wrong; every setting now has a single owner, mutually exclusive laptop modes are marked as conflicts, and `test_catalog.py` keeps it that way. The DirectX optimizations (windowed, VRR, Auto HDR) share the `DirectXUserGlobalSettings` string and rolling one back restored the whole string; the new `KV` operation changes and restores only its own part, also in `OptimaX-Rescue.cmd`. “Proven” went to every change in a batch that gained FPS; now only a change measured on its own is proven, and batch gains are counted separately. The README promised “keeps only what helped” while smart optimization keeps everything that doesn't hurt — fixed. Stale texts for the fixed page file and “Clean device data” (which also wiped UserAssist).
+
+**Changed:** no longer in default plans — clearing Explorer history and RAM (both irreversible), Nagle and network throttling (TCP only; shooters use UDP), the fixed page file, mouse acceleration (added only by the “lowest latency” goal), search indexing (old PCs only); all stay in the expert menu. **Removed from the catalog** (already applied ones are marked in Backups and roll back as usual; the guard won't re-apply them): turning off Defender (Tamper Protection ignores it), forced HPET, IoPageLockLimit, three network packs, and a duplicate CPU priority tweak. The services pack no longer touches DiagTrack and dmwappushservice.
+
+**Performance:** the window appears with the home page while the other pages are built in idle event-loop passes; selected built-in apps are removed in one PowerShell run per batch.
+
+</details>
+
 ## [6.8.1] — 2026-11-06
 
 Майнінгова карта поруч з другою відеокартою NVIDIA, до якої підключено монітор (P106 + GT 710).

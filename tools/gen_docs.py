@@ -26,7 +26,11 @@ TEXT = {
                cols="| | Оптимізація | Що робить | Профілі | Відкат |", yes="так", no="ні",
                note="Перед застосуванням OptimaX перевіряє сумісність із вашим залізом і версією Windows: "
                     "недоречне вимикається, шкідливе для вашого ПК (наприклад, вимкнення Game Bar на AMD X3D) "
-                    "блокується, а причина пишеться під пунктом."),
+                    "блокується, а причина пишеться під пунктом.",
+               retired="Прибрано з OptimaX",
+               retired_d="Ці зміни OptimaX більше не пропонує. Якщо якусь із них застосовано раніше, вона лишається в "
+                         "журналі, і її можна відкотити до вашого початкового значення в «Резервних копіях».",
+               retired_cols="| Оптимізація | Чому прибрано |"),
     "en": dict(title="All OptimaX optimizations", back="← Back to the main page", other="Українська",
                other_link="../uk/tweaks.md",
                intro="Generated from the program code ({n} optimizations in {g} sections, version {v}). Marks: "
@@ -35,7 +39,11 @@ TEXT = {
                cols="| | Optimization | What it does | Profiles | Rollback |", yes="yes", no="no",
                note="Before applying, OptimaX checks compatibility with your hardware and Windows version: "
                     "irrelevant items are disabled, items harmful to your PC (for example, turning off Game Bar "
-                    "on AMD X3D) are blocked, and the reason is shown under the item."),
+                    "on AMD X3D) are blocked, and the reason is shown under the item.",
+               retired="Removed from OptimaX",
+               retired_d="OptimaX no longer offers these changes. If one of them was applied earlier, it stays in the "
+                         "journal and can be rolled back to your original value in Backups.",
+               retired_cols="| Optimization | Why it was removed |"),
 }
 
 
@@ -43,12 +51,12 @@ def build(lang: str) -> str:
     i18n.set_language(lang)
     t_ = TEXT[lang]
     readme = "../../README.md" if lang == "uk" else "../../README.en.md"
-    items_all = [t for t in E.TWEAKS if not t.custom]
+    items_all = [t for t in E.TWEAKS if not t.custom and not t.retired]
     out = [f"# {t_['title']}", "",
            f"[{t_['back']}]({readme}) · [{t_['other']}]({t_['other_link']})", "",
            t_["intro"].format(n=len(items_all), g=len(E.GROUP_IDS), v=E.VERSION), "", t_["note"], ""]
     for gid in E.GROUP_IDS + ["visual"]:
-        items = [t for t in E.TWEAKS if t.group == gid]
+        items = [t for t in E.TWEAKS if t.group == gid and not t.retired]
         if not items:
             continue
         out += [f"## {tr('grp.' + gid)}", ""]
@@ -62,6 +70,13 @@ def build(lang: str) -> str:
             profs = ", ".join(tr(f"prof.{k}.name") for k in "FMLTOX" if k in t.p) or "—"
             desc = (t.desc or "").replace("|", "\\|").replace("\n", " ")
             out.append(f"| {IMPACT[t.impact]} | {title} | {desc} | {profs} | {t_['yes'] if t.reversible else t_['no']} |")
+        out.append("")
+    gone = [t for t in E.TWEAKS if t.retired]
+    if gone:
+        out += [f"## {t_['retired']}", "", t_["retired_d"], "", t_["retired_cols"], "| --- | --- |"]
+        for t in gone:
+            why = tr(f"retired.{t.retired}").replace("|", "\\|")
+            out.append(f"| {t.title} | {why[:1].upper() + why[1:]} |")
         out.append("")
     return "\n".join(out)
 

@@ -11,13 +11,13 @@ import time
 import webbrowser
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QWidget, QFrame, QLineEdit, QFileDialog, QMenu
+from PyQt6.QtWidgets import QFrame, QLineEdit, QFileDialog, QMenu
 
 import engine as E
 import features as F
 import hwtests as HT
 from i18n import tr
-from ui_kit import (T, label, button, vbox, hbox, badge, style_badge, dot, clear_layout, section_card, Segmented, Switch,
+from ui_kit import (label, button, vbox, hbox, badge, clear_layout, Segmented, Switch,
                     Ask, LOG, Check)
 
 
@@ -38,7 +38,6 @@ def _row(parent_layout, title: str, sub: str = "", right=()):
 
 # ───────────────────────── Фонові процеси ─────────────────────────
 def build_procs(page, v):
-    import pages_hwcenter as PH
     c, cv = page.section(v, tr("pm.title"), tr("pm.sub"))
     r = hbox(margins=(14, 4, 14, 4), spacing=10)
     page.pm_auto = Switch()
@@ -164,10 +163,8 @@ def fill_diag(page):
     import perfdiag as PD
     clear_layout(page.pd_box)
     sessions = F.CFG["overlay_sessions"] or []
-    hist = F.CFG["diag_last"]
     items = []
     if sessions:
-        import overlay as OV
         try:
             import json
             with open(sessions[-1]["path"], encoding="utf-8") as f:
@@ -499,7 +496,7 @@ def open_file(path: str):
         LOG.write(f"  [demo] {path}")
         return
     try:
-        os.startfile(path)  # noqa: лише Windows
+        os.startfile(path)  # лише Windows
     except OSError:
         webbrowser.open("file:///" + path.replace("\\", "/"))
 

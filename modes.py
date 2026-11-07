@@ -24,16 +24,16 @@ SMART_BY_DEFAULT = {"gaming": True, "lowend": True}  # приріст має б�
 # Що реально допомагає, коли продуктивність упирається в певний ресурс. Інші зміни продуктивності при цьому
 # обмеженні FPS не додають (лише гріють чи витрачають енергію) — у плані їх не буде.
 FOR_LIMIT = {
-    "cpu": {"cpu_scheduling", "rt_boost", "system_responsiveness", "core_parking", "power_throttling",
+    "cpu": {"cpu_scheduling", "system_responsiveness", "core_parking", "power_throttling",
             "ultimate_power", "turbo_aggressive", "processor_idle", "min_cpu_state", "hybrid_cores",
             "disable_services", "bg_apps_off", "sysmain_smart", "defender_limit", "timer_resolution",
-            "dynamic_tick", "registry_boost", "disable_vbs", "lock_power"},
+            "dynamic_tick", "disable_vbs", "lock_power"},
     "gpu": {"gpu_hw_scheduling", "msi_gpu", "fso_global", "windowed_opt", "vrr_windowed", "amd_ulps", "pcie_aspm",
             "disable_xbox_gamebar", "disable_vbs"},
-    "ram": {"memory_compression", "optimize_pagefile", "bg_apps_off", "sysmain_smart", "disable_services",
-            "registry_boost", "visual_fx_perf", "transparency_off"},
+    "ram": {"memory_compression", "bg_apps_off", "sysmain_smart", "disable_services", "visual_fx_perf",
+            "transparency_off"},
     "disk": {"disable_search_index", "sysmain_smart", "ntfs_lastaccess", "ntfs_8dot3", "defender_limit",
-             "optimize_pagefile", "memory_compression"},
+             "memory_compression"},
     "power": {"ultimate_power", "power_throttling", "laptop_ac_max", "min_cpu_state", "lock_power", "pcie_aspm"},
     "thermal": set(),
 }
@@ -83,13 +83,14 @@ def _base(mode: str, hw: dict) -> list:
 
 
 def plan(mode: str, hw: dict = None, bottleneck: dict = None, evidence: dict = None, applied=None) -> dict:
-    """-> {mode, ids, excluded: [{id, why, kw}], smart, limit, proven}.
+    """-> {mode, ids, excluded: [{id, why, kw}], smart, limit, proven, pack}.
+    proven — допомогли, коли їх міряли окремо; pack — були в пакеті, що дав приріст.
     why: na | block | harmful | no_effect | limit | hot | conflict | not_reversible."""
     hw = hw or {}
     evidence = F.CFG["tweak_evidence"] if evidence is None else evidence
     bn = bottleneck if bottleneck is not None else latest_bottleneck()
     out = {"mode": mode, "ids": [], "excluded": [], "smart": SMART_BY_DEFAULT.get(mode, False),
-           "limit": None, "proven": []}
+           "limit": None, "proven": [], "pack": []}
     if mode == "manual" or mode not in MODES:
         return out
     limit = bn.get("main") if bn and (bn.get("share") or 0) >= CONFIDENT else None
@@ -132,6 +133,8 @@ def plan(mode: str, hw: dict = None, bottleneck: dict = None, evidence: dict = N
                 continue
         if ev == "proven":
             out["proven"].append(tid)
+        elif ev == "pack":
+            out["pack"].append(tid)
         keep.append(tid)
     keep, clashes = E.resolve_conflicts(keep, applied)
     for tid, other in clashes:
