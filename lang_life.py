@@ -223,6 +223,30 @@ STRINGS = {
                        "More reliable rollback: each setting is now changed by one optimization only, so rolling one "
                        "back no longer cancels another, and the culprit search no longer gets confused. The DirectX "
                        "optimizations (windowed, VRR, Auto HDR) restore only their own part."),
+    "wn.610.temp": ("Температура процесора в Hardware Center тепер справжня: OptimaX бере її з Core Temp, HWiNFO, AIDA64 "
+                    "чи LibreHardwareMonitor, якщо котрась запущена. Теплова зона ACPI, яка на багатьох платах завжди "
+                    "показує 27,8 °C, більше не видається за процесор.",
+                    "Температура процессора в Hardware Center теперь настоящая: OptimaX берёт её из Core Temp, HWiNFO, "
+                    "AIDA64 или LibreHardwareMonitor, если какая-то запущена. Тепловая зона ACPI, которая на многих "
+                    "платах всегда показывает 27,8 °C, больше не выдаётся за процессор.",
+                    "The CPU temperature in Hardware Center is now real: OptimaX reads it from Core Temp, HWiNFO, AIDA64 "
+                    "or LibreHardwareMonitor if one is running. The ACPI thermal zone that reads 27.8 °C on many boards "
+                    "no longer poses as the CPU."),
+    "wn.610.gpu": ("Датчики відеокарти — тієї, що тестується чи малює гру. З двома картами NVIDIA (GT 710 + P106) "
+                   "температура й частоти раніше бралися з першої на шині.",
+                   "Датчики видеокарты — той, что тестируется или рисует игру. С двумя картами NVIDIA (GT 710 + P106) "
+                   "температура и частоты раньше брались с первой на шине.",
+                   "GPU sensors now belong to the card being tested or rendering the game. With two NVIDIA cards "
+                   "(GT 710 + P106) temperature and clocks used to come from the first one on the bus."),
+    "wn.610.info": ("Точніші відомості про залізо: швидкість кожного модуля пам'яті на старих платах більше не вдвічі "
+                    "менша (DDR3-1333 замість 667), виробник замість коду на кшталт «80CE», правильний тип модуля, "
+                    "відеопам'ять вбудованої графіки в МБ.",
+                    "Точнее сведения о железе: скорость каждого модуля памяти на старых платах больше не вдвое меньше "
+                    "(DDR3-1333 вместо 667), производитель вместо кода вроде «80CE», правильный тип модуля, видеопамять "
+                    "встроенной графики в МБ.",
+                    "More accurate hardware info: per-module memory speed on older boards is no longer halved "
+                    "(DDR3-1333 instead of 667), the maker instead of a code like “80CE”, the right module type, and "
+                    "integrated graphics memory in MB."),
     "wn.69.fast": ("Швидше: вікно з'являється, не чекаючи всіх сторінок, а вибрані вбудовані додатки видаляються одним "
                    "запуском PowerShell замість окремого для кожного.",
                    "Быстрее: окно появляется, не дожидаясь всех страниц, а выбранные встроенные приложения удаляются "

@@ -589,7 +589,8 @@ class MiningCard(QFrame):
                                     pcie_tx=450 * 1024, pcie_rx=300 * 1024, vram_used=5400, vram_total=6144, temp=67,
                                     power=105.0, clock=1708)] * 10}
             import gpubench as GB
-            n = GB.Nvml()
+            mining = [m.get("name") for m in (self.main.hw or {}).get("mining") or [] if isinstance(m, dict)]
+            n = GB.Nvml(mining[0] if mining else "")  # саме майнінгова карта, а не перша NVIDIA за шиною
             if not n.ok:
                 return {"nv": [], "error": "nvml"}
             try:

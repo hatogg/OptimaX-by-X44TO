@@ -37,8 +37,7 @@ def status_badge(status: str) -> QWidget:
 
 
 def finding_text(f) -> str:
-    level, key, kw = f
-    return tr(key, **(kw or {}))
+    return HT.finding_str(f)
 
 
 def value_text(v) -> str:
@@ -185,7 +184,9 @@ class TestBox:
         self.describe = describe
         self.danger = ""
         self.samples = []
-        self.sensors = HT.Sensors(self.page.main.hw or {}, gpu=gpu) if sensors else None
+        plan = getattr(self.page, "gpu_plan", lambda: {})() if gpu else {}
+        self.sensors = HT.Sensors(self.page.main.hw or {}, gpu=gpu, gpu_name=(plan or {}).get("name") or "") \
+            if sensors else None
         self.start_btn.setEnabled(False)
         self.prog.show()
         self.prog.set(tr("hwc.p.start"))
@@ -410,6 +411,7 @@ class HwCenterPage(QWidget):
         self.run_bg(lambda log, p: HI.collect(hw), self.fill_info)
 
     def fill_info(self, d):
+        import hardware as H
         self.info_btn.setEnabled(True)
         self.info_btn.setText(tr("hwc.info.refresh"))
         if not isinstance(d, dict) or d.get("error"):
@@ -430,7 +432,7 @@ class HwCenterPage(QWidget):
             self._info_card(tr("hwc.i.gpu"), [
                 ("hwc.i.model", g.get("name")), ("hwc.i.vendor", (g.get("vendor") or "").upper() or None),
                 ("hwc.i.kind", tr(f"gs.kind.{g['kind']}") if g.get("kind") else None),
-                ("hwc.i.vram", f"{g['vram_gb']} GB" if g.get("vram_gb") else None),
+                ("hwc.i.vram", H.vram_text(g["vram_gb"]) if g.get("vram_gb") else None),
                 ("hwc.i.driver_date", g.get("driver_date")),
                 ("hwc.i.display", tr("hwc.yes") if g.get("display") else tr("hwc.no") if g.get("display") is False else None)])
         rows = [("hwc.i.total", f"{ram['total_gb']} GB" if ram.get("total_gb") else None),
@@ -564,7 +566,7 @@ class HwCenterPage(QWidget):
             st = states.get("cpu") or {}
             parts = [tr("hwc.p.cpu", t=int(st.get("t") or 0), d=seconds, rate=st.get("rate") or 0)]
             if s.get("temp") is not None:
-                parts.append(f"{s['temp']:.0f} °C")
+                parts.append(HT.live_temp(s))
             if s.get("mhz"):
                 parts.append(f"{s['mhz']} {tr('hwc.u.mhz')}")
             if st.get("errors"):
@@ -974,7 +976,7 @@ class HwCenterPage(QWidget):
             ("hwc.lap.hybrid", " + ".join(f"{a['name']} ({tr('gs.kind.' + a['kind'])})" for a in ads) if hybrid
              else tr("hwc.no") if ads else None),
             ("hwc.lap.throttle", "; ".join(thr) if thr else (tr("hwc.lap.no_throttle") if cpu else None)),
-            ("hwc.lap.temp", f"{cpu['temp_max']:.0f} °C" if cpu.get("temp_max") else None)])
+            ("hwc.lap.temp", HT.temp_text(cpu["temp_max"], cpu.get("temp_src")) if cpu.get("temp_max") else None)])
 
     def load_battery(self):
         import hardware as H
@@ -1116,7 +1118,7 @@ class HwCenterPage(QWidget):
             for k, st in states.items():
                 parts.append(f"{tr('hwc.sm.' + k) if k in self.STRESS_MODES else k}: {st.get('state', '?')}")
             if s.get("temp") is not None:
-                parts.append(f"CPU {s['temp']:.0f} °C")
+                parts.append(HT.live_temp(s))
             if s.get("gpu_temp") is not None:
                 parts.append(f"GPU {s['gpu_temp']:.0f} °C")
             t = max((float(st.get("t") or 0) for st in states.values()), default=0)
@@ -1147,13 +1149,13 @@ class HwCenterPage(QWidget):
                 statuses.append(HT.SKIPPED)
         f += HT.cpu_findings(samples, int(hw.get("mhz") or 0)) + HT.gpu_findings(samples)
         st = HT.worst(statuses + [HT.status_of(f)])
-        temps = [s.get("temp") for s in samples if s.get("temp") is not None]
+        temps, tsrc = HT.cpu_temps(samples)
         gtemps = [s.get("gpu_temp") for s in samples if s.get("gpu_temp") is not None]
         rows = [("hwc.r.mode", tr(f"hwc.sm.{mode}")), ("hwc.r.duration", f"{len(samples)} {tr('hwc.u.s')}"),
-                ("hwc.r.temp_max", f"{max(temps):.0f} °C" if temps else None),
+                ("hwc.r.temp_max", HT.temp_text(max(temps), tsrc) if temps else None),
                 ("hwc.r.gpu_temp_max", f"{max(gtemps):.0f} °C" if gtemps else None)]
         return HT.result("stress_combined", st, tr(f"hwc.sum.stress.{st}"), rows=rows, findings=f, mode=mode,
-                         series=dict(temp=[s.get("temp") for s in samples], gpu_temp=[s.get("gpu_temp") for s in samples],
+                         series=dict(temp=HT.temp_series(samples), gpu_temp=[s.get("gpu_temp") for s in samples],
                                      mhz=[s.get("mhz") for s in samples]))
 
     # ───────────────────────── Діагностика Windows ─────────────────────────

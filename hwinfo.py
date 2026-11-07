@@ -51,7 +51,29 @@ def cpu_arch() -> str:
 
 
 # ───────────────────────── SMBIOS: плата, BIOS, модулі пам'яті ─────────────────────────
-MEM_FORM = {9: "DIMM", 13: "SO-DIMM", 11: "RIMM", 12: "SODIMM", 15: "FB-DIMM", 34: "CAMM"}
+# SMBIOS тип 17, Form Factor (не плутати з Win32_PhysicalMemory.FormFactor, де 8 — DIMM, а 12 — SODIMM)
+MEM_FORM = {9: "DIMM", 12: "RIMM", 13: "SO-DIMM", 14: "SRIMM", 15: "FB-DIMM", 16: "Die"}
+
+# Виробники модулів за кодом JEDEC JEP106: (номер банку — кількість кодів продовження 0x7F, код без біта парності).
+# Старі BIOS пишуть у SMBIOS не назву, а сирий код: «80CE000080CE» — це Samsung, «0198» — Kingston.
+JEDEC = {(0, 0x4E): "Samsung", (0, 0x2D): "SK hynix", (0, 0x2C): "Micron", (1, 0x18): "Kingston",
+         (2, 0x1E): "Corsair", (4, 0x4D): "G.Skill", (5, 0x1B): "Crucial", (4, 0x4B): "ADATA",
+         (4, 0x6F): "Team Group", (5, 0x02): "Patriot", (1, 0x4F): "Transcend", (2, 0x7E): "Elpida",
+         (3, 0x0B): "Nanya", (1, 0x7A): "Apacer"}
+
+
+def mem_vendor(s: str) -> str:
+    """«80CE000080CE» / «0x00CE» / «CE00000000000000» -> «Samsung»; назву без коду лишаємо як є."""
+    raw = (s or "").strip()
+    h = raw[2:] if raw.lower().startswith("0x") else raw
+    if not re.fullmatch(r"[0-9A-Fa-f]{4}(?:[0-9A-Fa-f]{2})*", h):
+        return raw
+    b0, b1 = int(h[0:2], 16), int(h[2:4], 16)
+    for bank, code in ((b0, b1), (b1, b0)):
+        name = JEDEC.get((bank & 0x7F, code & 0x7F))
+        if name and code:
+            return name
+    return "" if not int(h, 16) else raw
 
 
 def smbios_details(raw: bytes) -> dict:
@@ -78,12 +100,20 @@ def smbios_details(raw: bytes) -> dict:
             elif size and size != 0xFFFF:
                 mb = (size & 0x7FFF) // 1024 if size & 0x8000 else size
             speed = HN._word(fmt, 0x15) or 0
+            if speed == 0xFFFF:
+                speed = HN._dword(fmt, 0x54) or 0  # SMBIOS 3.3+: понад 65534 МТ/с
             conf = HN._word(fmt, 0x20) or 0
+            if conf == 0xFFFF:
+                conf = HN._dword(fmt, 0x58) or 0
+            import hardware as H
             out["modules"].append(dict(
                 slot=HN._str(strings, HN._byte(fmt, 0x10)) or HN._str(strings, HN._byte(fmt, 0x11)), mb=mb,
-                type=HN.MEM_TYPES.get(HN._byte(fmt, 0x12) or 0, ""), form=MEM_FORM.get(HN._byte(fmt, 0x0E) or 0, ""),
-                speed=speed if speed != 0xFFFF else 0, conf=conf if conf != 0xFFFF else 0,
-                vendor=HN._str(strings, HN._byte(fmt, 0x17)).strip(), part=HN._str(strings, HN._byte(fmt, 0x1A)).strip()))
+                type=HN.MEM_TYPES.get(HN._byte(fmt, 0x12) or 0, "") if mb else "",
+                form=MEM_FORM.get(HN._byte(fmt, 0x0E) or 0, "") if mb else "",
+                # SMBIOS до 3.1 пише «налаштовану швидкість» у МГц — половину МТ/с (DDR3-1333 -> 667)
+                speed=speed, conf=H.ram_speed_fix(speed, conf) if mb else 0,
+                vendor=mem_vendor(HN._str(strings, HN._byte(fmt, 0x17))) if mb else "",
+                part=HN._str(strings, HN._byte(fmt, 0x1A)).strip() if mb else ""))
     return out
 
 
@@ -266,7 +296,7 @@ def collect(hw: dict) -> dict:
         ads = []
     for name, vram, date in hw.get("gpus") or []:
         ad = next((a for a in ads if a.get("name") == name), {})
-        gpus.append(dict(name=name, vram_gb=round(vram, 1) if vram else None, driver_date=date or None,
+        gpus.append(dict(name=name, vram_gb=round(vram, 3) if vram else None, driver_date=date or None,
                          kind=ad.get("kind"), display=ad.get("display"), vendor=ad.get("vendor") or H._gpu_vendor(name)))
     try:
         st = E.mem_status()

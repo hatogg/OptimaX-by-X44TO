@@ -915,7 +915,8 @@ def build_check(hw: dict, games=None) -> list:
         add("thermal", "info", ("hint", "thermal"), t=int(zone))
     elif isinstance(gpu_t, (int, float)) and gpu_t >= 60:
         add("thermal", "gpu", ("hint", "thermal"), t=int(gpu_t))
-    elif isinstance(zone, (int, float)):
+    elif isinstance(zone, (int, float)) and (th.get("src") != "acpi" or hw.get("laptop")):
+        # на настільній платі теплова зона ACPI — датчик плати або стала: «у нормі» за нею не стверджуємо
         add("thermal", "ok", t=int(zone))
     for c in res:  # «hot» і «gpu» — це попередження та порада з власними текстами
         if c["id"] == "thermal" and c["level"] in ("hot", "gpu"):
@@ -1062,26 +1063,20 @@ def sys_stats() -> dict:
     return d
 
 
-def gpu_temp():
-    """Температура першої відеокарти NVIDIA через NVML, °C, або None."""
+def gpu_temp(name: str = ""):
+    """Температура відеокарти NVIDIA через NVML, °C, або None. Без назви — карта з найбільшою пам'яттю (ігрова,
+    а не GT 710 для картинки, яка стоїть першою на шині)."""
     if not E.IS_WIN:
         return 54 if E.DEMO in ("gaming", "laptop", "xeon") else None
-    for path in ("nvml.dll", r"C:\Program Files\NVIDIA Corporation\NVSMI\nvml.dll"):
+    try:
+        import gpubench as GB
+        nv = GB.Nvml(name)
         try:
-            nvml = ctypes.WinDLL(path)
-            init = getattr(nvml, "nvmlInit_v2", None) or nvml.nvmlInit
-            if init() != 0:
-                continue
-            h = ctypes.c_void_p()
-            get = getattr(nvml, "nvmlDeviceGetHandleByIndex_v2", None) or nvml.nvmlDeviceGetHandleByIndex
-            t = ctypes.c_uint(0)
-            ok = get(0, ctypes.byref(h)) == 0 and nvml.nvmlDeviceGetTemperature(h, 0, ctypes.byref(t)) == 0
-            nvml.nvmlShutdown()
-            if ok:
-                return int(t.value)
-        except Exception:
-            continue
-    return None
+            return nv.read().get("temp") if nv.ok else None
+        finally:
+            nv.close()
+    except Exception:
+        return None
 
 
 # ───────────────────────── заміри «до/після» ─────────────────────────

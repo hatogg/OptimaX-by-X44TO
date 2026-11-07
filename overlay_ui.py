@@ -238,6 +238,8 @@ class OverlayController(QObject):
             self.notify.emit(tr("ov.exclusive", game=game["exe"]), "warn")
         if not self.gpu_name and E.IS_WIN and time.time() - self.seen_since > 8:
             self.gpu_name = OV.render_gpu(game["pid"]) or " "
+            if self.sensors and self.gpu_name.strip():
+                self.sensors.use_gpu(self.gpu_name.strip())
         lines = OV.overlay_lines(c.get("mode", "standard"), st, self.last_s, dict(gpu=self.gpu_name.strip(), mode=mode))
         graph = self.stream.series(160) if (self.stream and c.get("mode") == "extended") else []
         self.win.set_content(lines, graph, self.rec is not None)

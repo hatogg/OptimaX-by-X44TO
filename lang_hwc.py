@@ -126,14 +126,40 @@ STRINGS = {
     "hwc.f.limit_thermal": ("Ліміт продуктивності {p}% — разом із перегрівом, тож причина передусім тепло.",
                             "Лимит производительности {p}% — вместе с перегревом, так что причина прежде всего тепло.",
                             "Performance limit {p}% together with overheating, so heat is the main cause."),
-    "hwc.f.cpu_hot": ("Процесор гарячий: {t} °C (теплова зона).", "Процессор горячий: {t} °C (тепловая зона).",
-                      "The CPU is hot: {t} °C (thermal zone)."),
-    "hwc.f.no_cpu_temp": ("Температуру процесора Windows не віддає без драйвера датчиків — показуємо «н/д», а не вигадане "
-                          "число. Тротлінг видно за частотою й лімітами.",
-                          "Температуру процессора Windows не отдаёт без драйвера датчиков — показываем «н/д», а не "
-                          "выдуманное число. Троттлинг виден по частоте и лимитам.",
-                          "Windows doesn't expose the CPU temperature without a sensor driver, so it shows N/A rather than "
-                          "an invented number. Throttling is visible from clocks and limits."),
+    "hwc.f.cpu_hot": ("Процесор гарячий: {t} °C ({src}).", "Процессор горячий: {t} °C ({src}).",
+                      "The CPU is hot: {t} °C ({src})."),
+    "hwc.f.acpi_static": ("Теплова зона ACPI весь тест показувала {t} °C і не змінилась під навантаженням — це датчик "
+                          "плати або стала, а не процесор, тож її відкинуто. Щоб бачити температуру ядер, запустіть "
+                          "Core Temp (працює одразу), HWiNFO із «Shared Memory Support», AIDA64 або "
+                          "LibreHardwareMonitor із вебсервером — OptimaX підхопить їх сам.",
+                          "Тепловая зона ACPI весь тест показывала {t} °C и не менялась под нагрузкой — это датчик "
+                          "платы или константа, а не процессор, поэтому она отброшена. Чтобы видеть температуру ядер, "
+                          "запустите Core Temp (работает сразу), HWiNFO с «Shared Memory Support», AIDA64 или "
+                          "LibreHardwareMonitor с веб-сервером — OptimaX подхватит их сам.",
+                          "The ACPI thermal zone read {t} °C for the whole test and didn't change under load — it's a "
+                          "motherboard sensor or a constant, not the CPU, so it was discarded. To see core temperatures, "
+                          "run Core Temp (works out of the box), HWiNFO with “Shared Memory Support”, AIDA64 or "
+                          "LibreHardwareMonitor with its web server — OptimaX picks them up on its own."),
+    "hwc.f.acpi_zone": ("Температура — з теплової зони ACPI: це оцінка плати, вона може відставати від ядер на "
+                        "кілька градусів і секунд. Точніше — з Core Temp, HWiNFO, AIDA64 чи LibreHardwareMonitor.",
+                        "Температура — из тепловой зоны ACPI: это оценка платы, она может отставать от ядер на "
+                        "несколько градусов и секунд. Точнее — с Core Temp, HWiNFO, AIDA64 или LibreHardwareMonitor.",
+                        "The temperature comes from the ACPI thermal zone: a motherboard estimate that can lag the "
+                        "cores by a few degrees and seconds. Core Temp, HWiNFO, AIDA64 or LibreHardwareMonitor are "
+                        "more accurate."),
+    "hwc.temp_src.zone": ("теплова зона", "тепловая зона", "thermal zone"),
+    "hwc.f.no_cpu_temp": ("Windows не віддає температуру ядер без драйвера датчиків, тож замість вигаданого числа — "
+                          "«н/д». Запустіть Core Temp, HWiNFO (із «Shared Memory Support»), AIDA64 або "
+                          "LibreHardwareMonitor (із вебсервером) — OptimaX візьме температуру з них. Тротлінг видно й "
+                          "так — за частотою й лімітами.",
+                          "Windows не отдаёт температуру ядер без драйвера датчиков, поэтому вместо выдуманного числа — "
+                          "«н/д». Запустите Core Temp, HWiNFO (с «Shared Memory Support»), AIDA64 или "
+                          "LibreHardwareMonitor (с веб-сервером) — OptimaX возьмёт температуру из них. Троттлинг виден "
+                          "и так — по частоте и лимитам.",
+                          "Windows doesn't expose core temperatures without a sensor driver, so it shows N/A rather than "
+                          "an invented number. Run Core Temp, HWiNFO (with “Shared Memory Support”), AIDA64 or "
+                          "LibreHardwareMonitor (with its web server) and OptimaX will read the temperature from them. "
+                          "Throttling is visible anyway from clocks and limits."),
     "hwc.f.gpu_hot": ("Відеокарта гаряча: {t} °C.", "Видеокарта горячая: {t} °C.", "The GPU is hot: {t} °C."),
     "hwc.f.gpu_throttle": ("Відеокарта скидала частоти: {why}.", "Видеокарта сбрасывала частоты: {why}.",
                            "The GPU lowered its clocks: {why}."),

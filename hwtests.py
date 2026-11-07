@@ -287,26 +287,43 @@ CPU_ARRAYS = {"temp": r"\Thermal Zone Information(*)\Temperature",
 
 
 class Sensors:
-    """Раз на секунду: завантаження й частота процесора, ліміт продуктивності, теплові зони; NVIDIA — NVML.
-    Чого Windows не дає (температура ядра процесора без драйвера), те None, а не вигадане число."""
+    """Раз на секунду: завантаження й частота процесора, ліміт продуктивності, температура процесора; NVIDIA — NVML.
 
-    def __init__(self, hw: dict = None, gpu: bool = False):
+    Температура процесора — з Core Temp / HWiNFO / AIDA64 / LibreHardwareMonitor, якщо котрась запущена
+    (cpusensors). Інакше — теплова зона ACPI з позначкою temp_src="acpi": на настільних платах це датчик плати
+    або стала, тож у підсумку вона підписується як «ACPI», а незмінна під навантаженням відкидається.
+    gpu_name — котра карта NVIDIA (вибрана для тесту чи та, що малює гру); без неї — карта з найбільшою пам'яттю."""
+
+    def __init__(self, hw: dict = None, gpu: bool = False, gpu_name: str = ""):
         self.hw = hw or {}
         self.base = int(self.hw.get("mhz") or 0)
         self.q = None
         self.nv = None
+        self.cpu_t = None
+        self.gpu_name = gpu_name or ""
         self.samples = []
         self.i = 0
         if E.IS_WIN:
+            import cpusensors as CS
             import monitor as M
             self.q = M.Pdh(CPU_COUNTERS, CPU_ARRAYS)
+            self.cpu_t = CS.CpuTemp()
             if gpu:
                 try:
                     import gpubench as GB
-                    nv = GB.Nvml()
+                    nv = GB.Nvml(self.gpu_name)
                     self.nv = nv if nv.ok else None
                 except Exception:
                     self.nv = None
+
+    def use_gpu(self, name: str) -> None:
+        """Перемкнути датчики NVML на іншу карту (оверлей дізнається, на чому малює гра, через кілька секунд)."""
+        self.gpu_name = name or ""
+        if self.nv and name:
+            try:
+                self.nv.select(name)
+            except Exception:
+                pass
 
     def sample(self, load: float = 1.0) -> dict:
         """load — частка навантаження в демо-режимі (0 — простій)."""
@@ -319,9 +336,13 @@ class Sensors:
             zones = M._zone_c(d.get("temp"))
             passive = [v for v in (d.get("passive") or {}).values() if 0 < v <= 100]
             perf = d.get("perf")
+            zone = round(max(zones), 1) if zones else None
+            t, src = self.cpu_t.read() if self.cpu_t else (None, None)
+            if t is None and zone is not None:
+                t, src = zone, "acpi"
             s = dict(util=min(100.0, d["util"]) if "util" in d else None, perf=perf,
                      mhz=round(self.base * perf / 100) if (perf and self.base) else None,
-                     limit=d.get("limit"), temp=round(max(zones), 1) if zones else None,
+                     limit=d.get("limit"), temp=t, temp_src=src, zone=zone,
                      passive=min(passive) if passive else None)
             if self.nv:
                 g = self.nv.read()
@@ -353,15 +374,21 @@ def _demo_sensor(hw: dict, i: int, load: float) -> dict:
     base = int(hw.get("mhz") or 3000)
     heat = 1 - math.exp(-i / (25 if lap else 60))
     temp = 42 + ((93 if lap else 84 if old else 71) - 42) * heat * load
-    perf = (165 if not old else 110) * load + 40 * (1 - load)
+    perf = (110 if old else 112 if E.DEMO == "mining" else 165) * load + 40 * (1 - load)  # i5-3570: 3,4 -> 3,8 ГГц
     limit = 100.0
     passive = 100.0
     if lap and load and i > 30:
         perf *= 0.82
         limit = 86.0
         passive = 92.0
+    # джерело температури: ігровий ПК — Core Temp, ноутбук і старий ПК — теплова зона, що справді гріється,
+    # настільна плата з майнінговою картою — стала зона ACPI 27,8 °C (так поводяться плати на H67/Z77)
+    t, src = round(temp + rnd.uniform(-0.4, 0.4), 1), ("coretemp" if E.DEMO in ("gaming", "x3d", "xeon") else "acpi")
+    zone = t if src == "acpi" else round(30 + 6 * heat * load, 1)
+    if E.DEMO == "mining":
+        t = zone = 27.8
     return dict(util=round(min(100.0, 99 * load + rnd.uniform(-1, 1) * load), 1), perf=round(perf, 1),
-                mhz=round(base * perf / 100), limit=limit, temp=round(temp + rnd.uniform(-0.4, 0.4), 1),
+                mhz=round(base * perf / 100), limit=limit, temp=t, temp_src=src, zone=zone,
                 passive=passive, gpu_temp=round(40 + 36 * heat * load, 1) if E.DEMO in ("gaming", "laptop", "xeon") else None,
                 gpu_clock=2520 if load else 300, gpu_power=170.0 * load, gpu_util=97 * load, gpu_throttle=[],
                 vram_used=round(1200 + 4800 * load), vram_total=8188 if lap else 12282,
@@ -400,7 +427,8 @@ def cpu_findings(samples: list, base_mhz: int = 0) -> list:
         sd = math.sqrt(sum((c - mean) ** 2 for c in clocks) / len(clocks))
         if mean and sd / mean > 0.12:
             out.append((WARN, "hwc.f.clock_unstable", dict(cv=round(sd / mean * 100))))
-    temps = [s["temp"] for s in load if s.get("temp") is not None]
+    temps, src = cpu_temps(samples)
+    temps = [s["temp"] for s in load if s.get("temp") is not None] if temps else []
     passive = [s["passive"] for s in load if s.get("passive") is not None]
     limits = [s["limit"] for s in load if s.get("limit") is not None]
     thermal = bool(passive and min(passive) < 100)
@@ -411,10 +439,74 @@ def cpu_findings(samples: list, base_mhz: int = 0) -> list:
     elif limits and median(limits) < 95 and thermal:
         out.append(("info", "hwc.f.limit_thermal", dict(p=round(median(limits)))))
     if temps and max(temps) >= CPU_TEMP_WARN:
-        out.append((WARN, "hwc.f.cpu_hot", dict(t=round(max(temps)))))
-    if not temps:
+        out.append((WARN, "hwc.f.cpu_hot", dict(t=round(max(temps)), src=temp_source(src))))
+    if src == "acpi_static":
+        zone = next((s.get("zone") for s in samples if s.get("zone") is not None), None)
+        out.append(("info", "hwc.f.acpi_static", dict(t=round(zone) if zone is not None else "?")))
+    elif src == "acpi" and temps:
+        out.append(("info", "hwc.f.acpi_zone", {}))
+    elif not temps:
         out.append(("info", "hwc.f.no_cpu_temp", {}))
     return out
+
+
+def cpu_temps(samples: list):
+    """-> (температури процесора, джерело). Джерело — "coretemp" / "hwinfo" / "aida64" / "lhm" (справжній датчик),
+    "acpi" (теплова зона, що змінюється), "acpi_static" (зона стоїть на одному числі — це не процесор, температур
+    немає) або None."""
+    import cpusensors as CS
+    vals = [s for s in samples if s.get("temp") is not None]
+    if not vals:
+        return [], None
+    real = [s for s in vals if s.get("temp_src") not in ("acpi", None)]
+    if real:
+        srcs = [s["temp_src"] for s in real]
+        return [s["temp"] for s in real], max(set(srcs), key=srcs.count)
+    temps = [s["temp"] for s in vals]
+    if not any(s.get("temp_src") == "acpi" for s in vals):
+        return temps, None  # заміри старших версій (без джерела) лишаємо як були
+    if CS.acpi_static(temps):
+        return [], "acpi_static"
+    return temps, "acpi"
+
+
+FINDING_DEFAULTS = {"hwc.f.cpu_hot": lambda: dict(src=tr("hwc.temp_src.zone"))}
+
+
+def finding_str(f) -> str:
+    """Текст висновку. Висновки з історії старших версій можуть не мати нових підстановок (до 6.10 у «гарячому
+    процесорі» не було джерела температури) — підставляємо типові, щоб не показувати «{src}»."""
+    level, key, kw = f
+    kw = dict(kw or {})
+    for k, v in (FINDING_DEFAULTS.get(key, dict)() or {}).items():
+        kw.setdefault(k, v)
+    return tr(key, **kw)
+
+
+def temp_source(src) -> str:
+    import cpusensors as CS
+    return CS.source_name(src) or tr("hwc.temp_src.zone")
+
+
+def temp_text(t, src) -> str:
+    """«45 °C (Core Temp)» / «28 °C (ACPI)» для підсумків."""
+    return f"{t:.0f} °C ({temp_source(src)})" if t is not None else None
+
+
+def live_temp(s: dict) -> str:
+    """Рядок для прогресу: «CPU 45 °C» зі справжнього датчика, «ACPI 28 °C» з теплової зони."""
+    if s.get("temp") is None:
+        return ""
+    return f"{'ACPI' if s.get('temp_src') == 'acpi' else 'CPU'} {s['temp']:.0f} °C"
+
+
+def temp_series(samples: list) -> list:
+    """Графік температури процесора; стала зона ACPI — порожній, щоб рівна лінія 28 °C не вдавала процесор."""
+    _t, src = cpu_temps(samples)
+    if src == "acpi_static":
+        return [None for _ in samples]
+    real = src not in ("acpi", None)
+    return [s.get("temp") if (not real or s.get("temp_src") not in ("acpi", None)) else None for s in samples]
 
 
 def gpu_findings(samples: list) -> list:
@@ -453,18 +545,18 @@ def cpu_result(state: dict, samples: list, hw: dict, mode: str) -> dict:
     status = status_of(findings, fail)
     if st == "cancelled" and status == PASS:
         status = SKIPPED
-    temps = [s.get("temp") for s in samples if s.get("temp") is not None]
+    temps, tsrc = cpu_temps(samples)
     mhz = [s.get("mhz") for s in samples if s.get("mhz")]
     rows = [("hwc.r.threads", state.get("threads")), ("hwc.r.score", state.get("score")),
             ("hwc.r.per_thread", state.get("per_thread")), ("hwc.r.errors", state.get("errors", 0)),
-            ("hwc.r.temp_max", f"{max(temps):.0f} °C" if temps else None),
+            ("hwc.r.temp_max", temp_text(max(temps), tsrc) if temps else None),
             ("hwc.r.mhz", f"{round(median(mhz))} / {min(mhz)} {tr('hwc.u.mhz')}" if mhz else None),
             ("hwc.r.duration", f"{int(state.get('t') or 0)} {tr('hwc.u.s')}")]
     return result(f"cpu_{mode}", status, tr(f"hwc.sum.cpu.{status}"), rows=rows, findings=findings,
                   score=state.get("score"), threads=state.get("threads"), errors=state.get("errors", 0),
-                  series=dict(ops=state.get("series") or [], temp=[s.get("temp") for s in samples],
+                  series=dict(ops=state.get("series") or [], temp=temp_series(samples),
                               mhz=[s.get("mhz") for s in samples]),
-                  temp_max=max(temps) if temps else None, mode=mode)
+                  temp_max=max(temps) if temps else None, temp_src=tsrc, mode=mode)
 
 
 # ───────────────────────── оперативна пам'ять ─────────────────────────
