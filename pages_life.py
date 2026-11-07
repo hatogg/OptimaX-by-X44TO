@@ -136,7 +136,7 @@ class CrashCard:
 
     def open_dumps(self):
         if E.IS_WIN and not E.DRY_RUN and os.path.isdir(CL.DUMP_DIR):
-            os.startfile(CL.DUMP_DIR)  # noqa: лише Windows
+            os.startfile(CL.DUMP_DIR)  # лише Windows
 
 
 # ───────────────────────── «Монітор на телефоні» ─────────────────────────

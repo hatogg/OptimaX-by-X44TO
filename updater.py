@@ -317,5 +317,5 @@ def launch(path: str, kind: str) -> bool:
         subprocess.Popen([path, "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/UPDATE=1"],
                          creationflags=E.CREATE_NO_WINDOW)
     else:
-        os.startfile(os.path.dirname(path))  # noqa: портативна версія — показуємо завантажений файл
+        os.startfile(os.path.dirname(path))  # портативна версія — показуємо завантажений файл
     return True

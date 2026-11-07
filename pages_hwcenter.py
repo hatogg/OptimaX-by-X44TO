@@ -1398,6 +1398,6 @@ def open_uri(uri: str) -> None:
         LOG.write(f"  [demo] {uri}")
         return
     try:
-        os.startfile(uri)  # noqa: лише Windows
+        os.startfile(uri)  # лише Windows
     except OSError as e:
         LOG.write(tr("e.err", err=e))

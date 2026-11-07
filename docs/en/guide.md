@@ -28,10 +28,10 @@ Everything the program can do, from the first analysis to the emergency rollback
 ## How it works
 
 1. **Analysis.** OptimaX detects the CPU (including P/E cores, AMD X3D and Xeon), graphics cards, memory, drives, monitor and battery, and shows the optimization and privacy levels, the speed-up potential and the weakest spot of the build.
-2. **Choose a path.** The *Wizard* asks a few simple questions and builds a plan for you. The *Expert menu* has 136 optimizations in 16 sections, each with an explanation, its current state and the exact list of changes.
+2. **Choose a path.** The *Wizard* asks a few simple questions and builds a plan for you. The *Expert menu* has 129 optimizations in 16 sections, each with an explanation, its current state and the exact list of changes.
 3. **Review the changes.** Before anything is applied, the plan is colour-coded: red affects everyday habits, yellow is a moderate change, blue is safe.
 4. **Apply.** First a Windows restore point, then the changes with a console, progress and a Stop button. Optionally, **Trial mode**: after a restart OptimaX asks whether to keep the changes and puts everything back if nobody answers.
-5. **Check.** The **Before/after FPS test** shows whether things really got better, and **Why is it lagging?** explains what slows a game down. **Smart optimization** does this on its own: it measures before and after, keeps only what helped and finds a harmful change by splitting the changes in halves, then removes it.
+5. **Check.** The **Before/after FPS test** shows whether things really got better, and **Why is it lagging?** explains what slows a game down. **Smart optimization** does this on its own: it measures before and after, keeps only what doesn't hurt and finds a harmful change by splitting the changes in halves, then removes it. “Proven” applies only to changes measured on their own; a batch gain doesn't make each change in it proven.
 6. **Rollback and guard.** Every change is written to a journal and restored to *your* original value. The **Settings guard** notices when a Windows update brings back ads, Copilot or telemetry and offers to apply your settings again.
 7. **Emergency rollback.** If the PC crashes with a blue screen or freezes after the changes, OptimaX offers to roll back the latest batch. The **OptimaX-Rescue.cmd** file rolls everything back even from Safe Mode, without starting the program.
 

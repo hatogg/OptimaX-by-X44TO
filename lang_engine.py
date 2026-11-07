@@ -55,6 +55,7 @@ STRINGS = {
                           "  · hibernation is already off, nothing to change"),
     "e.freed_mb": ("  · звільнено ≈ {mb} МБ", "  · освобождено ≈ {mb} МБ", "  · freed ≈ {mb} MB"),
     "e.timeout_pkg": ("  ⚠ тайм-аут, {pkg} пропущено", "  ⚠ тайм-аут, {pkg} пропущен", "  ⚠ timeout, {pkg} skipped"),
+    "e.appx_missing": ("не встановлено", "не установлено", "not installed"),
     "e.win11_only": ("  · пропущено: параметр лише для Windows 11", "  · пропущено: параметр только для Windows 11",
                      "  · skipped: Windows 11 only"),
     "e.blocked": ("  · пропущено: {reason}", "  · пропущено: {reason}", "  · skipped: {reason}"),
@@ -124,6 +125,51 @@ STRINGS = {
     "risk.xbox": ("зламає вхід в Xbox-ігри", "сломает вход в Xbox-игры", "breaks Xbox game sign-in"),
     "risk.fps": ("може знизити FPS", "может снизить FPS", "may lower FPS"),
     "risk.security": ("знижує захист", "снижает защиту", "lowers security"),
+    # 6.9: зміни, які OptimaX більше не пропонує (застосовані раніше лишаються в журналі й відкочуються)
+    "b.retired": ("прибрано в 6.9", "убрано в 6.9", "removed in 6.9"),
+    "retired.na": ("Прибрано з OptimaX у 6.9 — застосовану раніше можна лише відкотити.",
+                   "Убрано из OptimaX в 6.9 — применённое ранее можно только откатить.",
+                   "Removed from OptimaX in 6.9 — if applied earlier, it can only be rolled back."),
+    "retired.note": ("З версії 6.9 OptimaX цю зміну не пропонує: {why} Якщо вона застосована, її можна відкотити до "
+                     "вашого початкового значення в «Резервних копіях».",
+                     "С версии 6.9 OptimaX это изменение не предлагает: {why} Если оно применено, его можно откатить "
+                     "к вашему исходному значению в «Резервных копиях».",
+                     "Since 6.9 OptimaX no longer offers this change: {why} If it's applied, you can roll it back to "
+                     "your original value in Backups."),
+    "retired.dup": ("вона повторювала «Пріоритет активного вікна» й «Віддати ресурси іграм», а дві зміни одного "
+                    "значення плутали відкат.",
+                    "оно повторяло «Приоритет активного окна» и «Отдать ресурсы играм», а два изменения одного "
+                    "значения путали откат.",
+                    "it duplicated Foreground window priority and Give resources to games, and two changes to the same "
+                    "value confused rollback."),
+    "retired.legacy": ("IoPageLockLimit — параметр часів Windows XP, сучасна Windows його не читає.",
+                       "IoPageLockLimit — параметр времён Windows XP, современная Windows его не читает.",
+                       "IoPageLockLimit dates back to Windows XP; modern Windows ignores it."),
+    "retired.defender": ("сучасна Windows ігнорує ці політики (захист від підробки), тож зміна виглядала застосованою, "
+                         "а Defender працював далі. Щоб Defender менше гальмував ігри — «Обмежити Defender до 20% процесора».",
+                         "современная Windows игнорирует эти политики (защита от подделки), поэтому изменение "
+                         "выглядело применённым, а Defender работал дальше. Чтобы Defender меньше тормозил игры — "
+                         "«Ограничить Defender до 20% процессора».",
+                         "modern Windows ignores these policies (Tamper Protection), so it looked applied while "
+                         "Defender kept running. To make Defender slow games down less, use Limit Defender to 20% CPU."),
+    "retired.hpet": ("примусовий таймер HPET на більшості ПК знижує FPS і додає затримку.",
+                     "принудительный таймер HPET на большинстве ПК снижает FPS и добавляет задержку.",
+                     "forcing the HPET timer lowers FPS and adds latency on most PCs."),
+    "retired.net": ("ці параметри або й так стоять у Windows за замовчуванням, або застаріли, а шутери працюють через "
+                    "UDP, якого вони не стосуються.",
+                    "эти параметры либо и так стоят в Windows по умолчанию, либо устарели, а шутеры работают через UDP, "
+                    "которого они не касаются.",
+                    "these settings are either Windows defaults already or obsolete, and shooters use UDP, which they "
+                    "don't affect."),
+    "retired.ctcp": ("CTCP замінює CUBIC, який у Windows 10/11 стоїть за замовчуванням і не гірший, а шутери працюють "
+                     "через UDP.",
+                     "CTCP заменяет CUBIC, который в Windows 10/11 стоит по умолчанию и не хуже, а шутеры работают "
+                     "через UDP.",
+                     "CTCP replaces CUBIC, the Windows 10/11 default, which is no worse, and shooters use UDP."),
+    "e.retired_skip": ("  ↷ {title}: прибрано з OptimaX у 6.9 — не застосовується",
+                       "  ↷ {title}: убрано из OptimaX в 6.9 — не применяется",
+                       "  ↷ {title}: removed from OptimaX in 6.9 — not applied"),
+    "d.kv_part": ("лише цей параметр рядка", "только этот параметр строки", "only this part of the string"),
     "need.hybrid": ("Лише для процесорів Intel 12–14 покоління та Core Ultra з P- і E-ядрами.",
                     "Только для процессоров Intel 12–14 поколения и Core Ultra с P- и E-ядрами.",
                     "Only for Intel 12th–14th gen and Core Ultra CPUs with P- and E-cores."),

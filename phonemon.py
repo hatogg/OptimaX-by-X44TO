@@ -419,7 +419,3 @@ def cleanup() -> None:
     """Видалення OptimaX: прибрати правило брандмауера."""
     if E.IS_WIN and not E.DRY_RUN:
         E.run(["netsh", "advfirewall", "firewall", "delete", "rule", f"name={RULE}"], 15)
-
-
-def demo_url() -> str:
-    return f"http://192.168.1.23:{PORT}/{settings()['token']}/"

@@ -16,7 +16,6 @@ from __future__ import annotations
 import re
 from collections import Counter
 
-import engine as E
 from i18n import tr
 
 CONF = ("high", "medium", "low")

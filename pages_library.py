@@ -295,7 +295,7 @@ class LibraryPage(QWidget):
 
     def open_folder(self):
         if self.sel and E.IS_WIN and not E.DRY_RUN:
-            os.startfile(self.sel["dir"])  # noqa: лише Windows
+            os.startfile(self.sel["dir"])  # лише Windows
 
     def open_mining(self):
         if not self.sel:

@@ -11,7 +11,6 @@ import ctypes
 import os
 import re
 import runpy
-import shlex
 import subprocess
 import sys
 import types
@@ -350,8 +349,31 @@ def run_argv(a):
     return 0, ""  # DISM, ie4uinit, taskkill, tasklist, start …
 
 
+def _fake_kv_undo(code):
+    """rescue._kv_undo_ps: повернути один параметр у спільному рядку реєстру (6.9)."""
+    def val(var):
+        m = re.search(r"\$" + var + r"=('(?:[^']|'')*'|\$null|\$true|\$false);", code)
+        v = m.group(1)
+        return {"$null": None, "$true": True, "$false": False}.get(v, v[1:-1].replace("''", "'") if v[0] == "'" else v)
+    k, n, key, old, had = val("k"), val("n"), val("key"), val("old"), val("had")
+    hive, _, sub = k[len("Registry::"):].partition("\\")
+    h = {"HKEY_LOCAL_MACHINE": HKLM, "HKEY_CURRENT_USER": HKCU, "HKEY_CLASSES_ROOT": HKCR, "HKEY_USERS": HKU}[hive]
+    hk = _k(h, sub)
+    cur = (REG.get(hk) or {"values": {}})["values"].get(n.lower())
+    import engine as E
+    s = E.kv_set(cur[2] if cur else "", key, old)
+    if not s and not had:
+        if hk in REG:
+            REG[hk]["values"].pop(n.lower(), None)
+        return 0, ""
+    SetValueEx(CreateKeyEx(h, sub), n, 0, 1, s)
+    return 0, ""
+
+
 def fake_ps(code):
     PS_LOG.append(code[-200:])
+    if "$key=" in code and "$had=" in code and "Registry::" in code:
+        return _fake_kv_undo(code)
     if "foreach ($n in @(" in code and "Get-ScheduledTask" in code:  # task_states() перевірки твіків
         arr = code.split("foreach ($n in @(", 1)[1].split("))", 1)[0]
         names = [n.replace("''", "'") for n in re.findall(r"'((?:[^']|'')*)'", arr)]

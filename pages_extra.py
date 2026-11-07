@@ -502,7 +502,7 @@ class DiagnosePage(QWidget):
                 f.write(RP.to_html(self._sections()))
             self.main.toast(tr("rep.saved"))
             if E.IS_WIN:
-                os.startfile(path)  # noqa: лише Windows
+                os.startfile(path)  # лише Windows
         except OSError as e:
             Ask.info(self, tr("rep.save"), str(e))
 

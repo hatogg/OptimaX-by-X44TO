@@ -167,7 +167,7 @@ def launch(item: dict) -> bool:
     if item.get("steam"):
         url = f"steam://run/{item['steam']}" if steam_installed() else item["url"]
         if E.IS_WIN:
-            os.startfile(url)  # noqa: лише Windows
+            os.startfile(url)  # лише Windows
         return E.IS_WIN
     path = find_exe(item)
     if not path or not E.IS_WIN:

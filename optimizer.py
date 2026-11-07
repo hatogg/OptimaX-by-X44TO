@@ -112,6 +112,32 @@ def relaunch(admin: bool = True, extra=()) -> bool:
         return False
 
 
+class Pages(dict):
+    """Сторінки головного вікна, що створюються за першим зверненням (self.pages["games"]) або фоном
+    (Main._build_pages). Звичайні dict-операції бачать лише вже створені сторінки."""
+
+    def __init__(self, make, specs):
+        super().__init__()
+        self._make = make
+        self._specs = dict(specs)
+
+    def __missing__(self, key):
+        if key not in self._specs:
+            raise KeyError(key)
+        page = self._make(key, self._specs[key])
+        self[key] = page
+        return page
+
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def next_missing(self):
+        return next((k for k in self._specs if k not in self), None)
+
+
 class Main(QWidget):
     hotkey_pressed = pyqtSignal(str)  # з потоку гарячих клавіш у головний потік
     error_caught = pyqtSignal(str, bool)  # необроблена помилка (з будь-якого потоку) -> вікно звіту в потоці інтерфейсу
@@ -160,20 +186,17 @@ class Main(QWidget):
         h.addWidget(self._sidebar())
         self.stack = QStackedWidget()
         h.addWidget(self.stack, 1)
-        self.pages = {}
-        for key, cls in (("home", HomePage), ("optimize", OptimizePage), ("library", LibraryPage), ("games", GamesPage),
-                         ("diagnose", DiagnosePage), ("bench", BenchPage), ("hwcenter", HwCenterPage),
-                         ("hardware", HardwarePage),
-                         ("laptop", LaptopPage), ("network", NetworkPage), ("cleanup", CleanupPage),
-                         ("adblock", AdblockPage), ("apps", AppsPage),
-                         ("startup", StartupPage), ("look", LookPage), ("backup", BackupPage),
-                         ("settings", SettingsPage)):
-            page = cls(self)
-            self.pages[key] = page
-            self.stack.addWidget(styled(page, "page"))
+        self.pages = Pages(self._make_page, (
+            ("home", HomePage), ("optimize", OptimizePage), ("library", LibraryPage), ("games", GamesPage),
+            ("diagnose", DiagnosePage), ("bench", BenchPage), ("hwcenter", HwCenterPage), ("hardware", HardwarePage),
+            ("laptop", LaptopPage), ("network", NetworkPage), ("cleanup", CleanupPage), ("adblock", AdblockPage),
+            ("apps", AppsPage), ("startup", StartupPage), ("look", LookPage), ("backup", BackupPage),
+            ("settings", SettingsPage)))
+        self.pages["home"]  # головна — одразу; решта добудовується після показу вікна (_build_pages)
         self._toast = Toast(self)
         self._tray()
         self.go("home")
+        QTimer.singleShot(0, self._build_pages)
         # FPS-оверлей в іграх (overlay_ui) і запис фонових процесів під час ігор (procmon)
         from overlay_ui import OverlayController
         self.overlay = OverlayController(self)
@@ -439,6 +462,19 @@ class Main(QWidget):
         v.addSpacing(6)
         v.addWidget(self.upd_side)
         return side
+
+    def _make_page(self, key: str, cls):
+        page = cls(self)
+        self.stack.addWidget(styled(page, "page"))
+        return page
+
+    def _build_pages(self):
+        """По одній сторінці за прохід циклу подій: вікно з головною з'являється одразу, а не після створення всіх
+        сімнадцяти сторінок (6.9). Сторінка, до якої звернулися раніше, створюється в момент звернення."""
+        key = self.pages.next_missing()
+        if key:
+            self.pages[key]
+            QTimer.singleShot(0, self._build_pages)
 
     def go(self, key: str):
         idx = self.nav_keys.index(key)
@@ -778,7 +814,7 @@ class Main(QWidget):
             webbrowser.open(val)
         elif kind == "settings":
             if E.IS_WIN:
-                os.startfile(val)  # noqa: лише Windows
+                os.startfile(val)  # лише Windows
             else:
                 self.toast(tr("toast.preview_only"), "warn")
         elif kind == "page":

@@ -139,7 +139,7 @@ with open(os.path.join(MG.mesa_root(), "999", "mesa.json"), "w") as f:
 R["planted"] = MG.mesa_info()["version"]
 
 gl_dir, gl32_dir = os.path.dirname(gl), os.path.dirname(gl32)
-out = MG.enable_mesa(tg, log, hw)
+out = MG.enable_layer("mesa", tg, log, hw)
 R["enable"] = {"ok": out.get("ok"), "env": (E.reg_get(MG.ENV_KEY, MG.ADAPTER_VAR) or [None, None])[1],
                "opengl32": open(os.path.join(gl_dir, "opengl32.dll"), "rb").read().decode(),
                "opengl32_x86": open(os.path.join(gl32_dir, "opengl32.dll"), "rb").read().decode(),
@@ -157,7 +157,7 @@ with open(os.path.join(info["dir"], "x64", "libgallium_wgl.dll"), "ab") as f:
     f.write(b"tampered")
 R["tampered_installed"] = MG.mesa_info()
 
-out = MG.disable_mesa(tg, log)
+out = MG.disable_layer("mesa", tg, log)
 R["disable"] = {"opengl32": open(os.path.join(gl_dir, "opengl32.dll"), "rb").read().decode(),
                 "bak": os.path.exists(os.path.join(gl_dir, "opengl32.dll.optimax-bak")),
                 "gallium": os.path.exists(os.path.join(gl_dir, "libgallium_wgl.dll")),
@@ -166,7 +166,7 @@ R["disable"] = {"opengl32": open(os.path.join(gl_dir, "opengl32.dll"), "rb").rea
 
 # гра оновилася й поклала свою libgallium_wgl.dll поверх нашої — відкат її не видаляє, а відкладений файл гри прибирає
 info = MG.install_zip(make_zip(os.path.join(pack, "ok2.zip")), log)
-MG.enable_mesa(tg, log, hw)
+MG.enable_layer("mesa", tg, log, hw)
 with open(os.path.join(gl_dir, "libgallium_wgl.dll"), "wb") as f:
     f.write(b"updated by the game")
 with open(os.path.join(gl_dir, "opengl32.dll"), "wb") as f:

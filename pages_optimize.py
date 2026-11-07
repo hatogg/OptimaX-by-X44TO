@@ -13,7 +13,7 @@ import modes as MD
 from i18n import tr
 from ui_kit import (T, IMPACT_COLOR, label, button, card, vbox, hbox, badge, style_badge, dot, scroller, page_header,
                     section_card, bottom_bar, clear_layout, Switch, Ring, ProfileCard, OptionCard, Segmented, chip,
-                    Ask, icon_pixmap, Worker)
+                    Ask, icon_pixmap)
 
 
 # ───────────────────────── рядок оптимізації ─────────────────────────
@@ -200,7 +200,8 @@ class ExpertView(QWidget):
             v.addLayout(row)
         self.chips[None].setChecked(True)
         for gid in E.GROUP_IDS:
-            items = [t for t in E.TWEAKS if t.group == gid]
+            # прибрані в 6.9 — лише якщо вже застосовані: видно, що це, і що краще відкотити (у «Резервних копіях»)
+            items = [t for t in E.TWEAKS if t.group == gid and (not t.retired or E.JOURNAL.has(t.id))]
             sec = Section(gid, items)
             sec.changed.connect(self._changed)
             for r in sec.rows:
@@ -360,6 +361,8 @@ class ModeCard(QFrame):
         text = tr("mode.count", n=len(p["ids"]))
         if p.get("proven"):
             text += " · " + tr("mode.proven", n=len(p["proven"]))
+        if p.get("pack"):
+            text += " · " + tr("mode.pack", n=len(p["pack"]))
         if p.get("smart"):
             text += "\n" + tr("mode.smart_note")
         self.count.setText(text)

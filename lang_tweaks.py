@@ -81,11 +81,14 @@ TEXTS = {
         "Kernel and driver code is never paged to disk — lower latency."),
     "optimize_pagefile": (
         "Фіксований файл підкачки (4–8 ГБ)",
-        "Без фрагментації й затримок на розширення; очищення під час вимкнення.",
+        "Без фрагментації й затримок на розширення. Лише для ПК з 32 ГБ і більше: з меншим обсягом важкій грі може "
+        "забракнути пам'яті.",
         "Фиксированный файл подкачки (4–8 ГБ)",
-        "Без фрагментации и задержек на расширение; очистка при выключении.",
+        "Без фрагментации и задержек на расширение. Только для ПК с 32 ГБ и больше: с меньшим объёмом тяжёлой игре может "
+        "не хватить памяти.",
         "Fixed page file (4–8 GB)",
-        "No fragmentation or resize stalls; cleared at shutdown."),
+        "No fragmentation or resize stalls. Only for PCs with 32 GB or more: with less, a heavy game can run out of "
+        "memory."),
 
     # ── Ігри ──
     "gpu_hw_scheduling": (
@@ -214,11 +217,14 @@ TEXTS = {
         "TCPNoDelay, a bigger DNS cache, window auto-tuning, RSS, DCA and a DNS flush."),
     "disable_nagle": (
         "Вимкнути алгоритм Nagle",
-        "Nagle склеює дрібні пакети й додає до 200 мс затримки в онлайн-іграх. Вимикається для кожного адаптера.",
+        "Nagle склеює дрібні TCP-пакети. Допомагає іграм, що працюють через TCP (WoW та інші MMO); шутерам на UDP "
+        "(CS2, Valorant) нічого не дає. Вимикається для кожного адаптера.",
         "Отключить алгоритм Nagle",
-        "Nagle склеивает мелкие пакеты и добавляет до 200 мс задержки в онлайн-играх. Отключается для каждого адаптера.",
+        "Nagle склеивает мелкие TCP-пакеты. Помогает играм, работающим через TCP (WoW и другие MMO); шутерам на UDP "
+        "(CS2, Valorant) ничего не даёт. Отключается для каждого адаптера.",
         "Turn off Nagle's algorithm",
-        "Nagle bundles small packets and adds up to 200 ms of lag in online games. Turned off per adapter."),
+        "Nagle bundles small TCP packets. It helps games that use TCP (WoW and other MMOs); shooters on UDP "
+        "(CS2, Valorant) gain nothing. Turned off per adapter."),
     "network_stack_boost": (
         "Прискорення мережевого стеку",
         "Обробка пакетів на всіх ядрах, дані одразу в кеш процесора, розвантаження TCP на мережеву карту.",
@@ -368,11 +374,11 @@ TEXTS = {
         "DiagTrack and dmwappushservice services, typing and inking data collection."),
     "disable_privacy": (
         "Вимкнути рекламу й профілювання",
-        "Рекламний ідентифікатор, персоналізація за діагностикою та Cortana.",
+        "Рекламний ідентифікатор і персоналізація за діагностичними даними.",
         "Отключить рекламу и профилирование",
-        "Рекламный идентификатор, персонализация по диагностике и Cortana.",
+        "Рекламный идентификатор и персонализация по диагностическим данным.",
         "Turn off ads and profiling",
-        "Advertising ID, diagnostic-based personalization and Cortana."),
+        "Advertising ID and personalization based on diagnostic data."),
     "disable_telemetry_tasks": (
         "Вимкнути задачі телеметрії, Copilot і Recall",
         "14 задач планувальника збору даних, Copilot, аналіз Windows AI і Recall.",
@@ -459,11 +465,14 @@ TEXTS = {
     # ── Обслуговування ──
     "memory_clean": (
         "Очистити оперативну пам'ять",
-        "Звільняє кешовану пам'ять (standby і modified), як RAMMap.",
+        "Звільняє кешовану пам'ять (standby і modified), як RAMMap. Ефект на кілька хвилин: Windows сама віддає цей "
+        "кеш, щойно пам'яті бракує, а після очищення програми якийсь час відкриваються повільніше.",
         "Очистить оперативную память",
-        "Освобождает кэшированную память (standby и modified), как RAMMap.",
+        "Освобождает кэшированную память (standby и modified), как RAMMap. Эффект на несколько минут: Windows сама "
+        "отдаёт этот кэш, как только памяти не хватает, а после очистки программы какое-то время открываются медленнее.",
         "Clear RAM",
-        "Frees cached memory (standby and modified) like RAMMap."),
+        "Frees cached memory (standby and modified) like RAMMap. The effect lasts minutes: Windows gives this cache "
+        "back on its own as soon as memory runs short, and right after clearing apps open slower for a while."),
     "fix_errors": (
         "Перевірити диск (CHKDSK)",
         "Перевірка й виправлення файлової системи під час наступного завантаження.",
@@ -473,11 +482,11 @@ TEXTS = {
         "Checks and repairs the file system at the next restart."),
     "clean_invalid": (
         "Очистити дані пристроїв",
-        "Скидає UserAssist і повторно сканує пристрої.",
+        "Повторно сканує пристрої: Windows прибирає записи тих, яких уже немає.",
         "Очистить данные устройств",
-        "Сбрасывает UserAssist и заново сканирует устройства.",
+        "Заново сканирует устройства: Windows убирает записи тех, которых уже нет.",
         "Clean device data",
-        "Resets UserAssist and rescans devices."),
+        "Rescans devices so Windows drops entries for ones that are gone."),
     "fix_drivers": (
         "Перевірити драйвери",
         "Показує в журналі пристрої, що працюють з помилкою.",
@@ -486,12 +495,15 @@ TEXTS = {
         "Check drivers",
         "Lists devices with errors in the log."),
     "clean_registry": (
-        "Очистити історію в реєстрі",
-        "Недавні документи, «Виконати», історія адрес, UserAssist, ShellBags.",
-        "Очистить историю в реестре",
-        "Недавние документы, «Выполнить», история адресов, UserAssist, ShellBags.",
-        "Clear registry history",
-        "Recent documents, Run, typed paths, UserAssist, ShellBags."),
+        "Очистити історію Провідника",
+        "Недавні документи, «Виконати», історія адрес і UserAssist. Також скидає вигляд кожної папки (ShellBags). "
+        "Для приватності — швидкості це не додає.",
+        "Очистить историю Проводника",
+        "Недавние документы, «Выполнить», история адресов и UserAssist. Также сбрасывает вид каждой папки (ShellBags). "
+        "Для приватности — скорости это не добавляет.",
+        "Clear Explorer history",
+        "Recent documents, Run, typed paths and UserAssist. Also resets every folder's view (ShellBags). "
+        "For privacy — it doesn't make the PC faster."),
     "clean_junk": (
         "Глибоке очищення сміття",
         "Кеш оновлень Windows, Edge і тимчасові файли — до хвилини. Старі копії оновлень (WinSxS) — окрема дія в "
@@ -537,9 +549,9 @@ TEXTS = {
     "tweak_no_aero_shake": ("Вимкнути Aero Shake", "Вікна не згортаються, якщо «струснути» одне з них.",
                             "Отключить Aero Shake", "Окна не сворачиваются, если «встряхнуть» одно из них.",
                             "Turn off Aero Shake", "Shaking a window no longer minimizes the others."),
-    "tweak_fast_alttab": ("Швидкий Alt+Tab і меню", "Без анімації вікон і затримок меню та мініатюр.",
-                          "Быстрый Alt+Tab и меню", "Без анимации окон и задержек меню и миниатюр.",
-                          "Fast Alt+Tab and menus", "No window animations or menu and preview delays."),
+    "tweak_fast_alttab": ("Швидкий Alt+Tab і меню", "Меню й мініатюри відкриваються без затримки.",
+                          "Быстрый Alt+Tab и меню", "Меню и миниатюры открываются без задержки.",
+                          "Fast Alt+Tab and menus", "Menus and previews open without delay."),
     "tweak_no_sticky": ("Вимкнути залипання клавіш", "Без вікна залипання після п'яти натискань Shift.",
                         "Отключить залипание клавиш", "Без окна залипания после пяти нажатий Shift.",
                         "Turn off Sticky Keys", "No Sticky Keys prompt after pressing Shift five times."),

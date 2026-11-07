@@ -34,7 +34,7 @@
 
 ### Smart optimization
 
-Measures FPS before and after and keeps only what helped. If things got worse, it finds the culprit by splitting the changes in halves and removes it.
+Measures FPS before and after and keeps only what doesn't hurt: if things got worse, it finds the culprit by splitting the changes in halves and removes it. “Proven” is shown only for changes measured on their own.
 
 <img src="docs/assets/screens/en/smart.png" alt="Smart optimization removed a harmful change">
 </td>
@@ -103,7 +103,7 @@ An image for Telegram, Discord or a forum: FPS before and after, Windows boot ti
 </tr>
 </table>
 
-Also: **Why did the PC crash?** (blue screens and sudden restarts from the Windows log in plain words), a **game library** with covers, launch, play time and FPS history, a **phone monitor** via a QR code, a simple view with one Optimize button, settings transfer to another PC, Safe, Gaming, Low-end PC and Manual modes that build the plan for your PC, a wizard and an expert menu with 136 optimizations in 16 sections, 6 profiles (gaming PC, laptop, old PC, Xeon / X99…), game mode with “Lowest latency” and “Stable frametime” profiles, **games on a P106 / P104 / CMP mining card** (Universal GPU Renderer: a render mode per game — native, DXVK for DirectX 9–11, Mesa for OpenGL — and a check of which card really renders the game), per-game cores on Ryzen X3D and Intel with P/E cores, a settings guard after Windows updates, trial mode, the fastest DNS and ping to game servers, cleanup and a disk analyzer, app updates through winget. Full description in the [guide](docs/en/guide.md).
+Also: **Why did the PC crash?** (blue screens and sudden restarts from the Windows log in plain words), a **game library** with covers, launch, play time and FPS history, a **phone monitor** via a QR code, a simple view with one Optimize button, settings transfer to another PC, Safe, Gaming, Low-end PC and Manual modes that build the plan for your PC, a wizard and an expert menu with 129 optimizations in 16 sections, 6 profiles (gaming PC, laptop, old PC, Xeon / X99…), game mode with “Lowest latency” and “Stable frametime” profiles, **games on a P106 / P104 / CMP mining card** (Universal GPU Renderer: a render mode per game — native, DXVK for DirectX 9–11, Mesa for OpenGL — and a check of which card really renders the game), per-game cores on Ryzen X3D and Intel with P/E cores, a settings guard after Windows updates, trial mode, the fastest DNS and ping to game servers, cleanup and a disk analyzer, app updates through winget. Full description in the [guide](docs/en/guide.md).
 
 <sub>Screenshots were taken in preview mode on a demo configuration; the numbers illustrate the interface, they don't promise a gain on your PC.</sub>
 
@@ -141,7 +141,7 @@ The portable `OptimaX-<version>-portable.exe` runs without installation. You nee
 | --- | --- |
 | [Hardware Center](docs/en/hardware-center.md) | Hardware diagnostics and tests, the FPS overlay, the pre-purchase PC check, reports, what existed and what was added |
 | [Guide](docs/en/guide.md) | Everything it can do: smart optimization, emergency rollback, benchmarks, ad blocker, install and uninstall |
-| [All optimizations](docs/en/tweaks.md) | 136 changes with explanations, profiles and a rollback mark, generated from the program code |
+| [All optimizations](docs/en/tweaks.md) | 129 changes with explanations, profiles and a rollback mark, generated from the program code |
 | [FAQ](docs/en/faq.md) | Administrator rights, antivirus, SmartScreen, what to do if Windows doesn't start |
 | [For developers](docs/en/development.md) | Running from source, building the installer, tests, CI, publishing a release |
 | [Changelog](CHANGELOG.md) | What's new in every version |

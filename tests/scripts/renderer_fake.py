@@ -4,7 +4,6 @@ DirectX 9 і DirectX 10 / 11 (лише потрібні бібліотеки п�
 профілю, Zink для Mesa, нові ігри, база сумісності.
 
 Запуск: FAKE_TARGET=tests/scripts/renderer_fake.py python tests/scripts/fake_windows.py --out DIR"""
-import base64
 import hashlib
 import json
 import os

@@ -31,7 +31,7 @@ from i18n import tr, tweak_text
 APP_NAME = "OptimaX"
 AUTHOR = "X44TO"
 APP_TITLE = f"{APP_NAME} by {AUTHOR}"
-VERSION = "6.8.1"
+VERSION = "6.9"
 IS_WIN = sys.platform == "win32"
 DRY_RUN = (not IS_WIN) or ("--dry-run" in sys.argv)
 DEMO = os.environ.get("OPTIMAX_DEMO", "gaming")  # демо-залізо поза Windows: gaming/laptop/old/x3d/xeon
@@ -742,6 +742,8 @@ _TASK_NAME = re.compile(r'^[^"%^&|<>\r\n]{1,400}$')
 _PW_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 _LIVE = {"explorer", "broadcast", "env", "syscolor", "mouse", "keyboard", "anim"}
 _HEX64 = re.compile(r"^[0-9a-fA-F]{64}$")
+_KV_KEY = re.compile(r"^[A-Za-z0-9_]{1,64}$")  # параметр у спільному рядку реєстру (KV)
+_KV_VAL = re.compile(r"^[A-Za-z0-9_.\-]{0,64}$")
 
 
 def valid_undo(rec) -> bool:
@@ -752,6 +754,12 @@ def valid_undo(rec) -> bool:
     t = rec["t"]
     if t == "reg":
         p, n, old = rec.get("p"), rec.get("n"), rec.get("old", 0)
+        if "kv" in rec:  # параметр у спільному рядку (KV): ім'я й значення — лише безпечні символи
+            kv, kvold = rec.get("kv"), rec.get("kvold")
+            if not (isinstance(kv, str) and _KV_KEY.match(kv)):
+                return False
+            if kvold is not None and not (isinstance(kvold, str) and _KV_VAL.match(kvold)):
+                return False
         return (isinstance(p, str) and p.upper().startswith(_HIVES) and isinstance(n, str) and
                 (old is None or (isinstance(old, list) and len(old) == 2 and isinstance(old[0], int))))
     if t == "svc":
@@ -819,6 +827,8 @@ class Ctx:
         self.undo: list = UndoLog()
         self._tasks = False
         self.deferred = None  # множина «живих» оновлень, які виконаємо один раз наприкінці пакета
+        self.appx_batch = None  # усі Metro-пакети цього пакета змін — видаляються одним PowerShell (_appx_remove)
+        self.appx_done: dict = {}
 
     def begin(self, track: bool = False) -> None:
         """track — кожен запис відкату одразу потрапляє в попередній запис журналу (Journal.begin/note)."""
@@ -878,6 +888,39 @@ def FILE(src, dest):
     return ("file", src, dest)
 
 
+def KV(path, name, key, value):
+    """Один параметр «ключ=значення» у спільному рядку реєстру (DirectX\\UserGpuPreferences:
+    DirectXUserGlobalSettings = "SwapEffectUpgradeEnable=1;VRROptimizeEnable=1;"). Відкат повертає лише цей параметр,
+    а не весь рядок: інакше відкат однієї зміни мовчки скасовував би інші, що пишуть у той самий рядок."""
+    return ("kv", path, name, key, value)
+
+
+def kv_get(s, key: str):
+    """Значення параметра key у рядку «a=1;b=2;» або None."""
+    for part in str(s or "").split(";"):
+        if part.startswith(key + "="):
+            return part[len(key) + 1:]
+    return None
+
+
+def kv_set(s, key: str, value) -> str:
+    """Рядок із параметром key = value (value None — параметр прибрати). Порядок решти параметрів не змінюється:
+    наявний параметр замінюється на своєму місці, новий — дописується в кінець. Порожній результат — ''."""
+    parts, done = [], False
+    for p in str(s or "").split(";"):
+        if not p:
+            continue
+        if p.startswith(key + "="):
+            if value is not None and not done:
+                parts.append(f"{key}={value}")
+            done = True
+            continue
+        parts.append(p)
+    if value is not None and not done:
+        parts.append(f"{key}={value}")
+    return ";".join(parts) + ";" if parts else ""
+
+
 def file_sha256(path: str) -> str:
     import hashlib
     h = hashlib.sha256()
@@ -917,6 +960,19 @@ def exec_op(op, ctx: Ctx) -> None:
             log(f"  [dry-run] reg delete {path} \\ {name}")
         else:
             reg_del_value(path, name)
+    elif k == "kv":
+        _, path, name, key, value = op
+        old = reg_get(path, name)
+        cur = old[1] if old is not None and isinstance(old[1], str) else ""
+        # «old» — увесь рядок, як і в звичайному записі реєстру (його розуміють старіші версії й аварійний відкат);
+        # «kv» / «kvold» — що саме повертати: лише цей параметр
+        ctx.undo.append({"t": "reg", "p": path, "n": name,
+                         "old": None if old is None else [old[0], _enc(old[1])],
+                         "kv": key, "kvold": kv_get(cur, key)})
+        if DRY_RUN:
+            log(f"  [dry-run] reg {path} \\ {name} += {key}={value}")
+        else:
+            reg_set(path, name, kv_set(cur, key, value), "sz")
     elif k == "svc":
         _, name, start = op
         old = svc_get_start(name)
@@ -1013,7 +1069,9 @@ def _undo_record(rec: dict, log: Callable, deferred: set = None) -> None:
         what = rec.get("p") or rec.get("n") or rec.get("c") or rec.get("st") or rec.get("k") or ""
         log(f"  [dry-run] undo {t}: {str(what)[:100]}")
         return
-    if t == "reg":
+    if t == "reg" and rec.get("kv"):
+        _undo_kv(rec)
+    elif t == "reg":
         if rec["old"] is None:
             reg_del_value(rec["p"], rec["n"])
         else:
@@ -1039,6 +1097,24 @@ def _undo_record(rec: dict, log: Callable, deferred: set = None) -> None:
         live_refresh(rec["k"], log)
     elif t == "file":
         _undo_file(rec, log)
+
+
+def kv_restored(cur, rec: dict):
+    """Що записати після відкату одного параметра KV: рядок або None (значення прибрати, якщо його не було до
+    OptimaX і в ньому не лишилося нічого чужого). cur — поточний рядок."""
+    s = kv_set(cur if isinstance(cur, str) else "", rec["kv"], rec.get("kvold"))
+    if not s and rec.get("old") is None:
+        return None
+    return s
+
+
+def _undo_kv(rec: dict) -> None:
+    cur = reg_get(rec["p"], rec["n"])
+    new = kv_restored(cur[1] if cur is not None else "", rec)
+    if new is None:
+        reg_del_value(rec["p"], rec["n"])
+    else:
+        reg_set(rec["p"], rec["n"], new, "sz")
 
 
 def _undo_file(rec: dict, log: Callable) -> None:
@@ -1437,9 +1513,11 @@ def f_onedrive(ctx: Ctx) -> None:
 # автозапуском, які не працювали в мить застосування. На ноутбуках серед них бувають службові програми виробника
 # (клавіатура, клавіші Fn, тачпад), і після перезавантаження ті переставали працювати. SharedAccess (спільний доступ
 # до інтернету) теж прибрано: без нього не працює мобільна точка доступу.
-FORCE_OFF = ["DiagTrack", "dmwappushservice", "WMPNetworkSvc", "RemoteRegistry", "Fax", "WerSvc", "PcaSvc",
-             "wercplsupport", "MapsBroker", "lfsvc", "RetailDemo", "TrkWks", "WalletService", "PhoneSvc",
-             "SmsRouter"]
+FORCE_OFF = ["WMPNetworkSvc", "RemoteRegistry", "Fax", "WerSvc", "PcaSvc", "wercplsupport", "MapsBroker", "lfsvc",
+             "RetailDemo", "TrkWks", "WalletService", "PhoneSvc", "SmsRouter"]
+# DiagTrack і dmwappushservice до 6.9 вимикав і цей пакет, і disable_telemetry; тепер — лише disable_telemetry.
+# Записи журналу старіших версій про них — не шкідливі, тож виправлення старих змін (LEGACY_FIXES) їх не чіпає.
+FORCE_OFF_HISTORY = FORCE_OFF + ["DiagTrack", "dmwappushservice"]
 
 
 @cmd_doc("sc config " + " ".join(FORCE_OFF) + " start= disabled")
@@ -1451,7 +1529,7 @@ def f_services(ctx: Ctx) -> None:
 # Зміни, які робили старіші версії і які тепер вважаються шкідливими: (твік, чи цей запис журналу треба відкотити).
 LEGACY_FIXES = [
     # 6.3: службові програми виробника ноутбука (клавіатура, Fn, тачпад), SharedAccess (мобільна точка доступу)
-    ("disable_services", lambda u: u.get("t") == "svc" and u.get("n") not in FORCE_OFF),
+    ("disable_services", lambda u: u.get("t") == "svc" and u.get("n") not in FORCE_OFF_HISTORY),
     # до 6.3.2: очищення файлу підкачки під час кожного вимкнення — вимкнення й перезавантаження ставали повільними
     ("optimize_pagefile", lambda u: u.get("t") == "reg" and u.get("n") == "ClearPageFileAtShutdown"),
     # до 6.3.2: завдання, яке налаштовує мобільний інтернет (LTE) на ноутбуках
@@ -1576,19 +1654,7 @@ def dyn_sysmain(ctx: Ctx):
 
 
 DX_PREF = r"HKCU\Software\Microsoft\DirectX\UserGpuPreferences"
-
-
-def _merge_kv(old: str, key: str, value: str) -> str:
-    parts = [p for p in (old or "").split(";") if p and not p.startswith(key + "=")]
-    parts.append(f"{key}={value}")
-    return ";".join(parts) + ";"
-
-
-@cmd_doc(r"DirectX\UserGpuPreferences: DirectXUserGlobalSettings += SwapEffectUpgradeEnable=1")
-def dyn_windowed(ctx: Ctx):
-    cur = reg_get(DX_PREF, "DirectXUserGlobalSettings")
-    return [R(DX_PREF, "DirectXUserGlobalSettings", _merge_kv(cur[1] if cur else "", "SwapEffectUpgradeEnable", "1"),
-              "sz")]
+DX_GLOBAL = "DirectXUserGlobalSettings"  # спільний рядок «ключ=значення;» для кількох оптимізацій (KV)
 
 
 NIC_KEYWORDS = ("*EEE", "EEELinkAdvertisement", "AdvancedEEE", "EnableGreenEthernet", "GreenEthernet",
@@ -1750,14 +1816,6 @@ def f_audio_fx(ctx: Ctx) -> None:
         run("net start Audiosrv", 30, log)
 
 
-def _dx_merge(key: str, value: str):
-    @cmd_doc(rf"DirectX\UserGpuPreferences: DirectXUserGlobalSettings += {key}={value}")
-    def _dyn(ctx: Ctx):
-        cur = reg_get(DX_PREF, "DirectXUserGlobalSettings")
-        return [R(DX_PREF, "DirectXUserGlobalSettings", _merge_kv(cur[1] if cur else "", key, value), "sz")]
-    return _dyn
-
-
 def _utc_iso(days: int = 0) -> str:
     from datetime import datetime, timedelta, timezone
     return (datetime.now(timezone.utc) + timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -1809,7 +1867,6 @@ def f_chkdsk(ctx: Ctx) -> None:
 
 @cmd_doc("pnputil /scan-devices")
 def f_clean_invalid(ctx: Ctx) -> None:
-    run(r'reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\UserAssist" /f', 10, ctx.log)
     run("pnputil /scan-devices", 30, ctx.log)
 
 
@@ -1897,14 +1954,62 @@ def f_dns_winsock(ctx: Ctx) -> None:
         run(c, 25, ctx.log)
 
 
+APPX_SCRIPT = r"""
+$all = @(Get-AppxPackage)
+foreach ($p in @({names})) {{
+  $m = @($all | Where-Object {{ $_.Name -like ('*' + $p + '*') }})
+  if (-not $m.Count) {{ 'MISS|' + $p; continue }}
+  try {{ $m | Remove-AppxPackage -ErrorAction Stop; 'OK|' + $p }} catch {{ 'ERR|' + $p + '|' + $_.Exception.Message }}
+}}
+"""
+
+
+def parse_appx(out: str) -> dict:
+    """Вивід APPX_SCRIPT -> {пакет: ("ok" | "miss" | "err", повідомлення)}."""
+    res = {}
+    for ln in (out or "").splitlines():
+        kind, _, rest = ln.strip().partition("|")
+        if kind in ("OK", "MISS", "ERR") and rest:
+            pkg, _, msg = rest.partition("|")
+            res[pkg] = (kind.lower(), msg.strip())
+    return res
+
+
+def _appx_remove(ctx: Ctx, pkgs) -> dict:
+    """Видаляє пакети одним запуском PowerShell на весь пакет змін (6.9): раніше кожен додаток — окремий PowerShell
+    і окремий повільний Get-AppxPackage, тож 20 додатків на старому ПК видалялися кілька хвилин."""
+    done = ctx.appx_done
+    todo = [p for p in dict.fromkeys(list(ctx.appx_batch or []) + list(pkgs)) if p not in done]
+    if todo and any(p in todo for p in pkgs):
+        names = ", ".join(_psq(p) for p in todo)
+        rc, out = ps(APPX_SCRIPT.format(names=names), min(60 + 40 * len(todo), 1800), ctx.log)
+        res = parse_appx(out)
+        for p in todo:
+            if p in res:
+                done[p] = res[p]
+            elif rc == TIMEOUT_RC:
+                done[p] = ("timeout", "")
+    return {p: done.get(p) for p in pkgs}
+
+
 def f_appx(pkgs):
     @cmd_doc("Get-AppxPackage " + ", ".join(pkgs) + " | Remove-AppxPackage")
     def _f(ctx: Ctx) -> None:
-        for pkg in pkgs:
-            ctx.log(f"  · {pkg}")
-            rc, _ = ps(f"Get-AppxPackage *{pkg}* | Remove-AppxPackage", 70, ctx.log)
-            if rc == TIMEOUT_RC:
+        if DRY_RUN or not IS_WIN:
+            for pkg in pkgs:
+                ctx.log(f"  [dry-run] Remove-AppxPackage {pkg}")
+            return
+        for pkg, r in _appx_remove(ctx, pkgs).items():
+            kind, msg = r or ("", "")
+            if kind == "timeout":
                 ctx.log(tr("e.timeout_pkg", pkg=pkg))
+            elif kind == "miss":
+                ctx.log(f"  · {pkg} — {tr('e.appx_missing')}")
+            elif kind == "err":
+                ctx.log(f"  ⚠ {pkg}: {first_line(msg, 90)}")
+            else:
+                ctx.log(f"  · {pkg}")
+    _f.appx = list(pkgs)
     return _f
 
 
@@ -1930,8 +2035,15 @@ class Tweak:
     min_build: int = 0  # найстаріша збірка Windows 10, де цей параметр існує
     reversible: bool = True
     custom: bool = False
+    # 6.9: OptimaX цю зміну більше не пропонує (ключ причини retired.<ключ>). Опис лишається, щоб ті, у кого вона
+    # застосована, бачили її в експертному меню й могли відкотити до свого початкового значення.
+    retired: str = ""
     _title: str = ""
     _desc: str = ""
+
+    def __post_init__(self):
+        if self.retired:
+            self.p = ""  # у жоден профіль, режим чи план вона вже не потрапляє
 
     @property
     def title(self) -> str:
@@ -1939,10 +2051,15 @@ class Tweak:
 
     @property
     def desc(self) -> str:
-        return self._desc or tweak_text(self.id)[1]
+        d = self._desc or tweak_text(self.id)[1]
+        if self.retired:
+            d = (d + " " if d else "") + tr("retired.note", why=tr(f"retired.{self.retired}"))
+        return d
 
     def badges(self):
         b = []
+        if self.retired:
+            b.append((tr("b.retired"), "bad"))
         if self.reboot:
             b.append((tr("b.reboot"), "muted"))
         if self.relogin:
@@ -1995,20 +2112,22 @@ tw("core_parking", "perf", [P("CPMINCORES", 100), P("CPMAXCORES", 100)], p="FMX"
    block_on=X3D)
 tw("power_throttling", "perf", [R(r"HKLM\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling",
                                   "PowerThrottlingOff", 1), P("PROCTHROTTLEMAX", 100)], p="FMX", warn_on=LAP)
-tw("turbo_aggressive", "perf", [P("PERFBOOSTMODE", 2)], p="FX", warn_on=LAP, conflicts=("cool_mode",))
+tw("turbo_aggressive", "perf", [P("PERFBOOSTMODE", 2)], p="FX", warn_on=LAP, conflicts=("cool_mode", "laptop_ac_max"))
 tw("min_cpu_state", "perf", [P("PROCTHROTTLEMIN", 100)], p="X", impact="medium", warn_on=LAP)
 tw("lock_power", "perf", [R(r"HKLM\SOFTWARE\Policies\Microsoft\Power\PowerSettings", "ActivePowerScheme",
                             active_scheme, "sz")], p="FMX", block_on=LAP)
-tw("cpu_scheduling", "perf", [R(PRIO, "Win32PrioritySeparation", 38),
-                              R(SP + r"\Tasks\Games", "Scheduling Category", "High", "sz")], p="FM", win11=True)
-tw("rt_boost", "perf", [R(SP, "SystemResponsiveness", 0), R(PRIO, "Win32PrioritySeparation", 0x26)], p="FMX")
+tw("cpu_scheduling", "perf", [R(PRIO, "Win32PrioritySeparation", 38)], p="FMX")
+# 6.9: те саме, що cpu_scheduling + system_responsiveness разом, — дві зміни одного значення плутали відкат
+tw("rt_boost", "perf", [R(SP, "SystemResponsiveness", 0), R(PRIO, "Win32PrioritySeparation", 0x26)], retired="dup")
 tw("system_responsiveness", "perf", [R(SP, "SystemResponsiveness", 0), R(SP + r"\Tasks\Games", "GPU Priority", 8),
                                      R(SP + r"\Tasks\Games", "Priority", 6),
                                      R(SP + r"\Tasks\Games", "Scheduling Category", "High", "sz"),
                                      R(SP + r"\Tasks\Games", "SFIO Priority", "High", "sz")], p="FMX")
+# 6.9: IoPageLockLimit — параметр часів Windows XP, сучасна Windows його не читає
 tw("registry_boost", "perf", [R(MM, "IoPageLockLimit", 0xFFFFFFFF), R(MM, "DisablePagingExecutive", 1)],
-   p="FMX", reboot=True)
-tw("optimize_pagefile", "perf", [F(f_pagefile)], p="FMX", reboot=True)
+   reboot=True, retired="legacy")
+# 6.9: лише вручну — фіксований розмір без запасу може закінчитися у важкій грі, а заміри FPS цього не покажуть
+tw("optimize_pagefile", "perf", [F(f_pagefile)], reboot=True)
 tw("memory_compression", "perf", [F(f_memory_compression)], p="FMTOX", reboot=True)
 tw("spectre_off", "perf", [R(MM, "FeatureSettingsOverride", 3), R(MM, "FeatureSettingsOverrideMask", 3)],
    reboot=True, impact="habits", risky="security")
@@ -2027,23 +2146,21 @@ tw("disable_xbox_gamebar", "gaming", [R(GCS, "GameDVR_Enabled", 0), R(POL + r"\G
 tw("fso_global", "gaming", [R(GCS, "GameDVR_FSEBehaviorMode", 2), R(GCS, "GameDVR_HonorUserFSEBehaviorMode", 1),
                             R(GCS, "GameDVR_FSEBehavior", 2), R(GCS, "GameDVR_DXGIHonorFSEWindowsCompatible", 1)],
    p="FX", impact="medium", block_on=("mining_display",))  # справжній повноекранний режим — лише на карті з монітором
-tw("windowed_opt", "gaming", [D(dyn_windowed)], p="FMX", win11=True)
+tw("windowed_opt", "gaming", [KV(DX_PREF, DX_GLOBAL, "SwapEffectUpgradeEnable", "1")], p="FMX", win11=True)
 tw("timer_resolution", "gaming", [R(r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\kernel",
-                                    "GlobalTimerResolutionRequests", 1),
-                                  C("bcdedit /set disabledynamictick yes", "bcdedit /deletevalue disabledynamictick"),
-                                  F(f_hold_timer)], p="FMX", reboot=True)
+                                    "GlobalTimerResolutionRequests", 1), F(f_hold_timer)], p="FMX", reboot=True)
 tw("dynamic_tick", "gaming", [C("bcdedit /set disabledynamictick yes", "bcdedit /deletevalue disabledynamictick")],
    p="FMX", reboot=True)
 tw("hpet_tsc", "gaming", [C("bcdedit /set useplatformclock true", "bcdedit /deletevalue useplatformclock"),
                           C("bcdedit /set tscsyncpolicy Enhanced", "bcdedit /deletevalue tscsyncpolicy")],
-   reboot=True, impact="medium", risky="fps")
+   reboot=True, impact="medium", risky="fps", retired="hpet")
 tw("disable_mouse_accel", "gaming", [R(r"HKCU\Control Panel\Mouse", "MouseSpeed", "0", "sz"),
                                      R(r"HKCU\Control Panel\Mouse", "MouseThreshold1", "0", "sz"),
                                      R(r"HKCU\Control Panel\Mouse", "MouseThreshold2", "0", "sz"),
                                      R(r"HKCU\Control Panel\Mouse", "MouseSensitivity", "10", "sz"), X("mouse")],
-   p="FMLOX", impact="medium")
-tw("vrr_windowed", "gaming", [D(_dx_merge("VRROptimizeEnable", "1"))], p="FMX", win11=True)
-tw("auto_hdr", "gaming", [D(_dx_merge("AutoHDREnable", "1"))], win11=True, impact="medium")
+   impact="medium")  # 6.9: не в профілях — це звичка, а не FPS (у майстрі: мета «мінімальна затримка»)
+tw("vrr_windowed", "gaming", [KV(DX_PREF, DX_GLOBAL, "VRROptimizeEnable", "1")], p="FMX", win11=True)
+tw("auto_hdr", "gaming", [KV(DX_PREF, DX_GLOBAL, "AutoHDREnable", "1")], win11=True, impact="medium")
 KBD = r"HKCU\Control Panel\Keyboard"
 tw("keyboard_fast", "gaming", [R(KBD, "KeyboardDelay", "0", "sz"), R(KBD, "KeyboardSpeed", "31", "sz"), X("keyboard")],
    off=[R(KBD, "KeyboardDelay", "1", "sz"), R(KBD, "KeyboardSpeed", "31", "sz"), X("keyboard")], p="F",
@@ -2078,18 +2195,20 @@ tw("optimize_network", "net", [R(TCPIP, "TCPNoDelay", 1), R(TCPIP, "TcpAckFreque
                                C("netsh int tcp set global ecncapability=disabled",
                                  "netsh int tcp set global ecncapability=default"),
                                C("netsh int tcp set global rss=enabled", "netsh int tcp set global rss=enabled"),
-                               C("ipconfig /flushdns")], p="FMTX", reboot=True)
-tw("disable_nagle", "net", [D(dyn_nagle)], p="FMX")
+                               C("ipconfig /flushdns")], reboot=True, retired="net")
+# 6.9: лише вручну — Nagle діє тільки на TCP (WoW та інші MMO), а шутери (CS2, Valorant…) працюють через UDP
+tw("disable_nagle", "net", [D(dyn_nagle)])
 tw("network_stack_boost", "net", [
     C("netsh int tcp set global autotuninglevel=normal", "netsh int tcp set global autotuninglevel=normal"),
     C("netsh int tcp set global rss=enabled", "netsh int tcp set global rss=enabled"),
     C("netsh int tcp set global dca=enabled", "netsh int tcp set global dca=default"),
-    C("netsh int tcp set heuristics disabled", "netsh int tcp set heuristics enabled")], p="FMX")
-tw("network_throttling", "net", [R(SP, "NetworkThrottlingIndex", 0xFFFFFFFF)], p="FMTX")
+    C("netsh int tcp set heuristics disabled", "netsh int tcp set heuristics enabled")], retired="net")
+tw("network_throttling", "net", [R(SP, "NetworkThrottlingIndex", 0xFFFFFFFF)])  # 6.9: лише вручну
 tw("network_packet_opt", "net", [
     C("netsh int tcp set supplemental template=internet congestionprovider=ctcp",
       "netsh int tcp set supplemental template=internet congestionprovider=default"),
-    C("netsh int tcp set global ecncapability=disabled", "netsh int tcp set global ecncapability=default")], p="FMX")
+    C("netsh int tcp set global ecncapability=disabled", "netsh int tcp set global ecncapability=default")],
+   retired="ctcp")
 tw("nic_power", "net", [F(f_nic_power), P(WIFI_SET, 0, WIFI_SUB)], p="FMTOX", reboot=True)
 tw("delivery_p2p", "net", [R(POL + r"\DeliveryOptimization", "DODownloadMode", 0)], p="FMLTOX")
 tw("dns_winsock", "net", [F(f_dns_winsock)], reversible=False, reboot=True, impact="habits")
@@ -2098,12 +2217,13 @@ tw("ethernet_latency", "net", [F(f_eth_latency)], p="F", needs="ethernet", reboo
 
 # ── Ноутбук ──
 tw("laptop_ac_max", "laptop", [P("PERFEPP", 0), P("PERFBOOSTMODE", 2)], p="T", needs="battery",
-   conflicts=("cool_mode",))
+   conflicts=("cool_mode", "turbo_aggressive"))
 tw("laptop_dc_save", "laptop", [P("PERFBOOSTMODE", 0, mode="dc"), P("PERFEPP", 80, mode="dc"),
-                                P("ESBATTTHRESHOLD", 30, "SUB_ENERGYSAVER", "dc")], p="TO", needs="battery")
+                                P("ESBATTTHRESHOLD", 30, "SUB_ENERGYSAVER", "dc")], p="TO", needs="battery",
+   conflicts=("cool_mode",))
 tw("cool_mode", "laptop", [P("PERFBOOSTMODE", 0), P("PERFBOOSTMODE", 0, mode="dc"), P("SYSCOOLPOL", 1),
                            P("SYSCOOLPOL", 1, mode="dc")], impact="medium",
-   conflicts=("laptop_ac_max", "turbo_aggressive"))
+   conflicts=("laptop_ac_max", "turbo_aggressive", "laptop_dc_save"))
 tw("standby_net_off", "laptop", [P(STANDBY_NET, 0, NONE_SUB, "dc")], p="TO", needs="modern_standby")
 tw("wake_timers_off", "laptop", [P("RTCWAKE", 0, "SUB_SLEEP", "dc")], p="TO", needs="battery")
 tw("s3_sleep", "laptop", [R(r"HKLM\SYSTEM\CurrentControlSet\Control\Power", "PlatformAoAcOverride", 0)],
@@ -2203,8 +2323,8 @@ tw("disable_privacy", "privacy", [R(r"HKCU\SOFTWARE\Microsoft\Windows\CurrentVer
                                   R(POL + r"\AdvertisingInfo", "DisabledByGroupPolicy", 1),
                                   R(r"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Privacy",
                                     "TailoredExperiencesWithDiagnosticDataEnabled", 0),
-                                  R(r"HKCU\SOFTWARE\Microsoft\Personalization\Settings", "AcceptedPrivacyPolicy", 0),
-                                  R(POL + r"\Windows Search", "AllowCortana", 0)], p="FMLTOX")
+                                  R(r"HKCU\SOFTWARE\Microsoft\Personalization\Settings", "AcceptedPrivacyPolicy", 0)],
+   p="FMLTOX")
 TELEMETRY_TASKS = [
     r"\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser",
     r"\Microsoft\Windows\Application Experience\ProgramDataUpdater",
@@ -2279,7 +2399,7 @@ tw("disable_defender", "system", [R(DEF, "DisableAntiSpyware", 1),
                                   R(DEF + r"\Real-Time Protection", "DisableBehaviorMonitoring", 1),
                                   R(DEF + r"\Real-Time Protection", "DisableOnAccessProtection", 1),
                                   R(DEF + r"\Real-Time Protection", "DisableIOAVProtection", 1), F(f_defender)],
-   reboot=True, risky="danger", impact="habits", conflicts=("defender_limit",))
+   reboot=True, risky="danger", impact="habits", conflicts=("defender_limit",), retired="defender")
 tw("remove_onedrive", "system", [F(f_onedrive), R(POL + r"\OneDrive", "DisableFileSyncNGSC", 1),
                                  R(POL + r"\OneDrive", "DisableLibrariesDefaultSaveToOneDrive", 1),
                                  RD(r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run", "OneDrive"),
@@ -2300,7 +2420,7 @@ tw("set_photo_viewer", "system", [R(PV, "ApplicationName", r"@%ProgramFiles%\Win
 
 # ── Служби ──
 tw("disable_services", "svc", [F(f_services)], p="FMOX", impact="medium")
-tw("disable_search_index", "svc", [S("WSearch")], p="FMTOX", impact="habits")
+tw("disable_search_index", "svc", [S("WSearch")], p="O", impact="habits")  # 6.9: лише для старих ПК (диск)
 
 # ── Місце на диску ──
 tw("compact_os", "space", [C("compact /compactos:always", "compact /compactos:never", 3600)], p="O", long=True)
@@ -2310,11 +2430,11 @@ tw("reserved_storage_off", "space", [C("DISM /Online /Set-ReservedStorageState /
    min_build=19041)
 
 # ── Обслуговування (разові дії) ──
-tw("memory_clean", "maint", [F(f_memory_clean)], p="FMLTOX", reversible=False)
+tw("memory_clean", "maint", [F(f_memory_clean)], reversible=False)  # 6.9: не в планах — ефект на хвилини
 tw("fix_errors", "maint", [F(f_chkdsk)], reversible=False, reboot=True)
 tw("clean_invalid", "maint", [F(f_clean_invalid)], reversible=False)
 tw("fix_drivers", "maint", [F(f_fix_drivers)], reversible=False)
-tw("clean_registry", "maint", [F(f_clean_registry)], p="FMLTOX", reversible=False)
+tw("clean_registry", "maint", [F(f_clean_registry)], reversible=False)  # 6.9: не в планах — це не прискорення
 tw("clean_junk", "maint", [F(f_clean_junk)], p="FMLTOX", reversible=False)
 
 # ── Metro-додатки ──
@@ -2359,10 +2479,8 @@ tw("tweak_show_hidden", "visual", [R(ADV, "Hidden", 1), X("explorer")], off=[R(A
 tw("tweak_dark_mode", "visual", [R(PERS, "AppsUseLightTheme", 0), R(PERS, "SystemUsesLightTheme", 0), X("broadcast")],
    off=[R(PERS, "AppsUseLightTheme", 1), R(PERS, "SystemUsesLightTheme", 1), X("broadcast")])
 tw("tweak_no_aero_shake", "visual", [R(ADV, "DisallowShaking", 1)], off=[RD(ADV, "DisallowShaking")])
-tw("tweak_fast_alttab", "visual", [R(DESK, "MenuShowDelay", "0", "sz"), R(DESK + r"\WindowMetrics", "MinAnimate", "0", "sz"),
-                                   R(ADV, "ExtendedUIHoverTime", 1), X("anim")],
-   off=[R(DESK, "MenuShowDelay", "400", "sz"), R(DESK + r"\WindowMetrics", "MinAnimate", "1", "sz"),
-        RD(ADV, "ExtendedUIHoverTime"), X("anim")])
+tw("tweak_fast_alttab", "visual", [R(DESK, "MenuShowDelay", "0", "sz"), R(ADV, "ExtendedUIHoverTime", 1), X("anim")],
+   off=[R(DESK, "MenuShowDelay", "400", "sz"), RD(ADV, "ExtendedUIHoverTime"), X("anim")])
 STICKY = r"HKCU\Control Panel\Accessibility"
 tw("tweak_no_sticky", "visual", [R(STICKY + r"\StickyKeys", "Flags", "506", "sz"),
                                  R(STICKY + r"\ToggleKeys", "Flags", "58", "sz"),
@@ -2408,7 +2526,7 @@ def resolve_conflicts(ids, applied=None) -> tuple:
 
 def _admin_op(op) -> bool:
     """Чи потрібні права адміністратора для операції. Без них змінюються лише параметри поточного користувача."""
-    if op[0] in ("reg", "regdel"):
+    if op[0] in ("reg", "regdel", "kv"):
         return not str(op[1]).upper().startswith("HKCU")
     return op[0] != "live"
 
@@ -2443,12 +2561,15 @@ def current_color(tid: str, default=(0, 120, 215)):
 
 def probe(t: Tweak) -> bool:
     """Чи застосовано твік: за значеннями реєстру або за журналом відкату."""
-    regs = [op for op in t.ops if op[0] == "reg" and not callable(op[3])][:3]
+    regs = [op for op in t.ops if op[0] in ("reg", "kv") and not callable(op[3])][:3]
     if not regs or not winreg:
         return JOURNAL.has(t.id)
-    for _, path, name, value, _rt in regs:
-        cur = reg_get(path, name)
-        if cur is None or str(cur[1]).lower() != str(value).lower():
+    for op in regs:
+        cur = reg_get(op[1], op[2])
+        if op[0] == "kv":  # параметр у спільному рядку: решта рядка може бути будь-якою
+            if cur is None or str(kv_get(cur[1], op[3]) or "").lower() != str(op[4]).lower():
+                return False
+        elif cur is None or str(cur[1]).lower() != str(op[3]).lower():
             return False
     return True
 
@@ -2458,6 +2579,8 @@ WIN10_RELEASES = {17134: "1803", 17763: "1809", 18362: "1903", 19041: "2004"}
 
 def compat(t: Tweak, hw: dict):
     """-> (стан, пояснення). Стан: ok | warn | block | na."""
+    if t.retired:  # 6.9: не пропонується; застосовану раніше можна лише відкотити
+        return "na", tr("retired.na")
     if not hw:
         return "ok", ""
     build = hw.get("build") or 0
@@ -2494,6 +2617,8 @@ def describe_ops(t: Tweak) -> list:
             out.append(f"{tr('d.reg')}: {op[1]}\\{op[2]} = {v} ({TYPE_NAMES.get(op[4], op[4])})")
         elif k == "regdel":
             out.append(f"{tr('d.reg')}: {op[1]}\\{op[2]} → {tr('d.delete')}")
+        elif k == "kv":
+            out.append(f"{tr('d.reg')}: {op[1]}\\{op[2]}: {op[3]}={op[4]} (REG_SZ, {tr('d.kv_part')})")
         elif k == "svc":
             out.append(f"{tr('d.service')}: {op[1]} → {op[2]}")
         elif k == "task":
@@ -2822,10 +2947,13 @@ BEFORE_APPLY: list = []
 def apply_tweaks(items, log: Callable, progress: Optional[Callable] = None, sfc: bool = False,
                  header: bool = True, hw: dict = None, restore_point: bool = False, by: str = "") -> dict:
     ctx = Ctx(log, hw=hw)
+    retired = [t for t in items if t.retired]  # 6.9: прибрані зміни не застосовуємо, звідки б не прийшов запит
+    items = [t for t in items if not t.retired]
     keep, dropped = resolve_conflicts([t.id for t in items])
     items = [t for t in items if t.id in set(keep)]
     if len(items) > 1:
         ctx.deferred = set()  # Провідник перезапускаємо один раз наприкінці, а не після кожного твіка
+    ctx.appx_batch = [p for t in items for op in t.ops if op[0] == "fn" for p in getattr(op[1], "appx", ())]
     total = len(items) + (2 if sfc else 0) + (1 if restore_point else 0)
     ok = fail = skipped = 0
     reboot = False
@@ -2839,6 +2967,8 @@ def apply_tweaks(items, log: Callable, progress: Optional[Callable] = None, sfc:
             log(tr("e.preview"))
     for tid, other in dropped:
         log(tr("e.conflict", title=entry_title(tid), other=entry_title(other)))
+    for t in retired:
+        log(tr("e.retired_skip", title=t.title))
     if not DRY_RUN and not is_admin() and any(needs_admin(t) for t in items):
         log(tr("e.need_admin_all"))
     try:
@@ -2892,12 +3022,12 @@ def apply_tweaks(items, log: Callable, progress: Optional[Callable] = None, sfc:
         msg = tr("e.summary", ok=ok)
         if fail:
             msg += tr("e.summary_fail", fail=fail)
-        if skipped or dropped:
-            msg += tr("e.summary_skip", n=skipped + len(dropped))
+        if skipped or dropped or retired:
+            msg += tr("e.summary_skip", n=skipped + len(dropped) + len(retired))
         msg += tr("e.summary_reboot") if reboot else "."
         log(" " + msg)
         log("═" * 58)
-    res = {"ok": ok, "fail": fail, "skipped": skipped, "reboot": reboot, "conflicts": dropped}
+    res = {"ok": ok, "fail": fail, "skipped": skipped + len(retired), "reboot": reboot, "conflicts": dropped}
     if error:
         res["error"] = error
     return res

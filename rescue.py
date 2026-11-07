@@ -240,11 +240,39 @@ def _file_undo_ps(rec: dict) -> str:
             "exit 0")
 
 
+_HIVE_PS = {"HKLM": "HKEY_LOCAL_MACHINE", "HKCU": "HKEY_CURRENT_USER", "HKCR": "HKEY_CLASSES_ROOT", "HKU": "HKEY_USERS"}
+
+
+def _kv_undo_ps(rec: dict) -> str:
+    """Те саме, що engine._undo_kv: у спільному рядку реєстру повертаємо лише свій параметр, решту не чіпаємо."""
+    hive, _, rest = rec["p"].partition("\\")
+    k = _psq("Registry::" + _HIVE_PS.get(hive.upper(), hive) + "\\" + rest)
+    old = "$null" if rec.get("kvold") is None else _psq(rec["kvold"])
+    had = "$true" if rec.get("old") is not None else "$false"
+    return ("$ErrorActionPreference='Stop';"
+            f"$k={k};$n={_psq(rec['n'])};$key={_psq(rec['kv'])};$old={old};$had={had};"
+            "$cur=(Get-ItemProperty -LiteralPath $k -Name $n -ErrorAction SilentlyContinue).$n;"
+            # як engine.kv_set: параметр — на своєму місці, решта рядка в тому самому порядку
+            "$parts=@();$done=$false;"
+            "foreach ($p in ([string]$cur -split ';')) { if (-not $p) { continue };"
+            " if ($p.StartsWith($key+'=')) { if (($null -ne $old) -and -not $done) { $parts += ($key+'='+$old) };"
+            " $done=$true; continue }; $parts += $p };"
+            "if (($null -ne $old) -and -not $done) { $parts += ($key+'='+$old) };"
+            "$s=''; if ($parts.Count) { $s=($parts -join ';')+';' };"
+            "if ($s -eq '' -and -not $had) { Remove-ItemProperty -LiteralPath $k -Name $n -ErrorAction "
+            "SilentlyContinue; exit 0 };"
+            "if (-not (Test-Path -LiteralPath $k)) { New-Item -Path $k -Force | Out-Null };"
+            "Set-ItemProperty -LiteralPath $k -Name $n -Value $s -Type String;"
+            "exit 0")
+
+
 def undo_lines(rec: dict) -> list:
     """Команди .cmd для одного запису відкату з журналу."""
     if not E.valid_undo(rec):
         return [f"rem {_echo(tr('e.undo_bad', what=str(rec)[:60]))}"]
     t = rec.get("t")
+    if t == "reg" and rec.get("kv"):
+        return [_ps_line(_kv_undo_ps(rec))]
     if t == "reg":
         return _reg_lines(rec)
     if t == "svc":

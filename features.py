@@ -12,7 +12,6 @@ import sys
 import time
 
 import engine as E
-import hardware as H
 from i18n import tr, CONFIG_PATH
 
 # ───────────────────────── налаштування програми ─────────────────────────
@@ -47,7 +46,7 @@ DEFAULTS = {
     "smart": None,  # незавершена розумна оптимізація (продовжується після перезавантаження)
     "smart_last": None,  # підсумок останньої розумної оптимізації
     "smart_pref": {"provider": "gpu", "game": None},
-    "tweak_evidence": {},  # що розумна оптимізація довела на цьому ПК: {id: {harm, help, none, ts}}
+    "tweak_evidence": {},  # що розумна оптимізація довела на цьому ПК: {id: {harm, solo, pack, none, ts}}
     "opt_mode": None,  # останній вибраний режим оптимізації
     "mining": {"auto": False, "last_scan": 0, "profiles": {}, "gl_driver": "d3d12", "seen": [], "check": True},
     "shader_state": {},  # Shader Cache Manager: драйвер, з яким кеш перевіряли востаннє
@@ -604,13 +603,15 @@ WIZARD = [
     {"id": "ms", "opts": ["onedrive", "xbox", "search", "copilot"], "multi": True},
 ]
 DEVICE_PROFILE = {"gaming": "M", "laptop": "T", "old": "O", "xeon": "X"}
-LATENCY = ["processor_idle", "timer_resolution", "dynamic_tick", "msi_gpu", "disable_nagle", "network_stack_boost",
-           "fso_global", "turbo_aggressive"]
+# 6.9: без мережевих змін (шутери працюють через UDP, а Nagle стосується лише TCP); з вимкненим прискоренням миші —
+# це звичка, тож її додає лише явно вибрана мета «мінімальна затримка»
+LATENCY = ["processor_idle", "timer_resolution", "dynamic_tick", "msi_gpu", "fso_global", "turbo_aggressive",
+           "disable_mouse_accel"]
 FPS = ["msi_gpu", "fso_global", "turbo_aggressive"]  # 6.7: без disable_vbs — захист ядра вимикають лише вручну
 HOT = ["ultimate_power", "processor_idle", "power_throttling", "turbo_aggressive", "core_parking", "min_cpu_state",
        "laptop_ac_max", "pcie_aspm"]
 AI_FEATURES = ["ai_copilot", "ai_recall", "ai_click_to_do", "ai_apps", "ai_edge", "search_no_bing"]
-GAME_ONLY = ["disable_mouse_accel", "fso_global", "hpet_tsc", "timer_resolution", "dynamic_tick", "msi_gpu"]
+GAME_ONLY = ["disable_mouse_accel", "fso_global", "timer_resolution", "dynamic_tick", "msi_gpu"]
 
 
 def wizard_defaults(hw: dict) -> dict:
