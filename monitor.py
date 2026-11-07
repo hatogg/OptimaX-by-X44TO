@@ -95,8 +95,16 @@ def quick_thermal() -> dict:
     q.close()
     zones = _zone_c(d.get("temp"))
     passive = [v for v in (d.get("passive") or {}).values() if 0 < v <= 100]
-    return dict(zone=round(max(zones)) if zones else None, passive=round(min(passive)) if passive else None,
-                perf=round(d["perf"]) if "perf" in d else None)
+    try:
+        import cpusensors as CS
+        t, src = CS.CpuTemp().read()
+    except Exception:
+        t, src = None, None
+    if t is None and zones:
+        t, src = max(zones), "acpi"
+    # zone — температура процесора: зі справжнього датчика (src = coretemp/hwinfo/…) або теплова зона (src = acpi)
+    return dict(zone=round(t) if t is not None else None, src=src,
+                passive=round(min(passive)) if passive else None, perf=round(d["perf"]) if "perf" in d else None)
 
 
 # ───────────────────────── процеси ─────────────────────────
@@ -265,6 +273,10 @@ def lag_diagnosis(hw: dict, seconds: int, log, progress, gpu_temp=None, game: st
     if sampler:
         sampler.sample()
     nv = _nvml()
+    cpu_t = None
+    if E.IS_WIN:
+        import cpusensors as CS
+        cpu_t = CS.CpuTemp()  # Core Temp / HWiNFO / AIDA64 / LibreHardwareMonitor, якщо запущені
     frames = None
     try:
         import fpstest as FT
@@ -294,13 +306,16 @@ def lag_diagnosis(hw: dict, seconds: int, log, progress, gpu_temp=None, game: st
             d = q.collect()
             cores = [v for k, v in (d.get("cores") or {}).items() if "_Total" not in k]
             zones = _zone_c(d.get("temp"))
+            t, t_src = cpu_t.read() if cpu_t else (None, None)
+            if t is None and zones:
+                t, t_src = max(zones), "acpi"
             passive = [v for v in (d.get("passive") or {}).values() if 0 < v <= 100]
             pid = foreground_pid()
             fg = foreground_process()
             s = dict(cpu=min(100.0, d.get("cpu", 0.0)), core_max=min(100.0, max(cores) if cores else 0.0),
                      gpu=min(100.0, sum((d.get("gpu3d") or {}).values())), avail_mb=d.get("avail_mb", 0.0),
                      pages_in=d.get("pages_in", 0.0), disk=max(0.0, 100 - d.get("disk_idle", 100.0)),
-                     temp=max(zones) if zones else None, passive=min(passive) if passive else None,
+                     temp=t, temp_src=t_src, passive=min(passive) if passive else None,
                      limit=d.get("limit"), vram_used=max((d.get("vram") or {0: 0}).values()) / 2**30,
                      gpu_t=gpu_temp() if gpu_temp and i % 3 == 0 else None, fg=fg, bg={})
             if pid:
@@ -433,6 +448,11 @@ def summarize(samples: list, hw: dict, game_exe: str, bg: dict, extra: dict = No
                                                           "temp", "passive", "limit", "vram_used", "gpu_t")}
     mx = {k: max([s.get(k) for s in samples if isinstance(s.get(k), (int, float))] or [0])
           for k in ("temp", "gpu_t", "disk", "vram_used")}
+    import cpusensors as CS
+    zone_only = [s.get("temp") for s in samples if s.get("temp") is not None and s.get("temp_src") == "acpi"]
+    if zone_only and len(zone_only) == len([s for s in samples if s.get("temp") is not None]) and \
+            CS.acpi_static(zone_only):
+        av["temp"], mx["temp"] = None, 0  # стала зона ACPI плати — не температура процесора
     total_mb = (hw.get("ram_gb") or 16) * 1024
     vram_total = max([vr for n, vr, _ in hw.get("gpus", []) if vr >= 1] or [0])
     f = []

@@ -22,6 +22,15 @@ import hwtests as HT
 from i18n import tr
 
 FORMAT = "optimax-hw-report"
+def _vram(v) -> str:
+    """64 МБ вбудованої графіки — «64 МБ», а не «0.1 GB»."""
+    import hardware as H
+    try:
+        return H.vram_text(v)
+    except Exception:
+        return ""
+
+
 STATUS_COLOR = {HT.PASS: "#2FB872", HT.WARN: "#E0A21F", HT.FAIL: "#E5484D", HT.SKIPPED: "#8A93A6", HT.NA: "#8A93A6"}
 METRICS = (("cpu_multi", "score"), ("cpu_single", "score"), ("cpu_stress", "temp_max"), ("ram", "errors"),
            ("vram", "errors"), ("gpu", "score"), ("stress_combined", "status"), ("battery", "wear"))
@@ -64,14 +73,14 @@ def build(hw: dict, info: dict = None, last: dict = None, bench: list = None, in
     for r in results.values():
         for f in r.get("findings") or []:
             if f[0] in (HT.FAIL, HT.WARN):
-                t = tr(f[1], **(f[2] or {}))
+                t = HT.finding_str(f)
                 if t not in rec:
                     rec.append(t)
     main = [r["status"] for k, r in results.items() if not k.startswith(("repair_", "chkdsk"))]
     rep = dict(format=FORMAT, version=E.VERSION, created=int(time.time()),
                computer=os.environ.get("COMPUTERNAME") if include_name else None,
                hardware=dict(cpu=hw.get("cpu"), cores=hw.get("cores"), threads=hw.get("threads"),
-                             gpus=[dict(name=n, vram_gb=round(v, 1), driver=d or None) for n, v, d in hw.get("gpus") or []],
+                             gpus=[dict(name=n, vram_gb=round(v, 3), driver=d or None) for n, v, d in hw.get("gpus") or []],
                              ram_gb=round(hw.get("ram_gb") or 0, 1), ram_type=hw.get("ram_type"),
                              ram_speed=hw.get("ram_speed"), os=hw.get("os"), build=hw.get("build"),
                              vendor=hw.get("vendor"), model=hw.get("model"), laptop=hw.get("laptop"),
@@ -128,7 +137,7 @@ def to_html(rep: dict, for_pdf: bool = False) -> str:
            f'<p>{_e(tr("rep.overall"))}: {_badge(rep.get("status", HT.NA))}</p>',
            f'<h2>{_e(tr("rep.hw"))}</h2><table>']
     rows = [(tr("hwc.i.cpu"), f"{hwd.get('cpu') or ''} ({hwd.get('cores')}/{hwd.get('threads')})"),
-            (tr("hwc.i.gpu"), ", ".join(f"{g['name']} {g['vram_gb'] or ''} GB" + (f" · {tr('hwc.i.driver_date')} "
+            (tr("hwc.i.gpu"), ", ".join(f"{g['name']} {_vram(g.get('vram_gb'))}".strip() + (f" · {tr('hwc.i.driver_date')} "
                                                                                     f"{g['driver']}" if g.get("driver")
                                                                                     else "")
                                         for g in hwd.get("gpus") or [])),
@@ -163,7 +172,7 @@ def to_html(rep: dict, for_pdf: bool = False) -> str:
                    f' <span class="mute">{_e(when)}{mock}</span></h3><div class="f">{_e(r.get("summary"))}</div>')
         for f in r.get("findings") or []:
             col = {HT.FAIL: "#E5484D", HT.WARN: "#E0A21F"}.get(f[0], "#6b7385")
-            out.append(f'<div class="f" style="color:{col}">• {_e(tr(f[1], **(f[2] or {})))}</div>')
+            out.append(f'<div class="f" style="color:{col}">• {_e(HT.finding_str(f))}</div>')
         if r.get("rows"):
             out.append("<table>")
             for k, v in r["rows"]:

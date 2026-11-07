@@ -301,7 +301,8 @@ def overlay_lines(mode: str, st: dict, s: dict, extra: dict) -> list:
     if mode == "minimal":
         return out
     out.append((f"1% {n(st.get('low1'))} · 0.1% {n(st.get('low01'))} · {n(st.get('ft'), '{:.1f}')} ms", "dim"))
-    out.append((f"CPU {n(s.get('util'))}%" + (f" · {n(s.get('temp'))}°C" if s.get("temp") is not None else ""), "dim"))
+    cpu_t = s.get("temp") if s.get("temp_src") != "acpi" else None  # теплова зона плати — не процесор
+    out.append((f"CPU {n(s.get('util'))}%" + (f" · {n(cpu_t)}°C" if cpu_t is not None else ""), "dim"))
     if s.get("gpu_util") is not None or s.get("gpu_temp") is not None:
         out.append((f"GPU {n(s.get('gpu_util'))}%" + (f" · {n(s.get('gpu_temp'))}°C" if s.get("gpu_temp") is not None
                                                        else ""), "dim"))

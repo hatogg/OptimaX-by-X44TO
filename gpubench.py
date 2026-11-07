@@ -20,6 +20,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -544,12 +545,35 @@ class _Mem(ctypes.Structure):
     _fields_ = [("total", ctypes.c_ulonglong), ("free", ctypes.c_ulonglong), ("used", ctypes.c_ulonglong)]
 
 
-class Nvml:
-    """Температура, частоти, споживання й причини скидання частот першої відеокарти NVIDIA."""
+def gpu_key(name: str) -> str:
+    """Назва для порівняння карт між DXGI, NVML і GL_RENDERER: «NVIDIA GeForce GTX 1060 6GB/PCIe/SSE2» -> «gtx10606gb»."""
+    n = str(name or "").lower().split("/")[0]
+    n = re.sub(r"\b(nvidia|geforce|corporation|\(r\)|\(tm\))", " ", n)
+    return re.sub(r"[^a-z0-9]", "", n)
 
-    def __init__(self):
+
+def pick_device(devices: list, want: str = "") -> int:
+    """devices — [(індекс, назва, пам'ять у байтах)]. Карта з тією самою назвою, а без назви — з найбільшою пам'яттю:
+    у збірці з GT 710 для картинки й P106 для ігор раніше датчики завжди брались з першої за шиною — GT 710."""
+    if not devices:
+        return -1
+    k = gpu_key(want)
+    if k:
+        same = [d for d in devices if gpu_key(d[1]) == k] or \
+            [d for d in devices if gpu_key(d[1]) and (gpu_key(d[1]) in k or k in gpu_key(d[1]))]
+        if same:
+            return same[0][0]
+    return max(devices, key=lambda d: (d[2] or 0, -d[0]))[0]
+
+
+class Nvml:
+    """Температура, частоти, споживання й причини скидання частот відеокарти NVIDIA.
+    name — котра саме карта (як її називає DXGI чи GL_RENDERER); без назви — карта з найбільшою пам'яттю."""
+
+    def __init__(self, name: str = ""):
         self.lib = None
         self.h = ctypes.c_void_p()
+        self.index = -1
         if not E.IS_WIN:
             return
         for path in ("nvml.dll", r"C:\Program Files\NVIDIA Corporation\NVSMI\nvml.dll"):
@@ -558,12 +582,52 @@ class Nvml:
                 init = getattr(lib, "nvmlInit_v2", None) or lib.nvmlInit
                 if init() != 0:
                     continue
-                get = getattr(lib, "nvmlDeviceGetHandleByIndex_v2", None) or lib.nvmlDeviceGetHandleByIndex
-                if get(0, ctypes.byref(self.h)) == 0:
-                    self.lib = lib
+                self.lib = lib
+                if self.select(name):
                     return
+                self.lib = None
+                lib.nvmlShutdown()
             except Exception:
+                self.lib = None
                 continue
+
+    def devices(self) -> list:
+        """-> [(індекс, назва, пам'ять у байтах)] усіх карт NVIDIA, які бачить драйвер."""
+        if not self.lib:
+            return []
+        lib, out = self.lib, []
+        cnt = ctypes.c_uint(0)
+        count_fn = getattr(lib, "nvmlDeviceGetCount_v2", None) or lib.nvmlDeviceGetCount
+        get = getattr(lib, "nvmlDeviceGetHandleByIndex_v2", None) or lib.nvmlDeviceGetHandleByIndex
+        if count_fn(ctypes.byref(cnt)) != 0:
+            return []
+        for i in range(min(cnt.value, 16)):
+            h = ctypes.c_void_p()
+            if get(i, ctypes.byref(h)) != 0:
+                continue
+            buf = ctypes.create_string_buffer(96)
+            name = buf.value.decode("utf-8", "replace") if lib.nvmlDeviceGetName(h, buf, 96) == 0 else ""
+            mem = _Mem()
+            total = mem.total if lib.nvmlDeviceGetMemoryInfo(h, ctypes.byref(mem)) == 0 else 0
+            out.append((i, name, total))
+        return out
+
+    def select(self, name: str = "") -> bool:
+        """Перемкнути датчики на карту з такою назвою (False — карт NVIDIA немає)."""
+        if not self.lib:
+            return False
+        try:
+            idx = pick_device(self.devices(), name)
+        except Exception:
+            idx = -1
+        if idx < 0:
+            idx = 0
+        get = getattr(self.lib, "nvmlDeviceGetHandleByIndex_v2", None) or self.lib.nvmlDeviceGetHandleByIndex
+        h = ctypes.c_void_p()
+        if get(idx, ctypes.byref(h)) != 0:
+            return False
+        self.h, self.index = h, idx
+        return True
 
     @property
     def ok(self) -> bool:
@@ -820,6 +884,8 @@ def run_child(argv) -> int:
                 gl = GL(lambda n: int(ctx.getProcAddress(n) or 0))
                 self.r = Renderer(gl, width, height, quality)
                 info = gl.info()
+                if nv.ok and "nvidia" in f"{info['vendor']} {info['renderer']}".lower():
+                    nv.select(info["renderer"])  # кілька карт NVIDIA: датчики саме тієї, що малює
                 self.target = render_target(info["vendor"], info["renderer"], nv.ok, nv.name() if nv.ok else "")
                 state.update(gpu=self.target["gpu"], renderer=info["renderer"], gl=info["version"],
                              vendor=info["vendor"])

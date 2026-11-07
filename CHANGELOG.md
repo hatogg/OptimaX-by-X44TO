@@ -2,6 +2,32 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [6.10] — 2026-11-07
+
+Точність Hardware Center: справжня температура процесора, датчики потрібної відеокарти, точніші відомості про пам'ять.
+
+### Виправлено
+
+- **Температура процесора бралася з теплової зони ACPI** і підписувалась як «CPU». На більшості настільних плат це датчик плати або стала — на H67/Z77 часто рівно 27,8 °C, — тож під стрес-тестом процесор «мав» 28 °C, а перевірка збірки писала «температура в простої в нормі». Тепер OptimaX читає справжню температуру з програм датчиків, які вже запущені: Core Temp (спільна пам'ять, увімкнена за замовчуванням), HWiNFO («Shared Memory Support»), AIDA64 і LibreHardwareMonitor (вебсервер). Без них теплова зона показується з підписом «ACPI», а зона, що за весь тест під навантаженням не зрушила й на пів градуса, відкидається з поясненням, що запустити. Так само в «Чому лагає?», стрес-тестах, розділі «Ноутбук», оверлеї (там зону не показуємо зовсім) і звітах. Новий модуль `cpusensors.py`.
+- **Датчики NVIDIA бралися з першої карти на шині.** У збірці з GT 710 для картинки й P106 для ігор температура, частоти й споживання в Hardware Center, тесті GPU, оверлеї й аналізаторі майнінгових карт належали GT 710. Тепер — карта, вибрана для тесту, та, на якій справді малює тест чи гра, або майнінгова карта; без назви — карта з найбільшою пам'яттю.
+- **Швидкість модулів пам'яті вдвічі менша.** SMBIOS до 3.1 пише «налаштовану швидкість» у МГц, і таблиця модулів показувала DDR3-1333 як 667 МТ/с (загальна швидкість уже це враховувала, таблиця — ні).
+- **Тип модуля** визначався за кодами WMI замість кодів SMBIOS: RIMM показувався як SODIMM. **Виробник** — назва замість коду JEDEC зі старих BIOS («80CE000080CE» → Samsung, «0198» → Kingston). Порожні слоти без типу й виробника.
+- Відеопам'ять вбудованої графіки — «64 МБ», а не «0.1 GB», у Hardware Center і звітах.
+- Висновки зі збережених тестів старших версій показуються з типовими підстановками замість «{src}».
+
+### Сайт і пошук
+
+- Сайт збирається в окрему статичну сторінку для кожної мови з текстом прямо в HTML (`tools/build_site.py`): раніше пошуковий робот бачив порожні заголовки або англійський текст під українською сторінкою. Власні заголовки й описи, canonical, hreflang, Open Graph, schema.org і `sitemap.xml`.
+
+<details>
+<summary>English</summary>
+
+**Fixed:** the CPU temperature came from the ACPI thermal zone labelled as “CPU”; on most desktop boards that's a motherboard sensor or a constant (often exactly 27.8 °C on H67/Z77), so a stress-tested CPU “ran” at 28 °C. OptimaX now reads the real temperature from sensor programs that are already running — Core Temp (shared memory, on by default), HWiNFO (“Shared Memory Support”), AIDA64 and LibreHardwareMonitor (web server). Without them the zone is labelled “ACPI”, and a zone that didn't move by half a degree under load is discarded with a hint on what to run; the same in Why is it lagging?, stress tests, the Laptop section, the overlay (which hides the zone) and reports. NVIDIA sensors came from the first card on the bus (the GT 710 in a GT 710 + P106 build); now they come from the card picked for the test, the one actually rendering, or the mining card. Per-module memory speed was halved on SMBIOS < 3.1 boards (DDR3-1333 shown as 667); module form factor used WMI codes instead of SMBIOS ones; JEDEC vendor codes from old BIOSes are decoded; integrated GPU memory shows in MB; findings saved by older versions render without “{src}”.
+
+**Site and search:** the site is built into a static page per language with the text in the HTML, its own titles and descriptions, canonical, hreflang, Open Graph, schema.org and `sitemap.xml`.
+
+</details>
+
 ## [6.9] — 2026-11-07
 
 Ревізія каталогу оптимізацій: чесніші режими, надійніший відкат, нічого, що не діє.
