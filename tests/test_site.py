@@ -66,3 +66,9 @@ def test_sitemap(built):
     ns = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
     locs = [e.text for e in root.findall("s:url/s:loc", ns)]
     assert locs == [BS.LANGS[l]["url"] for l in BS.LANGS]
+
+
+def test_privacy_link_per_language(built):
+    assert 'id="privacy-link" href="https://github.com/hatogg/OptimaX-by-X44TO/blob/main/docs/uk/code-signing.md"' in built["index.html"]
+    assert 'id="privacy-link" href="https://github.com/hatogg/OptimaX-by-X44TO/blob/main/docs/en/code-signing.md"' in built["en.html"]
+    assert "Чого OptimaX не робить" in built["index.html"] and "What OptimaX never does" in built["en.html"]

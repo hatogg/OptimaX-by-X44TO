@@ -123,6 +123,8 @@ ol.steps span { color: var(--sub); font-size: 15px; }
                    border-left: 2px solid var(--green); border-bottom: 2px solid var(--green); transform: rotate(-45deg); }
 .safe li b { display: block; }
 .safe li span { color: var(--sub); font-size: 15px; }
+.note { color: var(--sub); font-size: 15px; max-width: 34em; margin: 0 0 12px; }
+.note.gap { margin-top: 20px; }
 .cmd { display: inline-block; margin-top: 20px; font-family: Consolas, "Cascadia Mono", monospace; font-size: 14px;
        background: var(--panel); border: 1px solid var(--line2); border-radius: var(--radius-s); padding: 10px 14px;
        color: var(--sub); }
@@ -248,6 +250,24 @@ footer a:hover { color: var(--text); }
     </div>
   </section>
 
+  <section id="never">
+    <div class="wrap safe">
+      <div>
+        <h2 data-t="never_h"></h2>
+        <p class="intro" data-t="never_intro"></p>
+        <p class="note" data-t="verify_d"></p>
+        <span class="cmd">Get-FileHash .\OptimaX-Setup-*.exe</span>
+        <p class="note gap"><a id="privacy-link" href="https://github.com/hatogg/OptimaX-by-X44TO/blob/main/docs/uk/code-signing.md" data-t="privacy_link"></a></p>
+      </div>
+      <ul>
+        <li><b data-t="n1"></b><span data-t="n1d"></span></li>
+        <li><b data-t="n2"></b><span data-t="n2d"></span></li>
+        <li><b data-t="n3"></b><span data-t="n3d"></span></li>
+        <li><b data-t="n4"></b><span data-t="n4d"></span></li>
+      </ul>
+    </div>
+  </section>
+
   <section id="features">
     <div class="wrap">
       <h2 data-t="feat_h"></h2>
@@ -306,6 +326,13 @@ const T = {
     g3: "Без запуску програми", g3d: "OptimaX-Rescue.cmd дублює журнал командами Windows і працює в безпечному режимі.",
     g4: "Перевірено на справжній Windows", g4d: "Перед кожним релізом кожен твік застосовується, перевіряється й відкочується на Windows Server 2022 і 2025.",
     g5: "Відкритий код", g5d: "Увесь код на GitHub під ліцензією MIT, релізи збирає GitHub Actions, контрольні суми — у SHA256SUMS.txt.",
+    never_h: "Чого OptimaX не робить", never_intro: "Обіцянки, які можна перевірити в коді, а не лише прочитати.",
+    n1: "Без телеметрії", n1d: "Програма не збирає й не надсилає персональних даних. У мережу — лише по оновлення, завантаження й тести, які ви запускаєте самі.",
+    n2: "Нічого без підтвердження", n2d: "Кожну зміну видно до застосування, а те, що шкодить саме вашому залізу, заблоковано з поясненням.",
+    n3: "Захист Windows лишається", n3d: "Вимкнення Defender прибрано з програми, а ізоляція ядра й пауза оновлень не входять у готові плани — лише вручну.",
+    n4: "Без реклами й нав'язаних програм", n4d: "Немає платних функцій і прихованих встановлень: у «Програмах» ставиться лише те, що ви вибрали.",
+    verify_d: "Перевірте, що файл справжній: його хеш має збігатися з рядком у SHA256SUMS.txt того самого релізу.",
+    privacy_link: "Політика приватності й підпису коду", privacy_doc: "docs/uk/code-signing.md",
     feat_h: "Що всередині", feat_intro: "Повний список — у посібнику й переліку всіх оптимізацій на GitHub.",
     fg1: "Для ігор", fg2: "Для системи", fg3: "Інструменти",
     f: [
@@ -363,6 +390,13 @@ const T = {
     g3: "Without starting the program", g3d: "OptimaX-Rescue.cmd duplicates the journal as Windows commands and works in Safe Mode.",
     g4: "Tested on real Windows", g4d: "Before every release, every tweak is applied, checked and rolled back on Windows Server 2022 and 2025.",
     g5: "Open source", g5d: "All the code is on GitHub under the MIT license, releases are built by GitHub Actions, checksums are in SHA256SUMS.txt.",
+    never_h: "What OptimaX never does", never_intro: "Promises you can check in the code, not just read.",
+    n1: "No telemetry", n1d: "The program collects and sends no personal data. It goes online only for updates, downloads and the tests you run yourself.",
+    n2: "Nothing without your OK", n2d: "Every change is visible before it is applied, and anything that harms your particular hardware is blocked with an explanation.",
+    n3: "Windows protection stays on", n3d: "Turning off Defender is gone from the program, and core isolation and pausing updates are never in ready-made plans — only by hand.",
+    n4: "No ads, no bundled apps", n4d: "No paid features and no hidden installs: Apps installs only what you picked.",
+    verify_d: "Check that the file is genuine: its hash must match the line in SHA256SUMS.txt of the same release.",
+    privacy_link: "Privacy and code signing policy", privacy_doc: "docs/en/code-signing.md",
     feat_h: "What's inside", feat_intro: "The full list is in the guide and in the list of all optimizations on GitHub.",
     fg1: "For games", fg2: "For the system", fg3: "Tools",
     f: [
@@ -530,6 +564,7 @@ function apply(l) {
   document.querySelectorAll("[data-t]").forEach(el => { if (typeof t[el.dataset.t] === "string") el.textContent = t[el.dataset.t]; });
   document.querySelectorAll(".lang button").forEach(b => b.setAttribute("aria-pressed", b.dataset.lang === l ? "true" : "false"));
   document.getElementById("f-docs").href = `https://github.com/${REPO}/blob/main/${t.docs}`;
+  document.getElementById("privacy-link").href = `https://github.com/${REPO}/blob/main/${t.privacy_doc}`;
   drawTrace(); renderTabs(); showShot(); renderLists(); renderRelease();
 }
 
