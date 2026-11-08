@@ -243,6 +243,9 @@ def render(page: str, lang: str, t_all: dict) -> str:
                      out, count=1)
     out = re.sub(r'(<a id="f-docs" href=")[^"]*(")',
                  lambda x: x.group(1) + f"{REPO}/blob/main/{t.get('docs') or 'docs/uk/guide.md'}" + x.group(2), out, count=1)
+    out = re.sub(r'(<a id="privacy-link" href=")[^"]*(")',
+                 lambda x: x.group(1) + f"{REPO}/blob/main/{t.get('privacy_doc') or 'docs/uk/code-signing.md'}" + x.group(2),
+                 out, count=1)
     out = re.sub(r'(<nav class="links" aria-label=")[^"]*(")', lambda x: x.group(1) + m["nav"] + x.group(2), out, count=1)
     return out
 
