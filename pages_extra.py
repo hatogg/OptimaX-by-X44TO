@@ -259,9 +259,10 @@ class DiagnosePage(QWidget):
         rh.addStretch()
         rcv.addLayout(rh)
         v.addWidget(rc)
-        # «Чому впав комп?» і монітор на телефоні (pages_life.py) — після головного, а не над ним
+        # «Чому впав комп?», «Чому зависає?» і монітор на телефоні (pages_life.py) — після головного, а не над ним
         import pages_life as PL
         self.crash = PL.CrashCard(main, v)
+        self.freeze = PL.FreezeCard(main, v)
         self.phone = PL.PhoneCard(main, v)
         v.addStretch()
         self.scroll = scroller(body)
@@ -276,6 +277,11 @@ class DiagnosePage(QWidget):
         """Банер «комп впав» на головній веде сюди: картка збоїв унизу сторінки, тож прокручуємо до неї."""
         from PyQt6.QtCore import QTimer
         QTimer.singleShot(0, lambda: self.scroll.ensureWidgetVisible(self.crash.card, 0, 40))
+
+    def focus_freeze(self) -> None:
+        """Сповіщення про зловлений фриз веде сюди — до картки «Чому зависає?»."""
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(0, lambda: self.scroll.ensureWidgetVisible(self.freeze.card, 0, 40))
 
     # ── «Чому лагає?» ──
     def start_diag(self):

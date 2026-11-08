@@ -34,6 +34,9 @@ if __name__ == "__main__":
     if "--vram-test" in sys.argv:  # Hardware Center: перевірка відеопам'яті на вибраній карті
         import vramtest
         sys.exit(vramtest.run_child(sys.argv))
+    if "--freeze-watch" in sys.argv:  # «Чому зависає?»: ловець фризів — окремий процес без Qt і без GIL інтерфейсу
+        import freezecatch
+        sys.exit(freezecatch.watch_main(sys.argv))
     if any(a == "--selftest" or a.startswith("--selftest=") for a in sys.argv):
         import selftest  # самоперевірка збірки (CI): тимчасові налаштування й режим перегляду — до імпорту engine
         selftest.prepare(sys.argv)
@@ -57,6 +60,7 @@ import rescue as RS
 import baseline as BL  # noqa: F401  (знімок початкових налаштувань перед першою зміною)
 import bugreport as BR
 import crashlog as CL
+import freezecatch as FZ
 import library as LB
 import phonemon as PH
 import updater as U
@@ -251,6 +255,38 @@ class Main(QWidget):
         if (F.CFG["phone"] or {}).get("enabled"):
             self.run_quick("phone", lambda log, p: PH.MONITOR.start(log), silent=True,
                            on_done=lambda _r: self.pages["diagnose"].phone.sync())
+        self._fz_mtime = None  # freezes.json ловця фризів: перечитуємо, лише коли файл змінився
+        if (F.CFG["freeze"] or {}).get("enabled"):
+            self.run_quick("freeze", lambda log, p: FZ.CATCHER.start(log), silent=True,
+                           on_done=lambda _r: self.pages["diagnose"].freeze.sync_switch()
+                           if "diagnose" in self.pages else None)
+
+    def _freeze_tick(self):
+        """Ловець фризів дописав freezes.json — оновити картку й розповісти про новий фриз (банер і сповіщення)."""
+        if not FZ.CATCHER.running:  # нові фризи пише лише працюючий ловець
+            return
+        m = FZ.list_mtime()
+        if m == self._fz_mtime:
+            return
+        self._fz_mtime = m
+        cfg = dict(F.CFG["freeze"] or {})
+        fr = FZ.load(cfg.get("cleared", 0))
+        new = FZ.new_since(fr, cfg.get("seen", 0))
+        if fr:
+            F.CFG["freeze"] = dict(cfg, seen=max(int(f.get("end") or 0) for f in fr))
+        if "diagnose" in self.pages:
+            self.pages["diagnose"].freeze.refresh(fr)
+        if not new:
+            return
+        f = new[0]
+        text = tr("fz.toast", dur=PL.fz_dur(f.get("dur")), cause=tr(f"fz.short.{f.get('cat') or 'unknown'}"))
+        home = self.pages["home"]
+        if home.banner.isHidden():  # не isVisible: поки відкрита інша сторінка, «видимих» банерів на головній немає
+            home.set_banner("pc_freeze", tr("fz.banner_t"), text,
+                            (tr("crash.banner_btn"), lambda: (home.set_banner(None), self.go("diagnose"),
+                                                              self.pages["diagnose"].focus_freeze())),
+                            (tr("btn.close"), lambda: home.set_banner(None)))
+        self.toast(text, "warn")
 
     def crash_scan(self):
         """Після запуску: чи не було аварійного перезавантаження, про яке ще не розповіли (і яке не пов'язане зі
@@ -664,6 +700,11 @@ class Main(QWidget):
                 self._library_tick(names)
             except Exception as e:  # облік ігор не повинен зупиняти решту фонових перевірок
                 LOG.write(f"  library: {type(e).__name__}: {e}")
+        if self._ticks % 5 == 0:  # «Чому зависає?»: чи не зловив ловець новий фриз
+            try:
+                self._freeze_tick()
+            except Exception as e:
+                LOG.write(f"  freeze: {type(e).__name__}: {e}")
         # автоматичний режим гри
         if F.CFG["booster"].get("auto"):
             names = names if names is not None else F.running_game_names()
@@ -1304,6 +1345,10 @@ class Main(QWidget):
             pass
         try:
             PH.MONITOR.stop(remember=False)  # сервер зупиняється, а ввімкненим лишається до наступного запуску
+        except Exception:
+            pass
+        try:
+            FZ.CATCHER.stop(remember=False)  # ловець зупиняється разом із програмою, а ввімкненим лишається
         except Exception:
             pass
         self.tray.hide()

@@ -127,6 +127,287 @@ STRINGS = {
                        "The PC restarted after a crash"),
     "crash.banner_btn": ("Чому?", "Почему?", "Why?"),
 
+    # ── «Чому зависає?» (freezecatch.py) ──
+    "fz.title": ("Чому зависає?", "Почему зависает?", "Why does it freeze?"),
+    "fz.sub": ("Ловить фризи на 1–5 секунд, коли зависає все одразу — картинка, відео й звук, — і показує, що в цей момент "
+               "робила система: драйвер, диск, відеокарта чи щось поза Windows.",
+               "Ловит фризы на 1–5 секунд, когда зависает всё сразу — картинка, видео и звук, — и показывает, что в этот "
+               "момент делала система: драйвер, диск, видеокарта или что-то вне Windows.",
+               "Catches 1–5 second freezes when everything hangs at once — picture, video and sound — and shows what the "
+               "system was doing at that moment: a driver, the drive, the graphics card or something outside Windows."),
+    "fz.enable": ("Ловити фризи у фоні", "Ловить фризы в фоне", "Catch freezes in the background"),
+    "fz.enable_d": ("Окремий легкий процес стежить, поки OptimaX відкрита або згорнута в трей (менше 1% процесора). "
+                    "Фризи рідкісні — залиште ловець на день-два.",
+                    "Отдельный лёгкий процесс следит, пока OptimaX открыта или свёрнута в трей (меньше 1% процессора). "
+                    "Фризы редкие — оставьте ловец на день-два.",
+                    "A separate lightweight process watches while OptimaX is open or in the tray (under 1% CPU). "
+                    "Freezes are rare, so leave it on for a day or two."),
+    "fz.deep": ("Глибокий запис драйверів (WPR)", "Глубокая запись драйверов (WPR)", "Deep driver recording (WPR)"),
+    "fz.deep_d": ("Вбудований у Windows записувач тримає в пам'яті останню хвилину DPC і переривань (до 64 МБ) і "
+                  "зберігає її в момент фризу. Файл .etl відкривається у Windows Performance Analyzer — там видно, який "
+                  "саме драйвер тримав процесор.",
+                  "Встроенный в Windows записыватель держит в памяти последнюю минуту DPC и прерываний (до 64 МБ) и "
+                  "сохраняет её в момент фриза. Файл .etl открывается в Windows Performance Analyzer — там видно, какой "
+                  "именно драйвер держал процессор.",
+                  "The recorder built into Windows keeps the last minute of DPCs and interrupts in memory (up to 64 MB) "
+                  "and saves it when a freeze happens. The .etl file opens in Windows Performance Analyzer, which shows "
+                  "exactly which driver held the CPU."),
+    "fz.folder": ("Відкрити папку записів", "Открыть папку записей", "Open the recordings folder"),
+    "fz.clear": ("Очистити список", "Очистить список", "Clear the list"),
+    "fz.fail": ("Ловець не запустився: {err}", "Ловец не запустился: {err}", "The catcher didn't start: {err}"),
+    "fz.started": ("Ловець фризів працює. Коли зависне — OptimaX повідомить, що знайшла.",
+                   "Ловец фризов работает. Когда зависнет — OptimaX сообщит, что нашла.",
+                   "The freeze catcher is on. When the PC freezes, OptimaX will tell you what it found."),
+    "fz.etl": ("Запис WPR", "Запись WPR", "WPR recording"),
+    "fz.state_on": ("Стежу з {since}. Зловлено фризів: {n}.", "Слежу с {since}. Поймано фризов: {n}.",
+                    "Watching since {since}. Freezes caught: {n}."),
+    "fz.state_off": ("Ловець вимкнено. Зловлено раніше: {n}.", "Ловец выключен. Поймано ранее: {n}.",
+                     "The catcher is off. Caught earlier: {n}."),
+    "fz.deep_on": ("Глибокий запис працює.", "Глубокая запись работает.", "Deep recording is on."),
+    "fz.deep_err": ("Глибокий запис не запустився: {err}", "Глубокая запись не запустилась: {err}",
+                    "Deep recording didn't start: {err}"),
+    "fz.ftpm_t": ("Увімкнено AMD fTPM", "Включён AMD fTPM", "AMD fTPM is on"),
+    "fz.ftpm_d": ("Модуль TPM вбудований у процесор AMD. На Ryzen це відома причина фризів на 1–2 секунди із заїканням "
+                  "звуку: AMD виправляла це в прошивках BIOS 2022 року й новіших, але не всі виробники ноутбуків і плат "
+                  "переносили виправлення. Дата вашого BIOS: {bios}.",
+                  "Модуль TPM встроен в процессор AMD. На Ryzen это известная причина фризов на 1–2 секунды с заиканием "
+                  "звука: AMD исправляла это в прошивках BIOS 2022 года и новее, но не все производители ноутбуков и плат "
+                  "переносили исправление. Дата вашего BIOS: {bios}.",
+                  "The TPM is built into the AMD processor. On Ryzen it's a known cause of 1–2 second freezes with "
+                  "stuttering sound: AMD fixed it in BIOS firmware from 2022 onwards, but not every laptop and "
+                  "motherboard maker shipped the fix. Your BIOS date: {bios}."),
+    "fz.sum": ("Найчастіша причина: {cause} — {share}% із {n} фризів",
+               "Самая частая причина: {cause} — {share}% из {n} фризов",
+               "Most common cause: {cause} — {share}% of {n} freezes"),
+    "fz.sum_mixed": ("Причини різні ({n} фризів): {causes}. Почніть із першої — вона найсерйозніша.",
+                     "Причины разные ({n} фризов): {causes}. Начните с первой — она самая серьёзная.",
+                     "Mixed causes ({n} freezes): {causes}. Start with the first — it's the most serious."),
+    "fz.none_on": ("Фризів поки не було. Користуйтеся ПК як завжди — OptimaX запише кожен.",
+                   "Фризов пока не было. Пользуйтесь ПК как обычно — OptimaX запишет каждый.",
+                   "No freezes yet. Use the PC as usual — OptimaX will record each one."),
+    "fz.none_off": ("Увімкніть ловець і користуйтеся ПК як завжди: коли все зависне на секунду-дві, тут з'явиться, що в "
+                    "цей момент відбувалося.",
+                    "Включите ловец и пользуйтесь ПК как обычно: когда всё зависнет на секунду-две, здесь появится, что "
+                    "в этот момент происходило.",
+                    "Turn the catcher on and use the PC as usual: when everything hangs for a second or two, what was "
+                    "going on at that moment will show up here."),
+    "fz.item": ("{when} — фриз {dur} с", "{when} — фриз {dur} с", "{when} — {dur} s freeze"),
+    "fz.toast": ("Фриз {dur} с — ймовірна причина: {cause}", "Фриз {dur} с — вероятная причина: {cause}",
+                 "{dur} s freeze — likely cause: {cause}"),
+    "fz.banner_t": ("OptimaX зловила фриз", "OptimaX поймала фриз", "OptimaX caught a freeze"),
+    # коротка назва причини (підсумок, сповіщення)
+    "fz.short.hardware": ("апаратна помилка (WHEA)", "аппаратная ошибка (WHEA)", "hardware error (WHEA)"),
+    "fz.short.disk": ("накопичувач", "накопитель", "the drive"),
+    "fz.short.gpu": ("відеодрайвер", "видеодрайвер", "the graphics driver"),
+    "fz.short.dpc": ("драйвер (DPC і переривання)", "драйвер (DPC и прерывания)", "a driver (DPCs and interrupts)"),
+    "fz.short.net": ("мережевий драйвер", "сетевой драйвер", "the network driver"),
+    "fz.short.usb": ("USB-пристрій", "USB-устройство", "a USB device"),
+    "fz.short.io": ("перевантажений диск", "перегруженный диск", "an overloaded drive"),
+    "fz.short.memory": ("брак пам'яті", "нехватка памяти", "low memory"),
+    "fz.short.cpu": ("завантажений процесор", "загруженный процессор", "a fully loaded CPU"),
+    "fz.short.ftpm": ("AMD fTPM", "AMD fTPM", "AMD fTPM"),
+    "fz.short.firmware": ("поза Windows (BIOS чи залізо)", "вне Windows (BIOS или железо)",
+                          "outside Windows (BIOS or hardware)"),
+    "fz.short.unknown": ("не з'ясовано", "не выяснено", "not determined"),
+    # пояснення причини
+    "fz.cat.hardware": ("Поруч із фризом Windows записала апаратну помилку WHEA — процесор, пам'ять або шина PCIe. Це "
+                        "залізо або нестабільний розгін.",
+                        "Рядом с фризом Windows записала аппаратную ошибку WHEA — процессор, память или шина PCIe. Это "
+                        "железо или нестабильный разгон.",
+                        "Windows logged a WHEA hardware error next to the freeze — the CPU, memory or PCIe bus. That's "
+                        "hardware or an unstable overclock."),
+    "fz.cat.disk": ("Поруч із фризом накопичувач перестав відповідати, і контролер його скидав. Поки диск «думає», чекає "
+                    "вся система.",
+                    "Рядом с фризом накопитель перестал отвечать, и контроллер его сбрасывал. Пока диск «думает», ждёт "
+                    "вся система.",
+                    "Next to the freeze the drive stopped responding and the controller reset it. While the drive "
+                    "\"thinks\", the whole system waits."),
+    "fz.cat.gpu": ("Поруч із фризом відеодрайвер завис і перезапустився.",
+                   "Рядом с фризом видеодрайвер завис и перезапустился.",
+                   "Next to the freeze the graphics driver hung and restarted."),
+    "fz.cat.dpc": ("Під час фризу одне ядро було зайняте обробкою DPC і переривань — так виглядає драйвер, що надовго "
+                   "забирає процесор (часто Wi-Fi, звук, тачпад чи ACPI на ноутбуках).",
+                   "Во время фриза одно ядро было занято обработкой DPC и прерываний — так выглядит драйвер, который "
+                   "надолго забирает процессор (часто Wi-Fi, звук, тачпад или ACPI на ноутбуках).",
+                   "During the freeze one core was busy handling DPCs and interrupts — that's what a driver hogging the "
+                   "CPU looks like (often Wi-Fi, audio, the touchpad or ACPI on laptops)."),
+    "fz.cat.net": ("Під час фризу ядро було зайняте DPC і перериваннями, а мережевий драйвер записав помилку — "
+                   "найімовірніше, винен він.",
+                   "Во время фриза ядро было занято DPC и прерываниями, а сетевой драйвер записал ошибку — скорее "
+                   "всего, виноват он.",
+                   "During the freeze a core was busy with DPCs and interrupts, and the network driver logged an error "
+                   "— it's most likely to blame."),
+    "fz.cat.usb": ("Під час фризу ядро було зайняте DPC і перериваннями, а поруч — помилка USB: пристрій, що "
+                   "відвалюється, або його драйвер.",
+                   "Во время фриза ядро было занято DPC и прерываниями, а рядом — ошибка USB: отваливающееся "
+                   "устройство или его драйвер.",
+                   "During the freeze a core was busy with DPCs and interrupts, with a USB error next to it: a device "
+                   "that keeps dropping out, or its driver."),
+    "fz.cat.io": ("Під час фризу диск був зайнятий на 100% з довгою чергою запитів — система чекала на нього.",
+                  "Во время фриза диск был занят на 100% с длинной очередью запросов — система ждала его.",
+                  "During the freeze the drive was 100% busy with a long request queue — the system was waiting for "
+                  "it."),
+    "fz.cat.memory": ("Під час фризу бракувало оперативної пам'яті, і Windows активно читала з файлу підкачки.",
+                      "Во время фриза не хватало оперативной памяти, и Windows активно читала из файла подкачки.",
+                      "During the freeze RAM ran short and Windows was busy reading from the page file."),
+    "fz.cat.cpu": ("Під час фризу процесор був завантажений повністю.",
+                   "Во время фриза процессор был загружен полностью.",
+                   "During the freeze the CPU was fully loaded."),
+    "fz.cat.ftpm": ("Під час фризу Windows нічого не робила: ні драйвери, ні диск, ні процесор не були зайняті, і журнал "
+                    "порожній. Так виглядає зупинка на рівні прошивки, а на цьому ПК увімкнено AMD fTPM — найімовірніший "
+                    "винуватець.",
+                    "Во время фриза Windows ничего не делала: ни драйверы, ни диск, ни процессор не были заняты, и "
+                    "журнал пуст. Так выглядит остановка на уровне прошивки, а на этом ПК включён AMD fTPM — самый "
+                    "вероятный виновник.",
+                    "During the freeze Windows was doing nothing: no drivers, drive or CPU were busy, and the log is "
+                    "empty. That's what a firmware-level stall looks like, and this PC has AMD fTPM on — the most "
+                    "likely culprit."),
+    "fz.cat.firmware": ("Під час фризу Windows нічого не робила: ні драйвери, ні диск, ні процесор не були зайняті. "
+                        "Систему зупинило щось поза Windows — прошивка (BIOS, SMM) або залізо.",
+                        "Во время фриза Windows ничего не делала: ни драйверы, ни диск, ни процессор не были заняты. "
+                        "Систему остановило что-то вне Windows — прошивка (BIOS, SMM) или железо.",
+                        "During the freeze Windows was doing nothing: no drivers, drive or CPU were busy. Something "
+                        "outside Windows stopped the system — firmware (BIOS, SMM) or hardware."),
+    "fz.cat.unknown": ("Даних про цей момент замало, щоб назвати причину. Кілька наступних фризів зроблять картину ясною.",
+                       "Данных об этом моменте мало, чтобы назвать причину. Несколько следующих фризов прояснят "
+                       "картину.",
+                       "There's too little data about this moment to name a cause. The next few freezes will make it "
+                       "clear."),
+    # рід причини (підсумок)
+    "fz.kind.hw": ("Найімовірніше — залізо.", "Скорее всего — железо.", "Most likely hardware."),
+    "fz.kind.driver": ("Найімовірніше — драйвер: програмна причина, що лікується оновленням чи заміною драйвера.",
+                       "Скорее всего — драйвер: программная причина, которая лечится обновлением или заменой драйвера.",
+                       "Most likely a driver: a software cause fixed by updating or replacing the driver."),
+    "fz.kind.soft": ("Найімовірніше — програмна причина: навантаження, а не несправність.",
+                     "Скорее всего — программная причина: нагрузка, а не неисправность.",
+                     "Most likely a software cause: load, not a fault."),
+    "fz.kind.firmware": ("Найімовірніше — прошивка (BIOS) або залізо, а не Windows.",
+                         "Скорее всего — прошивка (BIOS) или железо, а не Windows.",
+                         "Most likely firmware (BIOS) or hardware, not Windows."),
+    "fz.kind.unknown": ("Причину поки не з'ясовано.", "Причина пока не выяснена.", "The cause isn't clear yet."),
+    # докази
+    "fz.e.event": ("Подія {src} {id}: {msg}", "Событие {src} {id}: {msg}", "Event {src} {id}: {msg}"),
+    "fz.e.dpc": ("DPC і переривання: {pct}% часу ядра {core}", "DPC и прерывания: {pct}% времени ядра {core}",
+                 "DPCs and interrupts: {pct}% of core {core}'s time"),
+    "fz.e.quiet": ("DPC і переривання — {pct}%, процесор — {cpu}%: Windows не була зайнята",
+                   "DPC и прерывания — {pct}%, процессор — {cpu}%: Windows не была занята",
+                   "DPCs and interrupts {pct}%, CPU {cpu}%: Windows wasn't busy"),
+    "fz.e.disk": ("Диск зайнятий на {busy}%, у черзі {q} запитів", "Диск занят на {busy}%, в очереди {q} запросов",
+                  "Drive {busy}% busy, {q} requests queued"),
+    "fz.e.mem": ("Вільно {mb} МБ пам'яті, читань із підкачки {pages}/с",
+                 "Свободно {mb} МБ памяти, чтений из подкачки {pages}/с",
+                 "{mb} MB of memory free, {pages} page-file reads/s"),
+    "fz.e.cpu": ("Процесор {pct}%, найбільше — {proc}", "Процессор {pct}%, больше всего — {proc}",
+                 "CPU {pct}%, mostly {proc}"),
+    "fz.e.ftpm": ("Увімкнено AMD fTPM", "Включён AMD fTPM", "AMD fTPM is on"),
+    "fz.e.nodata": ("Лічильники Windows не встигли зібратися", "Счётчики Windows не успели собраться",
+                    "Windows counters weren't collected in time"),
+    "fz.e.app": ("На екрані: {app}", "На экране: {app}", "On screen: {app}"),
+    "fz.e.etl": ("Збережено запис WPR — кнопка праворуч", "Сохранена запись WPR — кнопка справа",
+                 "A WPR recording was saved — button on the right"),
+    # поради
+    "fz.a.whea": ("Подивіться «Чому впав комп?» вище й Hardware Center: апаратні помилки WHEA, тести пам'яті й процесора.",
+                  "Посмотрите «Почему упал компьютер?» выше и Hardware Center: аппаратные ошибки WHEA, тесты памяти и "
+                  "процессора.",
+                  "Check Why did the PC crash? above and Hardware Center: WHEA hardware errors, memory and CPU tests."),
+    "fz.a.oc_off": ("Поверніть заводські частоти: вимкніть розгін процесора, пам'яті (XMP / EXPO) й відеокарти та "
+                    "андервольт — і перевірте, чи зникнуть фризи.",
+                    "Верните заводские частоты: отключите разгон процессора, памяти (XMP / EXPO) и видеокарты и "
+                    "андервольт — и проверьте, исчезнут ли фризы.",
+                    "Go back to stock clocks: turn off CPU, memory (XMP / EXPO) and GPU overclocks and undervolts, "
+                    "then see whether the freezes stop."),
+    "fz.a.heat": ("Перевірте температури під навантаженням (Hardware Center → датчики).",
+                  "Проверьте температуры под нагрузкой (Hardware Center → датчики).",
+                  "Check temperatures under load (Hardware Center → sensors)."),
+    "fz.a.disk_fw": ("Оновіть прошивку SSD (утиліта виробника диска) і драйвер чипсета чи накопичувача з сайту "
+                     "виробника ноутбука або плати.",
+                     "Обновите прошивку SSD (утилита производителя диска) и драйвер чипсета или накопителя с сайта "
+                     "производителя ноутбука или платы.",
+                     "Update the SSD firmware (the drive maker's tool) and the chipset or storage driver from the laptop "
+                     "or motherboard maker's site."),
+    "fz.a.disk_smart": ("Перевірте здоров'я диска: Hardware Center → накопичувачі (SMART).",
+                        "Проверьте здоровье диска: Hardware Center → накопители (SMART).",
+                        "Check the drive's health: Hardware Center → drives (SMART)."),
+    "fz.a.disk_aspm": ("Спробуйте оптимізацію «Вимкнути енергозбереження PCIe» — NVMe перестане засинати (її можна "
+                       "відкотити).",
+                       "Попробуйте оптимизацию «Отключить энергосбережение PCIe» — NVMe перестанет засыпать (её можно "
+                       "откатить).",
+                       "Try the Turn off PCIe power saving optimization — the NVMe drive will stop dozing off (it can be "
+                       "rolled back)."),
+    "fz.a.gpu_driver": ("Перевстановіть відеодрайвер начисто (DDU у безпечному режимі) й поверніть заводські частоти "
+                        "карти.",
+                        "Переустановите видеодрайвер начисто (DDU в безопасном режиме) и верните заводские частоты "
+                        "карты.",
+                        "Reinstall the graphics driver cleanly (DDU in Safe Mode) and return the card to stock clocks."),
+    "fz.a.gpu_hybrid": ("На ноутбуці з двома відеокартами фриз буває під час перемикання між ними: у панелі NVIDIA чи AMD "
+                        "закріпіть ігри за дискретною картою або ввімкніть режим лише дискретної (MUX), якщо він є.",
+                        "На ноутбуке с двумя видеокартами фриз бывает при переключении между ними: в панели NVIDIA или "
+                        "AMD закрепите игры за дискретной картой или включите режим только дискретной (MUX), если он "
+                        "есть.",
+                        "On a laptop with two GPUs a freeze can happen while switching between them: pin games to the "
+                        "discrete card in the NVIDIA or AMD panel, or turn on discrete-only (MUX) mode if it has one."),
+    "fz.a.deep": ("Увімкніть «Глибокий запис драйверів» вище — наступний фриз покаже, який саме драйвер винен.",
+                  "Включите «Глубокую запись драйверов» выше — следующий фриз покажет, какой именно драйвер виноват.",
+                  "Turn on Deep driver recording above — the next freeze will show exactly which driver is to blame."),
+    "fz.a.drivers": ("Оновіть драйвери чипсета, Wi-Fi, звуку й тачпада з сайту виробника ноутбука чи плати (не через "
+                     "Windows Update).",
+                     "Обновите драйверы чипсета, Wi-Fi, звука и тачпада с сайта производителя ноутбука или платы (не "
+                     "через Windows Update).",
+                     "Update the chipset, Wi-Fi, audio and touchpad drivers from the laptop or motherboard maker's site "
+                     "(not through Windows Update)."),
+    "fz.a.latencymon": ("Для перевірки в реальному часі — LatencyMon (resplendence.com): він показує драйвер із "
+                        "найдовшими DPC.",
+                        "Для проверки в реальном времени — LatencyMon (resplendence.com): он показывает драйвер с самыми "
+                        "долгими DPC.",
+                        "For a live check, use LatencyMon (resplendence.com): it shows the driver with the longest "
+                        "DPCs."),
+    "fz.a.net_driver": ("Оновіть драйвер мережевої карти чи Wi-Fi з сайту виробника. Для перевірки на день вимкніть "
+                        "адаптер Wi-Fi у диспетчері пристроїв і підключіться кабелем.",
+                        "Обновите драйвер сетевой карты или Wi-Fi с сайта производителя. Для проверки на день отключите "
+                        "адаптер Wi-Fi в диспетчере устройств и подключитесь кабелем.",
+                        "Update the network or Wi-Fi driver from the maker's site. To test, disable the Wi-Fi adapter in "
+                        "Device Manager for a day and use a cable."),
+    "fz.a.usb_suspend": ("Спробуйте оптимізацію «Вимкнути призупинення USB».",
+                         "Попробуйте оптимизацию «Отключить приостановку USB».",
+                         "Try the Turn off USB suspend optimization."),
+    "fz.a.usb_port": ("Від'єднуйте USB-пристрої по одному (хаби, донгли, гарнітури) або підключіть їх в інші порти.",
+                      "Отключайте USB-устройства по одному (хабы, донглы, гарнитуры) или подключите их в другие порты.",
+                      "Unplug USB devices one at a time (hubs, dongles, headsets) or move them to other ports."),
+    "fz.a.io_proc": ("Подивіться, хто навантажує диск у такі моменти: Диспетчер задач → «Диск» або «Чому лагає?» вище.",
+                     "Посмотрите, кто нагружает диск в такие моменты: Диспетчер задач → «Диск» или «Почему лагает?» "
+                     "выше.",
+                     "See what loads the drive at those moments: Task Manager → Disk, or Why is it lagging? above."),
+    "fz.a.ram": ("Закрийте зайве або збільште файл підкачки; якщо таке часто — бракує оперативної пам'яті.",
+                 "Закройте лишнее или увеличьте файл подкачки; если такое часто — не хватает оперативной памяти.",
+                 "Close what you don't need or enlarge the page file; if it happens often, the PC needs more RAM."),
+    "fz.a.cpu_proc": ("Подивіться на процес, що забирав процесор, і чи не працювали в цей час антивірус або оновлення.",
+                      "Посмотрите на процесс, который забирал процессор, и не работали ли в это время антивирус или "
+                      "обновления.",
+                      "Look at the process that took the CPU, and whether the antivirus or updates were running then."),
+    "fz.a.bios": ("Оновіть BIOS / UEFI з сайту виробника ноутбука чи плати — фризи на рівні прошивки лікуються саме так.",
+                  "Обновите BIOS / UEFI с сайта производителя ноутбука или платы — фризы на уровне прошивки лечатся "
+                  "именно так.",
+                  "Update the BIOS / UEFI from the laptop or motherboard maker's site — that's how firmware-level "
+                  "freezes get fixed."),
+    "fz.a.ftpm_test": ("Перевірка fTPM: якщо диск не зашифровано BitLocker чи «Шифруванням пристрою» (або ключ "
+                       "відновлення записано), вимкніть fTPM у BIOS на день-два. Фризи зникли — винен він. Windows Hello "
+                       "може попросити налаштувати PIN заново; потім увімкніть fTPM назад або поставте BIOS із "
+                       "виправленням.",
+                       "Проверка fTPM: если диск не зашифрован BitLocker или «Шифрованием устройства» (или ключ "
+                       "восстановления записан), отключите fTPM в BIOS на день-два. Фризы исчезли — виноват он. Windows "
+                       "Hello может попросить настроить PIN заново; потом включите fTPM обратно или поставьте BIOS с "
+                       "исправлением.",
+                       "To test fTPM: if the drive isn't encrypted with BitLocker or Device Encryption (or you have the "
+                       "recovery key written down), turn fTPM off in the BIOS for a day or two. If the freezes stop, it's "
+                       "the culprit. Windows Hello may ask you to set up the PIN again; afterwards turn fTPM back on or "
+                       "install a BIOS with the fix."),
+    "fz.a.chipset": ("Встановіть драйвер чипсета з сайту AMD чи Intel або виробника ноутбука.",
+                     "Установите драйвер чипсета с сайта AMD или Intel либо производителя ноутбука.",
+                     "Install the chipset driver from AMD's or Intel's site, or the laptop maker's."),
+    "fz.a.keep": ("Залиште ловець увімкненим ще на день-два — кілька фризів покажуть закономірність.",
+                  "Оставьте ловец включённым ещё на день-два — несколько фризов покажут закономерность.",
+                  "Leave the catcher on for another day or two — a few freezes will reveal the pattern."),
+
     # ── бібліотека ──
     "nav.library": ("Бібліотека", "Библиотека", "Library"),
     "lib.sub": ("Ваші ігри з усіх магазинів: запуск, час гри й FPS.", "Ваши игры из всех магазинов: запуск, время игры "
@@ -223,6 +504,21 @@ STRINGS = {
                        "More reliable rollback: each setting is now changed by one optimization only, so rolling one "
                        "back no longer cancels another, and the culprit search no longer gets confused. The DirectX "
                        "optimizations (windowed, VRR, Auto HDR) restore only their own part."),
+    "wn.612.freeze": ("Нове: «Чому зависає?» на сторінці «Діагностика». Ловець фризів у фоні помічає моменти, коли на "
+                      "секунду-п'ять зависає все одразу — картинка й звук, — і показує, що в цей момент робила система: "
+                      "драйвер, диск, відеокарта, AMD fTPM чи щось поза Windows.",
+                      "Новое: «Почему зависает?» на странице «Диагностика». Ловец фризов в фоне замечает моменты, когда "
+                      "на секунду-пять зависает всё сразу — картинка и звук, — и показывает, что в этот момент делала "
+                      "система: драйвер, диск, видеокарта, AMD fTPM или что-то вне Windows.",
+                      "New: Why does it freeze? on the Diagnostics page. The background freeze catcher notices when "
+                      "everything hangs for one to five seconds — picture and sound — and shows what the system was "
+                      "doing: a driver, the drive, the graphics card, AMD fTPM or something outside Windows."),
+    "wn.612.deep": ("Щоб знайти конкретний драйвер — «Глибокий запис драйверів»: вбудований у Windows WPR зберігає DPC і "
+                    "переривання саме в момент фризу. Дякуємо Dr34mChas3r за ідею!",
+                    "Чтобы найти конкретный драйвер — «Глубокая запись драйверов»: встроенный в Windows WPR сохраняет DPC "
+                    "и прерывания именно в момент фриза. Спасибо Dr34mChas3r за идею!",
+                    "To pin down the exact driver, use Deep driver recording: WPR, built into Windows, saves DPCs and "
+                    "interrupts right at the moment of the freeze. Thanks to Dr34mChas3r for the idea!"),
     "wn.611.menu": ("Менше пунктів у меню: «Залізо» тепер розділ Hardware Center «Перевірка збірки», а перемикачі "
                     "сторінки «Вигляд» — в експертному меню, у групі «Вигляд».",
                     "Меньше пунктов в меню: «Железо» теперь раздел Hardware Center «Проверка сборки», а переключатели "

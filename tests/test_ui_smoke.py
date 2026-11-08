@@ -5,6 +5,16 @@ CONFIGS = [("gaming", "uk"), ("laptop", "ru"), ("old", "en")]
 SIMPLE_NAV = {"home", "library", "games", "diagnose", "backup", "settings"}
 
 
+def check_612(st: dict) -> None:
+    """OptimaX 6.12: «Чому зависає?» — демо-фризи, AMD fTPM, ловець і глибокий запис, банер, очищення."""
+    z = st["freeze"]
+    assert z["rows"] == 5, z  # fTPM, підсумок і три фризи
+    assert z["running"] and z["deep"] and z["stopped"], z
+    assert z["in_view"], "the freeze banner must scroll the Diagnostics page to the freeze card"
+    assert z["banner"][0] and z["banner"][1] and z["banner"][2], z["banner"]
+    assert z["cleared_rows"] == 2, z  # після «Очистити»: попередження fTPM і «фризів поки не було»
+
+
 def check_66(st: dict) -> None:
     """OptimaX 6.6: бібліотека, простий вигляд, «Чому впав комп?», телефон, перенесення, «Що нового», звіт."""
     lib = st["library"]
@@ -68,6 +78,7 @@ def test_main_window(demo, lang):
     assert "ShareDialog" in r["dialogs"] and "SmartDialog" in r["dialogs"]
     check_66(st)
     check_hwc(st)
+    check_612(st)
 
 
 def test_mining_card():

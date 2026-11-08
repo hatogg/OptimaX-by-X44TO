@@ -16,6 +16,7 @@ Everything the program can do, from the first analysis to the emergency rollback
 - [Benchmarks](#benchmarks)
 - [Game library](#game-library)
 - [Why did the PC crash?](#why-did-the-pc-crash)
+- [Why does it freeze?](#why-does-it-freeze)
 - [Phone monitor](#phone-monitor)
 - [Simple view, What's new, settings transfer, error reports](#simple-view-whats-new-settings-transfer-error-reports)
 - [Mining graphics card (P106, P104, CMP)](#mining-graphics-card-p106-p104-cmp)
@@ -55,6 +56,7 @@ OptimaX won't let you turn on something that harms your particular hardware. For
 | **Smart optimization (A/B)** | Measures FPS before and after and keeps only what helps; if things got worse it finds the culprit by splitting the changes in halves and removes it. It can also check changes applied earlier |
 | **Emergency rollback** | Watches for blue screens, crash restarts and graphics driver failures after the changes and offers to roll back exactly that batch. OptimaX-Rescue.cmd rolls everything back from Safe Mode without the program |
 | **Why did the PC crash?** | Blue screens and sudden restarts from the Windows log in plain words: what happened, what is usually to blame, which game was running and what to do |
+| **Why does it freeze?** | A background freeze catcher: when everything hangs for 1–5 seconds, OptimaX shows what the system was doing — a driver, the drive, the graphics card, AMD fTPM or something outside Windows — and deep WPR recording names the exact driver |
 | **Phone monitor** | Temperatures, load and the game's FPS on your phone over the home network — no app, just a QR code |
 | **Result card** | An image for social networks and forums: FPS before/after, Windows boot time, processes, memory, services, ping, blocked ads. Only numbers that were actually measured |
 | **Tested on real Windows** | Before every release, CI on clean Windows Server 2022 and 2025 applies every tweak, checks that it worked, rolls it back and checks that everything returned exactly, and once more as a batch through OptimaX-Rescue.cmd |
@@ -67,7 +69,7 @@ OptimaX won't let you turn on something that harms your particular hardware. For
 | **Optimization** | Wizard and Expert menu, 6 profiles, search, 17 sections in two parts — Speed (what shows up in measurements) and Comfort and privacy, “What will change” for every item, colour-coded review before applying, trial mode, smart optimization |
 | **Library** | All games from Steam, Epic, GOG, Ubisoft and My games with covers, launch with game mode, play time, FPS history per game |
 | **Games** | Game mode (services, background apps, memory, power, timer, Do Not Disturb, background balancer, auto mode — also for Steam / Epic / GOG / Ubisoft games; “Lowest latency” and “Stable frametime” profiles, global or per game); per game: priority, discrete GPU, no Fullscreen Optimizations, cores; an ISLC-style memory cleaner; 0.5 ms timer; on a PC with a mining card — “Games on the P106” (Universal GPU Renderer: a render mode per game, a check of which card renders it, driver, PCIe, memory and shader cache analyzers) |
-| **Diagnostics** | Why is it lagging? (with PresentMon frames and stutter causes when it is downloaded, plus a history of runs), before/after FPS test with a graph, forum report; further down — Why did the PC crash? with a memory test and the phone monitor |
+| **Diagnostics** | Why is it lagging? (with PresentMon frames and stutter causes when it is downloaded, plus a history of runs), before/after FPS test with a graph, forum report; further down — Why did the PC crash? with a memory test, Why does it freeze? (the freeze catcher) and the phone monitor |
 | **Benchmarks** | Smart optimization (an A/B test of changes on the GPU test or your game), OptimaX GPU test (1080p, 1440p, 4K), 5–60 minute stress test with a stability check and sensors, result history; FurMark 2 with an automatic result, Superposition, Cinebench, OCCT, CrystalDiskMark, 3DMark |
 | **Hardware Center** | Hardware diagnostics and tests: hardware info, CPU, GPU, VRAM, RAM, disks (SMART / NVMe, speed, surface read), display, laptop, peripherals, stress tests with an emergency stop, background processes during games, Windows and dump diagnostics, a build check with fix buttons, MSI Mode and GPU overclocking with MSI Afterburner, a pre-purchase PC check, HTML / JSON / PDF reports and an FPS overlay — [details](hardware-center.md) |
 | **Laptop** | (shown on laptops only) Battery wear, power on AC and battery, cool mode, sleep without drain, classic S3 sleep, refresh rate by power source, charge limit (ASUS and Dell right from the program, for other makers where to find it in their utility) |
@@ -172,6 +174,20 @@ A card on the **Diagnostics** page reads the last 30 days of the Windows log (re
 OptimaX knows which game was running at the moment of the crash from its own game sessions (see Library). On a PC with a mining card, if the crash happened in a game, the advice “first return the game to the Original mode” has a button that opens exactly that choice — nothing changes without your confirmation. Test memory opens Windows Memory Diagnostic (it runs after a restart, 10–20 minutes); the result appears here. After it starts, OptimaX itself shows a notice about a new crash on the home page (unless it followed its own changes — the emergency rollback already asks about those).
 
 What OptimaX doesn't guess: the “guilty driver” can't be found in a dump without debug symbols, so the cause is named by the code and category.
+
+## Why does it freeze?
+
+A card on the **Diagnostics** page for freezes where everything hangs for 1–5 seconds at once — picture, video, and sound stuttering like a machine gun — whether it's a game or the browser.
+
+- **Catch freezes in the background** starts a separate lightweight process while OptimaX is open or in the tray (under 1% CPU). Its thread, at the highest normal priority, wakes every 50 ms: ordinary load doesn't delay it, so if it “overslept” by more than half a second, the whole system stopped. Sleep and hibernation don't count.
+- Each freeze shows a **cause and evidence**: what the Windows counters showed during the freeze itself (DPCs and interrupts on the hottest core, CPU, disk, memory, the busiest process), log events next to it (WHEA hardware errors, drive resets, the graphics driver, USB, network, TPM) and what was on screen. Causes: hardware error, drive, graphics driver, a driver with overly long DPCs (network, USB or other), an overloaded drive, low memory, CPU — or “Windows was doing nothing”: something outside Windows stopped the system (firmware or hardware).
+- A **summary** gives the most common cause among recent freezes, whether it's hardware, a driver, software or firmware, and what to do.
+- **AMD fTPM.** If the TPM is built into an AMD processor, the card warns that on Ryzen it's a known cause of 1–2 second freezes with stuttering sound. AMD fixed it in BIOS firmware from 2022 onwards, but not every laptop and motherboard maker shipped the fix. The BIOS date is shown along with a safe way to test (turn fTPM off without a recovery key only if the drive isn't encrypted with BitLocker or Device Encryption).
+- **Deep driver recording (WPR)**, optional: the recorder built into Windows keeps the last minute of DPCs and interrupts in memory (up to 64 MB) and saves an `.etl` file at the moment of the freeze. The WPR recording button next to a freeze shows it in its folder; open it in [Windows Performance Analyzer](https://apps.microsoft.com/detail/9n0w1b2bxgnz) → DPC/ISR to see which driver held the CPU. The last three recordings are kept.
+
+OptimaX reports a new freeze with a home-page banner and a notification (from the tray too). The data lives in `%APPDATA%\OptimaX\freezes` and is never sent anywhere.
+
+What OptimaX doesn't guess: without deep recording the exact driver isn't named — only the class of cause and the evidence.
 
 ## Phone monitor
 
