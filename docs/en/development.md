@@ -15,7 +15,7 @@ python optimizer.py --tray       # start minimized to the tray
 python optimizer.py --selftest=report.json --selftest-ui   # self-test (changes nothing)
 ```
 
-Service modes (called by the installer and Task Scheduler): `--maintenance`, `--set-autostart`, `--no-autostart`, `--uninstall [--revert-all]`, `--check-crash` (the “OptimaX Safety” task after changes).
+Service modes (called by the installer and Task Scheduler): `--maintenance`, `--set-autostart`, `--no-autostart`, `--uninstall [--revert-all]`, `--check-crash` (the “OptimaX Safety” task after changes). Windowless processes the program starts itself: `--freeze-watch` (the freeze catcher), `--hw-test=…`, `--vram-test`, `--gpu-bench`, `--gpu-probe`, `--dns-service`.
 
 The **self-test** `--selftest` runs with a temporary settings folder and in preview mode: modules, translations, every tweak (reading state only), hardware detection, Rescue file generation, smart optimization logic, the ad blocker, and with `--selftest-ui` the main window with all sections and the result card. Next to the JSON report there is a short `report.md` and screenshots of the sections. The built `OptimaX.exe` can be checked the same way.
 
@@ -110,6 +110,7 @@ OptimaX/
 ├── overlay.py          ← FPS overlay: PresentMon stream, game detection, session report
 ├── overlay_ui.py       ← FPS overlay window and its controller (Qt)
 ├── perfdiag.py         ← what limits performance, undervolting advice
+├── freezecatch.py      ← Why does it freeze?: the freeze catcher (separate --freeze-watch process), black box, verdict, WPR
 ├── inspection.py       ← pre-purchase PC check
 ├── hwreport.py         ← Hardware Center reports: HTML, JSON, PDF, comparison
 ├── pages_hwcenter.py   ← Hardware Center page

@@ -57,6 +57,8 @@ DEFAULTS = {
     "crash_last": None,  # останній розбір «Чому впав комп?»
     "crash_seen": 0,  # час останнього аварійного перезавантаження, про яке вже розповіли
     "phone": {},  # монітор на телефоні: {enabled, token, port}
+    # «Чому зависає?» (freezecatch.py): ловець увімкнено, глибокий запис WPR, останній показаний фриз, час «Очистити»
+    "freeze": {"enabled": False, "deep": False, "seen": 0, "cleared": 0},
     "seen_version": None,  # версія, для якої вже показано «Що нового»
     "simple_ui": False,  # простий вигляд
     "gpu_probe": None,  # що бачать DirectX і Vulkan (gpuinfo.probe)

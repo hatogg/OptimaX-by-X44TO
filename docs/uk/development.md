@@ -15,7 +15,7 @@ python optimizer.py --tray       # старт згорнутим у трей
 python optimizer.py --selftest=report.json --selftest-ui   # самоперевірка (нічого не змінює)
 ```
 
-Службові режими (їх викликають інсталятор і планувальник): `--maintenance`, `--set-autostart`, `--no-autostart`, `--uninstall [--revert-all]`, `--check-crash` (задача «OptimaX Safety» після змін).
+Службові режими (їх викликають інсталятор і планувальник): `--maintenance`, `--set-autostart`, `--no-autostart`, `--uninstall [--revert-all]`, `--check-crash` (задача «OptimaX Safety» після змін). Процеси без вікна, які запускає сама програма: `--freeze-watch` (ловець фризів), `--hw-test=…`, `--vram-test`, `--gpu-bench`, `--gpu-probe`, `--dns-service`.
 
 **Самоперевірка** `--selftest` працює з тимчасовою папкою налаштувань і в режимі перегляду: модулі, переклади, усі твіки (лише читання стану), визначення заліза, генерація Rescue-файлу, логіка розумної оптимізації, фільтр реклами, а з `--selftest-ui` — головне вікно з усіма розділами й карткою результату. Поруч зі звітом JSON — короткий `report.md` і знімки розділів. Так само можна перевірити зібраний `OptimaX.exe`.
 
@@ -110,6 +110,7 @@ OptimaX/
 ├── overlay.py          ← FPS-оверлей: потік PresentMon, визначення гри, звіт сесії
 ├── overlay_ui.py       ← вікно FPS-оверлея і керування ним (Qt)
 ├── perfdiag.py         ← що обмежує продуктивність, поради щодо андервольтингу
+├── freezecatch.py      ← «Чому зависає?»: ловець фризів (окремий процес --freeze-watch), чорна скринька, вердикт, WPR
 ├── inspection.py       ← перевірка ПК перед покупкою
 ├── hwreport.py         ← звіти Hardware Center: HTML, JSON, PDF, порівняння
 ├── pages_hwcenter.py   ← сторінка Hardware Center

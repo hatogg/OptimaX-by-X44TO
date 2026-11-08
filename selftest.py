@@ -2,7 +2,8 @@
 OptimaX — самоперевірка збірки. Нічого не змінює в системі.
 
     OptimaX.exe --selftest=report.json              — модулі, переклади, твіки, залізо, Rescue, A/B, фільтр,
-                                                      журнал збоїв Windows («Чому впав комп?»)
+                                                      журнал збоїв Windows («Чому впав комп?»), ловець фризів
+                                                      («Чому зависає?»: журнал, TPM, профіль WPR)
     OptimaX.exe --selftest=report.json --selftest-ui — те саме + головне вікно: усі розділи, картка результату
 
 Поруч зі звітом JSON з'являється report.md (короткий підсумок) і, з --selftest-ui, знімки розділів.
@@ -24,8 +25,8 @@ import traceback
 MODULES = ("engine", "features", "guard", "hardware", "hwnative", "hotkeys", "lifecycle", "monitor", "power", "report",
            "updater", "apps", "netlab", "fpstest", "benchtools", "adblock", "rescue", "abtest", "i18n",
            "lang_ui", "lang_engine", "lang_tweaks", "lang_extra", "lang_setup", "lang_lab", "lang_safe", "lang_v64",
-           "lang_mining", "lang_gpu", "mining", "gpuinfo", "gpudiag", "gamedb", "pages_mining", "crashlog", "library",
-           "qr", "phonemon", "bugreport", "whatsnew", "transfer", "pages_library", "pages_life", "lang_life",
+           "lang_mining", "lang_gpu", "mining", "gpuinfo", "gpudiag", "gamedb", "pages_mining", "crashlog", "freezecatch",
+           "library", "qr", "phonemon", "bugreport", "whatsnew", "transfer", "pages_library", "pages_life", "lang_life",
            "gpubench", "ui_kit", "pages_optimize", "pages_tools", "pages_extra", "pages_lab", "smart_ui",
            "sharecard", "verify", "baseline", "modes", "gpuselect", "hwtests", "storagehealth", "vramtest", "hwinfo",
            "dumpanalyzer", "procmon", "overlay", "overlay_ui", "perfdiag", "inspection", "hwreport", "lang_hwc",
@@ -226,6 +227,52 @@ def check_crashlog():
     return {"events": len(events), "ids": sorted({e["id"] for e in events}), "incidents": len(res["incidents"]),
             "gpu": (res["gpu"] or {}).get("n", 0), "whea": (res["whea"] or {}).get("n", 0),
             "dumps": len(res["dumps"]), "seconds": round(time.time() - t0, 1)}
+
+
+def check_freezecatch():
+    """«Чому зависає?» на справжній Windows: годинник без сну, запит журналу за годину, TPM і профіль WPR — WPR
+    запускається з профілем OptimaX і одразу скасовується (кільцевий запис у пам'яті, системи не змінює)."""
+    import engine as E
+    import freezecatch as FZ
+    if not E.IS_WIN:
+        raise Skip("the freeze catcher runs only on Windows")
+    t0 = time.time()
+    clock = FZ.unbiased_clock()
+    a = clock()
+    time.sleep(0.2)
+    if not 0.1 < clock() - a < 5:
+        raise AssertionError(f"QueryUnbiasedInterruptTime clock is off: {clock() - a}")
+    now = int(time.time())
+    rc, out = E.ps(FZ.EVENTS_PS.format(a=now - 3600, b=now), 90, ro=True)
+    data = E.parse_json_out(out)
+    if (out or "").strip() and data is None:
+        raise AssertionError(f"event query failed (rc={rc}): {out.strip()[-600:]}")
+    events = [e for e in E.as_list(data) if isinstance(e, dict)]
+    bad = [e for e in events if not isinstance(e.get("id"), int) or not isinstance(e.get("ts"), int)]
+    if bad:
+        raise AssertionError(f"unexpected event format: {json.dumps(bad[:2], ensure_ascii=False)[:600]}")
+    for e in events:
+        FZ.event_kind(e)
+    tpm = FZ.tpm_info()
+    res = {"events": len(events), "kinds": sorted({FZ.event_kind(e) for e in events} - {""}),
+           "tpm": tpm.get("vendor") if tpm.get("present") else None, "wpr": None}
+    exe = FZ.wpr_path()
+    if exe and E.is_admin():
+        import tempfile
+        d = tempfile.mkdtemp(prefix="oxfz_")
+        prof = os.path.join(d, "OptimaX.wprp")
+        with open(prof, "w", encoding="utf-8") as f:
+            f.write(FZ.WPRP)
+        rc, out = E.run([exe, "-start", f"{prof}!{FZ.PROFILE_NAME}"], 60, ro=True)
+        if rc == 0:
+            E.run([exe, "-cancel"], 60, ro=True)
+            res["wpr"] = "ok"
+        elif "already" in (out or "").lower() or "уже" in (out or "").lower():
+            res["wpr"] = "busy: " + E.first_line(out, 160)
+        else:
+            raise AssertionError(f"wpr rejected the OptimaX profile (rc={rc}): {(out or '').strip()[-600:]}")
+    res["seconds"] = round(time.time() - t0, 1)
+    return res
 
 
 def check_rescue():
@@ -499,6 +546,7 @@ def main(argv, ui_factory=None) -> int:
         res.run("tweaks", check_tweaks, store.get("hw"))
         res.run("rescue", check_rescue)
         res.run("crashlog", check_crashlog)
+        res.run("freezecatch", check_freezecatch)
         res.run("abtest", check_abtest)
         res.run("safety", check_safety, store.get("hw"))
         res.run("adblock", check_adblock)

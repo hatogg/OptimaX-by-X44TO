@@ -40,6 +40,8 @@
 
 **My PC suddenly restarted or showed a blue screen. How do I find out why?** Diagnostics → Why did the PC crash? → Check: OptimaX reads the Windows log and explains what happened, what is usually to blame and what to do, and names the game if one was running. If memory is the suspect, Test memory is right there.
 
+**Once or twice a day everything hangs for a few seconds — picture, video and sound. What is it?** Diagnostics → Why does it freeze? → Catch freezes in the background, and leave it on for a day or two: OptimaX records each freeze and shows what the system was doing at that moment — a driver, the drive, the graphics card or something outside Windows. On Ryzen laptops and PCs AMD fTPM is a frequent culprit, and the card explains how to check it. To name the exact driver, turn on Deep driver recording (WPR) in the same card.
+
 **Is the phone monitor safe?** The page only shows readings — it can't control the PC. It is reachable only from the home network and only through the link with its secret code (New code invalidates the old link), and the firewall rule applies to private networks only and is removed when the monitor is turned off. The page can't be opened over the internet.
 
 **How much does it cost?** Nothing. OptimaX is open-source software under the MIT license: you can use, change and share it.

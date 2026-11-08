@@ -1,6 +1,7 @@
 """Головне вікно на справжньому Qt (offscreen) у режимі перегляду на демо-залізі:
-усі розділи, бібліотека ігор, простий вигляд, «Чому впав комп?», монітор на телефоні, застосування плану, банер збою
-й аварійний відкат, перенесення налаштувань, розумна оптимізація, «Що нового», звіт про помилку, картка результату.
+усі розділи, бібліотека ігор, простий вигляд, «Чому впав комп?», «Чому зависає?», монітор на телефоні, застосування
+плану, банер збою й аварійний відкат, перенесення налаштувань, розумна оптимізація, «Що нового», звіт про помилку,
+картка результату.
 Аргумент: мова. Знімки — у теку з OPTIMAX_TEST_SHOTS (якщо задано)."""
 import _boot
 import json
@@ -19,6 +20,7 @@ sys.argv = _boot.argv(f"--lang={LANG}")
 import optimizer as O  # noqa: E402
 import engine as E  # noqa: E402
 import features as F  # noqa: E402
+import freezecatch as FZ  # noqa: E402
 import gpubench as GB  # noqa: E402
 import library as LB  # noqa: E402
 import mining as MG  # noqa: E402
@@ -191,6 +193,33 @@ dg.focus_crash()
 pump(timeout=0.2)
 steps["crash"]["in_view"] = not dg.crash.card.visibleRegion().isEmpty()
 shot(w, "crash-card")
+
+# «Чому зависає?»: демо-фризи (fTPM, драйвер, накопичувач) з AMD fTPM, ловець і глибокий запис, банер, очищення
+fc = dg.freeze
+st_fz = {"rows": fc.box.count(), "state": fc.state.text()}
+fc.sw.click()
+pump(lambda: FZ.CATCHER.running and fc.sw.isChecked(), 30)
+st_fz["running"] = FZ.CATCHER.running and bool((F.CFG["freeze"] or {}).get("enabled"))
+fc.sw_deep.click()
+pump(timeout=0.3)
+st_fz["deep"] = bool((F.CFG["freeze"] or {}).get("deep")) and FZ.CATCHER.running
+dg.focus_freeze()
+pump(timeout=0.2)
+st_fz["in_view"] = not fc.card.visibleRegion().isEmpty()
+shot(w, "freeze-card")
+F.CFG["freeze"] = dict(F.CFG["freeze"] or {}, seen=0)
+w._fz_mtime = None
+w._freeze_tick()  # як фоновий таймер: нові фризи -> банер на головній
+hb = w.pages["home"]
+st_fz["banner"] = [not hb.banner.isHidden(), hb.banner_t.text(), hb.banner_d.text()]
+hb.set_banner(None)
+fc.sw.click()
+pump(lambda: not FZ.CATCHER.running, 30)
+st_fz["stopped"] = not FZ.CATCHER.running and not (F.CFG["freeze"] or {}).get("enabled")
+fc.clear()
+st_fz["cleared_rows"] = fc.box.count()
+F.CFG["freeze"] = dict(F.CFG["freeze"] or {}, cleared=0, deep=False)
+steps["freeze"] = st_fz
 
 # монітор на телефоні: сервер у домашній мережі, QR-код, сторінка й дані, чужий шлях — 404, новий код, вимкнення
 pc = dg.phone

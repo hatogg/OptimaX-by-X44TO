@@ -1,10 +1,12 @@
 """
-OptimaX — картки «Чому впав комп?», «Монітор на телефоні», «Перенесення налаштувань», вікна «Що нового» і звіту
-про помилку. Логіка — crashlog.py, phonemon.py, transfer.py, whatsnew.py, bugreport.py.
+OptimaX — картки «Чому впав комп?», «Чому зависає?», «Монітор на телефоні», «Перенесення налаштувань», вікна
+«Що нового» і звіту про помилку. Логіка — crashlog.py, freezecatch.py, phonemon.py, transfer.py, whatsnew.py,
+bugreport.py.
 """
 from __future__ import annotations
 
 import os
+import subprocess
 import time
 
 from PyQt6.QtCore import Qt
@@ -14,6 +16,8 @@ from PyQt6.QtWidgets import QFrame, QLabel, QFileDialog
 import crashlog as CL
 import engine as E
 import features as F
+import freezecatch as FZ
+import i18n
 import phonemon as PH
 import transfer as TR
 import whatsnew as WN
@@ -137,6 +141,167 @@ class CrashCard:
     def open_dumps(self):
         if E.IS_WIN and not E.DRY_RUN and os.path.isdir(CL.DUMP_DIR):
             os.startfile(CL.DUMP_DIR)  # лише Windows
+
+
+# ───────────────────────── «Чому зависає?» ─────────────────────────
+FZ_LEVEL = {"hw": "bad", "driver": "warn", "firmware": "warn", "soft": "acc", "unknown": "acc"}
+
+
+def fz_cfg() -> dict:
+    c = F.CFG["freeze"]
+    return dict(c) if isinstance(c, dict) else {}
+
+
+def fz_dur(dur) -> str:
+    """3.2 -> «3,2» українською й російською, «3.2» англійською."""
+    s = f"{float(dur or 0):.1f}"
+    return s.replace(".", ",") if i18n.LANG in ("uk", "ru") else s
+
+
+def fz_explain(fr: dict) -> tuple:
+    """Фриз -> (заголовок, причина й докази простими словами)."""
+    title = tr("fz.item", when=when(fr.get("end")), dur=fz_dur(fr.get("dur")))
+    lines = [tr(f"fz.cat.{fr.get('cat') or 'unknown'}")]
+    for item in fr.get("ev") or []:
+        try:
+            key, params = item[0], dict(item[1] or {})
+        except (IndexError, TypeError, ValueError):
+            continue
+        lines.append("• " + tr(f"fz.e.{key}", **params))
+    return title, "\n".join(lines)
+
+
+class FreezeCard:
+    """Картка на сторінці «Діагностика»: ловець фризів у фоні, підсумок причин і кожен зловлений фриз."""
+
+    def __init__(self, main, lay):
+        self.main = main
+        self.card, v = section_card(tr("fz.title"), tr("fz.sub"))
+        r = hbox(margins=(14, 4, 14, 2), spacing=12)
+        self.sw = Switch()
+        self.sw.set_quiet(FZ.CATCHER.running)
+        self.sw.clicked.connect(self.toggle)
+        r.addWidget(self.sw, 0, Qt.AlignmentFlag.AlignTop)
+        col = vbox(spacing=2)
+        col.addWidget(label(tr("fz.enable"), "rowTitle"))
+        col.addWidget(label(tr("fz.enable_d"), "desc", wrap=True))
+        r.addLayout(col, 1)
+        v.addLayout(r)
+        r2 = hbox(margins=(14, 2, 14, 2), spacing=12)
+        self.sw_deep = Switch()
+        self.sw_deep.set_quiet(bool(fz_cfg().get("deep")))
+        self.sw_deep.clicked.connect(self.toggle_deep)
+        r2.addWidget(self.sw_deep, 0, Qt.AlignmentFlag.AlignTop)
+        col2 = vbox(spacing=2)
+        col2.addWidget(label(tr("fz.deep"), "rowTitle"))
+        col2.addWidget(label(tr("fz.deep_d"), "desc", wrap=True))
+        r2.addLayout(col2, 1)
+        self.deep_w = QFrame()
+        self.deep_w.setLayout(r2)
+        self.deep_w.setVisible(FZ.wpr_available())
+        v.addWidget(self.deep_w)
+        self.state = label("", "desc", wrap=True)
+        self.state.setContentsMargins(14, 4, 14, 4)
+        v.addWidget(self.state)
+        self.box = vbox(spacing=2)
+        v.addLayout(self.box)
+        bh = hbox(margins=(14, 4, 14, 10), spacing=8)
+        self.btn_folder = button(tr("fz.folder"), "ghost", self.open_folder)
+        bh.addWidget(self.btn_folder)
+        self.btn_clear = button(tr("fz.clear"), "ghost", self.clear)
+        bh.addWidget(self.btn_clear)
+        bh.addStretch()
+        v.addLayout(bh)
+        lay.addWidget(self.card)
+        self.refresh()
+
+    # ── керування ──
+    def toggle(self, on: bool):
+        if on:
+            self.main.run_quick(tr("fz.title"), lambda log, p: FZ.CATCHER.start(log), silent=True,
+                                on_done=self._started)
+        else:
+            self.main.run_quick(tr("fz.title"), lambda log, p: FZ.CATCHER.stop(log), silent=True,
+                                on_done=lambda _r: self.refresh())
+
+    def _started(self, res):
+        if isinstance(res, dict) and res.get("error"):
+            self.main.toast(tr("fz.fail", err=str(res["error"])[:80]), "bad")
+        else:
+            self.main.toast(tr("fz.started"))
+        self.refresh()
+
+    def toggle_deep(self, on: bool):
+        F.CFG["freeze"] = dict(fz_cfg(), deep=bool(on))
+        if FZ.CATCHER.running:  # новий режим — перезапуск ловця
+            self.main.run_quick(tr("fz.title"), lambda log, p: FZ.CATCHER.start(log, deep=bool(on)), silent=True,
+                                on_done=lambda _r: self.refresh())
+        else:
+            self.refresh()
+
+    def clear(self):
+        F.CFG["freeze"] = dict(fz_cfg(), cleared=int(time.time()))
+        self.refresh()
+
+    def open_folder(self):
+        if E.IS_WIN and not E.DRY_RUN and os.path.isdir(FZ.DIR):
+            os.startfile(FZ.DIR)  # лише Windows
+
+    def open_etl(self, path: str):
+        if E.IS_WIN and os.path.isfile(path):
+            subprocess.Popen(["explorer.exe", "/select,", path])
+        else:
+            self.open_folder()
+
+    def sync_switch(self):
+        self.sw.set_quiet(FZ.CATCHER.running)
+
+    # ── вигляд ──
+    def refresh(self, freezes: list = None):
+        cfg = fz_cfg()
+        fr = FZ.load(cfg.get("cleared", 0)) if freezes is None else freezes
+        st = FZ.status()
+        on = FZ.CATCHER.running
+        self.sw.set_quiet(on)
+        self.sw_deep.set_quiet(bool(cfg.get("deep")))
+        clear_layout(self.box)
+        if on:
+            since = time.strftime("%H:%M", time.localtime(int(FZ.CATCHER.started or time.time())))
+            text = tr("fz.state_on", since=since, n=len(fr))
+            # стан WPR — лише зі статусу цього запуску ловця, а не попереднього
+            fresh = st.get("alive") and float(st.get("beat") or 0) >= FZ.CATCHER.started - 1
+            deep = (st.get("deep") or {}) if fresh else {}
+            if cfg.get("deep") and deep.get("on"):
+                text += " " + tr("fz.deep_on")
+            elif cfg.get("deep") and deep.get("error"):
+                text += " " + tr("fz.deep_err", err=str(deep["error"])[:90])
+        else:
+            text = tr("fz.state_off", n=len(fr))
+        self.state.setText(text)
+        tpm = st.get("tpm") or {}
+        if tpm.get("amd_ftpm"):
+            self.box.addWidget(row("warn", tr("fz.ftpm_t"), tr("fz.ftpm_d", bios=tpm.get("bios_date") or "?")))
+        if fr:
+            s = FZ.summary(fr)
+            adv = "\n".join("• " + tr(f"fz.a.{a}") for a in FZ.advice(s["cat"], self.main.hw))
+            if s.get("tied"):
+                head = tr("fz.sum_mixed", n=s["n"], causes=", ".join(tr(f"fz.short.{c}") for c in s["tied"]))
+            else:
+                head = tr("fz.sum", n=s["n"], cause=tr(f"fz.short.{s['cat']}"), share=s["share"])
+            self.box.addWidget(row(FZ_LEVEL.get(s["kind"], "acc"), head,
+                                   tr(f"fz.kind.{s['kind']}") + ("\n" + adv if adv else "")))
+            for f in fr[:6]:
+                title, text = fz_explain(f)
+                btns = []
+                if f.get("etl") and (not E.IS_WIN or os.path.isfile(f["etl"])):
+                    b = button(tr("fz.etl"), "ghost")
+                    b.clicked.connect(lambda _=False, p=f["etl"]: self.open_etl(p))
+                    btns.append(b)
+                self.box.addWidget(row(FZ_LEVEL.get(f.get("kind"), "acc"), title, text, btns))
+        else:
+            self.box.addWidget(row("ok" if on else "acc", tr("fz.none_on") if on else tr("fz.none_off")))
+        self.btn_clear.setVisible(bool(fr))
+        self.btn_folder.setVisible(E.IS_WIN and os.path.isdir(FZ.DIR))
 
 
 # ───────────────────────── «Монітор на телефоні» ─────────────────────────
