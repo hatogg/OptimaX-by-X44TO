@@ -70,7 +70,7 @@ import smart_ui as SM
 from pages_optimize import OptimizePage, HomePage
 from pages_library import LibraryPage
 import pages_life as PL
-from pages_tools import (GamesPage, HardwarePage, LaptopPage, CleanupPage, StartupPage, LookPage, BackupPage,
+from pages_tools import (GamesPage, LaptopPage, CleanupPage, StartupPage, BackupPage,
                          SettingsPage)
 from ui_kit import (T, build_qss, make_font, label, vbox, hbox, dot, styled, nav_icon, logo_pixmap, Toast, Worker,
                     Ask, RunDialog, LOG, dark_titlebar)
@@ -82,12 +82,13 @@ NAV = [
                         ("library", "library", "nav.library"), ("games", "gamepad", "nav.games"),
                         ("diagnose", "gauge", "nav.diagnose"),
                         ("bench", "bolt", "nav.bench")]),
-    # «Ноутбук» видно лише на ноутбуках (nav_visible); мережа й блок реклами — інструменти, а не головне
-    ("nav.g.device", [("hwcenter", "hwc", "nav.hwc"), ("hardware", "chip", "nav.hardware"),
-                      ("laptop", "laptop", "nav.laptop")]),
+    # «Ноутбук» видно лише на ноутбуках (nav_visible); мережа й блок реклами — інструменти, а не головне;
+    # перемикачі колишньої сторінки «Вигляд» — у групі «Вигляд» експертного меню
+    # «Залізо» (перевірка збірки, MSI Mode, розгін) — тепер розділ Hardware Center
+    ("nav.g.device", [("hwcenter", "hwc", "nav.hwc"), ("laptop", "laptop", "nav.laptop")]),
     ("nav.g.tools", [("cleanup", "broom", "nav.cleanup"), ("startup", "rocket", "nav.startup"),
                      ("apps", "box", "nav.apps"), ("network", "globe", "nav.network"),
-                     ("adblock", "block", "nav.adblock"), ("look", "palette", "nav.look")]),
+                     ("adblock", "block", "nav.adblock")]),
     ("nav.g.system", [("backup", "shield", "nav.backup"), ("settings", "gear", "nav.settings")]),
 ]
 
@@ -190,9 +191,9 @@ class Main(QWidget):
         h.addWidget(self.stack, 1)
         self.pages = Pages(self._make_page, (
             ("home", HomePage), ("optimize", OptimizePage), ("library", LibraryPage), ("games", GamesPage),
-            ("diagnose", DiagnosePage), ("bench", BenchPage), ("hwcenter", HwCenterPage), ("hardware", HardwarePage),
+            ("diagnose", DiagnosePage), ("bench", BenchPage), ("hwcenter", HwCenterPage),
             ("laptop", LaptopPage), ("network", NetworkPage), ("cleanup", CleanupPage), ("adblock", AdblockPage),
-            ("apps", AppsPage), ("startup", StartupPage), ("look", LookPage), ("backup", BackupPage),
+            ("apps", AppsPage), ("startup", StartupPage), ("backup", BackupPage),
             ("settings", SettingsPage)))
         self.pages["home"]  # головна — одразу; решта добудовується після показу вікна (_build_pages)
         self._toast = Toast(self)
@@ -287,6 +288,11 @@ class Main(QWidget):
 
     # ── простий вигляд, «Що нового», бібліотека ──
     SIMPLE_NAV = ("home", "library", "games", "diagnose", "backup", "settings")
+
+    def open_hwc(self, section: str) -> None:
+        """Hardware Center на потрібному розділі (кнопки «Усі перевірки», «Стрес-тест» тощо)."""
+        self.go("hwcenter")
+        self.pages["hwcenter"].show_section(section)
 
     def nav_visible(self, key: str) -> bool:
         """Пункт меню видно: у простому вигляді — лише головне; «Ноутбук» — лише на ноутбуці (поки залізо не
@@ -606,14 +612,12 @@ class Main(QWidget):
         self.pages["home"].set_analysis(self.hw, self.analysis, self.checks)
         self.pages["home"].set_gpu_temp(res.get("gpu_t"))
         self.pages["optimize"].set_hw(self.hw)
-        self.pages["hardware"].set_hw(self.hw, self.checks)
         self.pages["laptop"].set_hw(self.hw)
         self.refresh_nav()  # «Ноутбук» ховається на настільному ПК
         self.pages["games"].set_hw(self.hw)
         self.pages["hwcenter"].set_hw(self.hw)
         self.pages["bench"].sync_mesa()
         self.pages["cleanup"].sync()
-        self.pages["look"].sync()
         self.pages["network"].sync()
         self._guard_tick()
         self.safety_check(prompt=self.crash_prompt)
@@ -644,7 +648,6 @@ class Main(QWidget):
     def refresh_all(self):
         self.pages["optimize"].refresh()
         self.pages["backup"].reload()
-        self.pages["look"].sync()
         self.pages["laptop"].sync()
         self.pages["cleanup"].sync()
         self.pages["network"].sync()

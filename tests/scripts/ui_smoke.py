@@ -385,6 +385,10 @@ for key in PHC.SECTIONS:
     pump(timeout=0.05)
     hwc["built"] += 1
     shot(w, f"hwc-{key}")
+# перевірка збірки (колишня сторінка «Залізо»): висновки з кнопками й список пристроїв для MSI Mode
+hc.show_section("build")
+pump(lambda: hc.buildcheck.msi_load.isEnabled(), 30)
+hwc["build"] = [hc.buildcheck.check_box.count(), len(hc.buildcheck.msi_rows), hc.buildcheck.msi_box.count()]
 hc.show_section("cpu")
 hc.cpu_mode.select(1, True)
 hc.start_cpu()

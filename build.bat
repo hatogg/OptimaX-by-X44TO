@@ -46,7 +46,7 @@ set "ARGS=--noconfirm --clean --windowed --uac-admin --noupx --name OptimaX"
 if exist icon.ico set "ARGS=!ARGS! --icon icon.ico"
 if exist version_info.txt set "ARGS=!ARGS! --version-file version_info.txt"
 for %%M in (lang_ui lang_engine lang_tweaks lang_extra lang_setup lang_lab lang_safe lang_v64 lang_mining lang_gpu mining gpuinfo gpudiag gamedb pages_mining crashlog library qr phonemon bugreport whatsnew transfer pages_library pages_life lang_life baseline verify modes gpubench adblock benchtools rescue abtest smart_ui sharecard selftest secfs buildinfo PyQt6.QtNetwork PyQt6.QtOpenGL gpuselect hwtests cpusensors storagehealth vramtest hwinfo dumpanalyzer procmon overlay overlay_ui perfdiag inspection hwreport pages_hwcenter pages_hwc2 lang_hwc lang_hwc2) do set "ARGS=!ARGS! --hidden-import %%M"
-for %%F in (icon.png bench.png msi.png deepsek.png restore.png) do (
+for %%F in (icon.png bench.png msi.png restore.png) do (
     if exist "%%F" set "ARGS=!ARGS! --add-data "%%F;.""
 )
 

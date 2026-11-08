@@ -152,3 +152,15 @@ def test_proven_only_when_measured_alone():
     assert AB.evidence_state({"none": 2}) == "no_effect"
     ev = AB.update_evidence({}, {"result": "same", "measured": ["a", "b"], "removed": ["c"]}, now=3)
     assert ev["a"]["none"] == 1 and ev["c"]["harm"] == 1
+
+
+def test_catalog_parts_cover_every_group_once():
+    """Каталог поділено на «Швидкість» і «Зручність і приватність»: кожна група — рівно в одній частині, і кожна
+    оптимізація, яку можна вибрати, потрапляє в експертне меню (колись група «visual» жила лише на сторінці «Вигляд»)."""
+    import engine as E
+    speed, comfort = E.GROUP_KINDS["speed"], E.GROUP_KINDS["comfort"]
+    assert not set(speed) & set(comfort)
+    assert E.GROUP_IDS == speed + comfort and len(set(E.GROUP_IDS)) == len(E.GROUP_IDS)
+    missing = {t.id for t in E.TWEAKS if not t.custom and not t.retired and t.group not in E.GROUP_IDS}
+    assert not missing, missing
+    assert E.group_kind("gaming") == "speed" and E.group_kind("metro") == "comfort"

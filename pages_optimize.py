@@ -13,7 +13,7 @@ import modes as MD
 from i18n import tr
 from ui_kit import (T, IMPACT_COLOR, label, button, card, vbox, hbox, badge, style_badge, dot, scroller, page_header,
                     section_card, bottom_bar, clear_layout, Switch, Ring, ProfileCard, OptionCard, Segmented, chip,
-                    Ask, icon_pixmap)
+                    Ask, icon_pixmap, FlowLayout)
 
 
 # ───────────────────────── рядок оптимізації ─────────────────────────
@@ -187,21 +187,39 @@ class ExpertView(QWidget):
         legend.addStretch()
         v.addLayout(legend)
         self.chips = {}
-        groups = [None] + E.GROUP_IDS
-        per = 6
-        for part in (groups[i:i + per] for i in range(0, len(groups), per)):  # 17 категорій — три рядки
-            row = hbox(spacing=6)
-            for gid in part:
-                c = chip(tr("opt.all") if gid is None else tr(f"grp.{gid}"))
+        # чипи двома частинами: «Швидкість» (видно в замірах) і «Зручність і приватність» (не про FPS)
+        for kind, gids in E.GROUP_KINDS.items():
+            roww = QWidget()
+            fl = FlowLayout(roww)
+            fl.setContentsMargins(0, 0, 0, 0)
+            if kind == "speed":
+                c = chip(tr("opt.all"))
+                c.clicked.connect(lambda _=False: self.set_group(None))
+                fl.addWidget(c)
+                self.chips[None] = c
+            cap = label(tr(f"kind.{kind}"), "muted")
+            cap.setContentsMargins(8, 6, 4, 0)
+            fl.addWidget(cap)
+            for gid in gids:
+                c = chip(tr(f"grp.{gid}"))
                 c.clicked.connect(lambda _=False, g=gid: self.set_group(g))
-                row.addWidget(c)
+                fl.addWidget(c)
                 self.chips[gid] = c
-            row.addStretch()
-            v.addLayout(row)
+            v.addWidget(roww)
         self.chips[None].setChecked(True)
+        self.kind_heads = {}
         for gid in E.GROUP_IDS:
+            kind = E.group_kind(gid)
+            if kind not in self.kind_heads:  # заголовок частини перед її першою групою
+                hw_ = QWidget()
+                hv = vbox(hw_, (0, 10, 0, 0), 2)
+                hv.addWidget(label(tr(f"kind.{kind}"), "h1"))
+                hv.addWidget(label(tr(f"kind.{kind}.d"), "sub", wrap=True))
+                v.addWidget(hw_)
+                self.kind_heads[kind] = hw_
             # прибрані в 6.9 — лише якщо вже застосовані: видно, що це, і що краще відкотити (у «Резервних копіях»)
-            items = [t for t in E.TWEAKS if t.group == gid and (not t.retired or E.JOURNAL.has(t.id))]
+            # кольори виділення (custom) — не перемикачі: застосовані раніше видно й відкочуються в «Резервних копіях»
+            items = [t for t in E.TWEAKS if t.group == gid and not t.custom and (not t.retired or E.JOURNAL.has(t.id))]
             sec = Section(gid, items)
             sec.changed.connect(self._changed)
             for r in sec.rows:
@@ -296,11 +314,16 @@ class ExpertView(QWidget):
 
     def _apply_filter(self):
         shown = 0
+        kinds = set()
         for sec in self.sections:
             n = sec.filter(self.query)
             vis = n > 0 and (self.group is None or self.group == sec.gid)
             sec.setHidden(not vis)
             shown += n if vis else 0
+            if vis:
+                kinds.add(E.group_kind(sec.gid))
+        for kind, head in self.kind_heads.items():
+            head.setVisible(kind in kinds)
         self.empty.setVisible(shown == 0)
 
     def refresh_applied(self):
@@ -971,7 +994,7 @@ class HomePage(QWidget):
         self.chk_box = vbox(spacing=6)
         cv.addLayout(self.chk_box)
         cv.addStretch()
-        cv.addWidget(button(tr("home.all_checks"), "ghost", lambda: main.go("hardware")), 0,
+        cv.addWidget(button(tr("home.all_checks"), "ghost", lambda: main.open_hwc("build")), 0,
                      Qt.AlignmentFlag.AlignLeft)
         two.addWidget(chk, 2)
         v.addLayout(two)

@@ -88,7 +88,7 @@ The tests run only in preview mode with a temporary settings folder and change n
 OptimaX/
 ├── optimizer.py        ← main window, sidebar, tray, background timers, hotkeys
 ├── pages_optimize.py   ← Analysis, wizard, expert menu, review of changes
-├── pages_tools.py      ← Games, Hardware, Laptop, Cleanup, Startup apps, Appearance, Backups, Settings
+├── pages_tools.py      ← Games, Laptop, Cleanup, Startup apps, Backups, Settings, build check
 ├── pages_extra.py      ← Diagnostics, Network, Apps, disk analyzer, old drivers
 ├── pages_lab.py        ← Benchmarks, Ad blocker
 ├── ui_kit.py           ← theme, switches, cards, charts, dialogs, run console

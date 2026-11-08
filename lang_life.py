@@ -223,6 +223,30 @@ STRINGS = {
                        "More reliable rollback: each setting is now changed by one optimization only, so rolling one "
                        "back no longer cancels another, and the culprit search no longer gets confused. The DirectX "
                        "optimizations (windowed, VRR, Auto HDR) restore only their own part."),
+    "wn.611.menu": ("Менше пунктів у меню: «Залізо» тепер розділ Hardware Center «Перевірка збірки», а перемикачі "
+                    "сторінки «Вигляд» — в експертному меню, у групі «Вигляд».",
+                    "Меньше пунктов в меню: «Железо» теперь раздел Hardware Center «Проверка сборки», а переключатели "
+                    "страницы «Внешний вид» — в экспертном меню, в группе «Внешний вид».",
+                    "Fewer menu items: Hardware is now Hardware Center's Build check section, and the Appearance "
+                    "switches are in the Expert menu under Appearance."),
+    "wn.611.catalog": ("Чесний каталог: оптимізації поділено на «Швидкість» — те, що видно в замірах FPS, — і "
+                       "«Зручність і приватність», від якої FPS не росте.",
+                       "Честный каталог: оптимизации разделены на «Скорость» — то, что видно в замерах FPS, — и "
+                       "«Удобство и приватность», от которой FPS не растёт.",
+                       "An honest catalog: optimizations are split into Speed — what shows up in FPS measurements — "
+                       "and Comfort and privacy, which doesn't raise FPS."),
+    "wn.611.oc": ("Розгін відеокарти — чотири безпечні кроки з MSI Afterburner і стрес-тест OptimaX для перевірки "
+                  "кожного кроку, без сторонніх AI-чатів.",
+                  "Разгон видеокарты — четыре безопасных шага с MSI Afterburner и стресс-тест OptimaX для проверки "
+                  "каждого шага, без сторонних AI-чатов.",
+                  "GPU overclocking: four safe steps with MSI Afterburner and the OptimaX stress test to check each "
+                  "step, with no third-party AI chats."),
+    "wn.611.support": ("OptimaX безкоштовна й без реклами. Якщо вона вам допомогла, підтримати розробку можна через "
+                       "банку — посилання «Підтримати» на сайті програми.",
+                       "OptimaX бесплатна и без рекламы. Если она вам помогла, поддержать разработку можно через "
+                       "банку — ссылка «Поддержать» на сайте программы.",
+                       "OptimaX is free and ad-free. If it helped you, you can support development through the jar — "
+                       "the Support link on the program's website."),
     "wn.6101.menu": ("Меню простіше: «Мережа» й «Блок реклами» тепер в «Інструментах», «Ноутбук» видно лише на ноутбуці, "
                      "а в «Діагностиці» першим іде «Чому лагає?» — «Чому впав комп?» і монітор на телефоні нижче.",
                      "Меню проще: «Сеть» и «Блок рекламы» теперь в «Инструментах», «Ноутбук» виден только на ноутбуке, "

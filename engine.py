@@ -31,7 +31,7 @@ from i18n import tr, tweak_text
 APP_NAME = "OptimaX"
 AUTHOR = "X44TO"
 APP_TITLE = f"{APP_NAME} by {AUTHOR}"
-VERSION = "6.10.1"
+VERSION = "6.11"
 IS_WIN = sys.platform == "win32"
 DRY_RUN = (not IS_WIN) or ("--dry-run" in sys.argv)
 DEMO = os.environ.get("OPTIMAX_DEMO", "gaming")  # демо-залізо поза Windows: gaming/laptop/old/x3d/xeon
@@ -2084,8 +2084,20 @@ def tw(id_, group, ops=None, **kw) -> Tweak:
     return t
 
 
-GROUP_IDS = ["perf", "gaming", "hw", "net", "laptop", "lite", "ai", "privacy", "explorer", "wu", "audio", "system",
-             "svc", "space", "maint", "metro"]
+# Каталог чесно поділено на дві частини:
+#   speed   — «Швидкість»: те, що можна побачити в замірах (FPS, затримка, завантаження, простій ядер);
+#   comfort — «Зручність і приватність»: менше реклами, стеження й зайвого, порядок на диску. FPS від цього не росте,
+#             тож обіцянка «доводимо цифрами» стосується першої частини.
+# «visual» (значки, розширення, тема, Alt+Tab…) — в експертному меню: окремої сторінки «Вигляд» більше немає.
+GROUP_KINDS = {
+    "speed": ["perf", "gaming", "hw", "net", "laptop", "lite", "svc"],
+    "comfort": ["ai", "privacy", "explorer", "visual", "wu", "audio", "system", "space", "maint", "metro"],
+}
+GROUP_IDS = GROUP_KINDS["speed"] + GROUP_KINDS["comfort"]
+
+
+def group_kind(gid: str) -> str:
+    return next((k for k, gs in GROUP_KINDS.items() if gid in gs), "comfort")
 
 SP = r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
 MM = r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"

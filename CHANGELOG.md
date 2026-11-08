@@ -2,6 +2,32 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [6.11] — 2026-11-08
+
+Прибрано зайве — за стратегією «головне нагорі» — і чесний каталог оптимізацій.
+
+### Змінено
+
+- **Сторінка «Залізо» стала розділом Hardware Center «Перевірка збірки».** Характеристики вона дублювала з розділу «Залізо» Hardware Center, а перевірку збірки з кнопками «Виправити», особливості платформи, MSI Mode й розгін відеокарти тепер видно поруч із тестами заліза. Кнопка «Усі перевірки» на головній веде туди. У меню на один пункт менше.
+- **Сторінку «Вигляд» прибрано.** Перемикачі Провідника й панелі завдань і так були в експертному меню, а значки, розширення файлів, тема, Alt+Tab, Aero Shake і залипання клавіш тепер там у новій групі «Вигляд» — з переглядом змін перед застосуванням, як усі оптимізації. Редактора кольорів виділення більше немає; застосовані раніше кольори видно й відкочуються в «Резервних копіях».
+- **Розгін відеокарти — без DeepSeek.** Замість кнопки, що копіювала характеристики й відкривала сторонній AI-чат, — чотири безпечні кроки з MSI Afterburner і кнопка стрес-тесту OptimaX для перевірки кожного кроку.
+- **Каталог чесно поділено на дві частини.** «Швидкість» — те, що видно в замірах (процесор і пам'ять, ігри, залізо й драйвери, мережа, ноутбук, легкість, служби); «Зручність і приватність» — менше реклами, стеження й зайвого (AI і реклама Windows 11, конфіденційність, Провідник, вигляд, оновлення, звук, система, місце на диску, обслуговування, вбудовані додатки). В експертному меню й у [списку оптимізацій](docs/uk/tweaks.md) — окремими частинами з поясненням, що від другої FPS не росте. Обіцянка «доводимо цифрами» тепер стосується саме першої.
+- Чипи розділів Hardware Center переносяться за шириною й не обрізають назви («Діагностика Windows», «Перевірка перед покупкою»).
+
+### Сайт
+
+- Розділ «Чого OptimaX не робить»: без телеметрії, нічого без підтвердження, захист Windows лишається, без реклами й нав'язаних програм; як перевірити файл за `SHA256SUMS.txt` і посилання на [політику приватності й підпису коду](docs/uk/code-signing.md).
+- Підтримка розробки — банка Монобанку: кнопка Sponsor на GitHub, розділ «Підтримати» в README, посилання й питання в FAQ на сайті. У програмі — лише один раз, у «Що нового» цієї версії.
+
+<details>
+<summary>English</summary>
+
+**Changed:** the Hardware page is now the Build check section of Hardware Center (its specs duplicated Hardware info; the build check with Fix buttons, platform notes, MSI Mode and GPU overclocking now sit next to the hardware tests), so the menu is one item shorter. The Appearance page is gone: File Explorer and taskbar switches were already in the Expert menu, and icons, file extensions, theme, Alt+Tab, Aero Shake and Sticky Keys move there as a new Appearance group with a preview before applying; the selection colour editor is removed, and colours applied earlier stay visible and reversible in Backups. GPU overclocking no longer copies a prompt for DeepSeek: four safe steps with MSI Afterburner and a button for the OptimaX stress test instead. The catalog is split honestly into Speed (what shows up in measurements) and Comfort and privacy (fewer ads, less tracking and clutter — no FPS promised), in the Expert menu and in the list of optimizations. Hardware Center section chips wrap instead of cutting their names.
+
+**Site:** a “What OptimaX never does” section (no telemetry, nothing without your OK, Windows protection stays on, no ads or bundled apps) with how to check a file against `SHA256SUMS.txt` and a link to the privacy and code signing policy; a Monobank jar for supporting development — a Sponsor button on GitHub, a Support section in the README, a site link and FAQ entry, and once in this version's What's new.
+
+</details>
+
 ## [6.10.1] — 2026-11-08
 
 Виправлення інсталятора, простіше меню й підготовка до підпису коду.
