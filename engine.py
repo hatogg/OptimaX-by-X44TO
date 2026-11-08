@@ -2084,8 +2084,9 @@ def tw(id_, group, ops=None, **kw) -> Tweak:
     return t
 
 
-GROUP_IDS = ["perf", "gaming", "hw", "net", "laptop", "lite", "ai", "privacy", "explorer", "wu", "audio", "system",
-             "svc", "space", "maint", "metro"]
+# «visual» (значки, розширення, тема, Alt+Tab…) — з 6.10.1 в експертному меню: окремої сторінки «Вигляд» більше немає
+GROUP_IDS = ["perf", "gaming", "hw", "net", "laptop", "lite", "ai", "privacy", "explorer", "visual", "wu", "audio",
+             "system", "svc", "space", "maint", "metro"]
 
 SP = r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
 MM = r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"

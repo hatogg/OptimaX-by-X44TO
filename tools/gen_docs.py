@@ -55,7 +55,7 @@ def build(lang: str) -> str:
     out = [f"# {t_['title']}", "",
            f"[{t_['back']}]({readme}) · [{t_['other']}]({t_['other_link']})", "",
            t_["intro"].format(n=len(items_all), g=len(E.GROUP_IDS), v=E.VERSION), "", t_["note"], ""]
-    for gid in E.GROUP_IDS + ["visual"]:
+    for gid in E.GROUP_IDS:
         items = [t for t in E.TWEAKS if t.group == gid and not t.retired]
         if not items:
             continue

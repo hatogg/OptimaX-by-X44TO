@@ -1,6 +1,6 @@
 """
-OptimaX — сторінки інструментів: Ігри, Залізо, Ноутбук, Очищення, Автозавантаження, Вигляд,
-Резервні копії, Налаштування.
+OptimaX — сторінки інструментів: Ігри, Ноутбук, Очищення, Автозавантаження, Резервні копії, Налаштування, а також
+перевірка збірки (BuildCheck) для розділу Hardware Center.
 """
 from __future__ import annotations
 
@@ -9,10 +9,8 @@ import subprocess
 import webbrowser
 from datetime import datetime
 
-from PyQt6.QtCore import Qt, QRegularExpression
-from PyQt6.QtGui import QColor, QGuiApplication, QRegularExpressionValidator
-from PyQt6.QtWidgets import (QWidget, QFrame, QPushButton, QLineEdit, QGridLayout, QSlider, QColorDialog,
-                             QFileDialog, QMenu, QSpinBox, QStackedWidget)
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QWidget, QFrame, QGridLayout, QFileDialog, QMenu, QSpinBox, QStackedWidget
 
 import engine as E
 import features as F
@@ -23,15 +21,13 @@ import i18n
 import lifecycle as L
 import mining as MG
 import power as PW
-import report as RP
 import updater as U
 from i18n import tr
 from pages_optimize import TweakRow
 from ui_kit import (T, label, button, card, vbox, hbox, badge, style_badge, dot, scroller, page_header, bottom_bar,
                     clear_layout, section_card, Switch, Check, Ring, OptionCard, Segmented, chip, Ask, RunDialog,
-                    LogView, make_font, png_icon, APP_DIR)
+                    LogView, png_icon, APP_DIR)
 
-DEEPSEEK_URL = "https://chat.deepseek.com"
 AFTERBURNER_URL = "https://www.msi.com/Landing/afterburner/graphics-cards"
 
 
@@ -401,29 +397,7 @@ class GamesPage(QWidget):
                             ok_msg=tr("games.opt_on" if on else "games.opt_off", opt=tr("games.opt." + opt)))
 
 
-# ───────────────────────── Залізо ─────────────────────────
-class InfoCard(QFrame):
-    def __init__(self, caption: str):
-        super().__init__()
-        self.setObjectName("card")
-        v = vbox(self, (20, 16, 20, 18), 6)
-        v.addWidget(label(caption, "muted"))
-        self.value = label(tr("hw.detecting"), "value", wrap=True)
-        self.value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        v.addWidget(self.value)
-        self.sub = label("", "desc", wrap=True)
-        v.addWidget(self.sub)
-        v.addStretch()
-
-    def set(self, value: str, sub: str = "") -> None:
-        self.value.setText(value or tr("hw.unknown"))
-        self.sub.setText(sub)
-        self.sub.setVisible(bool(sub))
-
-
-OC_PROMPT_KEY = "oc.prompt"
-
-
+# ───────────────────────── Перевірка збірки (розділ Hardware Center) ─────────────────────────
 class CheckRow(QFrame):
     def __init__(self, c: dict, main):
         super().__init__()
@@ -466,19 +440,14 @@ class MsiRow(QFrame):
         h.addWidget(self.sw)
 
 
-class HardwarePage(QWidget):
-    def __init__(self, main):
-        super().__init__()
+class BuildCheck:
+    """Перевірка збірки з кнопками «Виправити», особливості платформи, MSI Mode й розгін відеокарти через MSI Afterburner.
+    Раніше це була окрема сторінка «Залізо», яка дублювала Hardware Center; тепер — його розділ «Перевірка збірки»
+    (pages_hwcenter._build_build). Характеристики — у розділі «Залізо» Hardware Center."""
+
+    def __init__(self, main, v):
         self.main = main
-        outer = vbox(self)
-        outer.addWidget(page_header(tr("nav.hardware"), tr("hw.sub")))
-        body, v = page_body()
-        grid = QGridLayout()
-        grid.setSpacing(14)
-        self.cards = {k: InfoCard(tr(f"hw.{k}")) for k in ("cpu", "gpu", "ram", "disk", "display", "os")}
-        for i, k in enumerate(("cpu", "gpu", "ram", "disk", "display", "os")):
-            grid.addWidget(self.cards[k], i // 3, i % 3)
-        v.addLayout(grid)
+        self.page = v.parentWidget()
         self.notes = vbox(spacing=10)
         v.addLayout(self.notes)
         cc, cv = section_card(tr("hw.checks"), tr("hw.checks_d"))
@@ -495,42 +464,26 @@ class HardwarePage(QWidget):
         ov = vbox(oc, (22, 18, 22, 18), 8)
         ov.addWidget(label(tr("oc.title"), "h2"))
         ov.addWidget(label(tr("oc.sub"), "sub", wrap=True))
+        steps = vbox(spacing=4)
+        for i in (1, 2, 3, 4):
+            steps.addWidget(label(f"{i}. " + tr(f"oc.step{i}"), "desc", wrap=True))
+        ov.addLayout(steps)
         bh = hbox(spacing=10)
-        self.btn_copy = button(tr("oc.copy"), "primary", self.copy)
-        self.btn_copy.setEnabled(False)
-        btn_ds = button(tr("oc.deepseek"), None, lambda: webbrowser.open(DEEPSEEK_URL))
-        btn_msi = button("MSI Afterburner", None, self.open_afterburner)
-        for b, ic in ((btn_ds, "deepsek.png"), (btn_msi, "msi.png")):
-            icon = png_icon(ic)
-            if icon:
-                b.setIcon(icon)
-        for b in (self.btn_copy, btn_ds, btn_msi):
-            bh.addWidget(b)
+        btn_msi = button("MSI Afterburner", "primary", self.open_afterburner)
+        icon = png_icon("msi.png")
+        if icon:
+            btn_msi.setIcon(icon)
+        bh.addWidget(btn_msi)
+        bh.addWidget(button(tr("oc.stress"), None, lambda: self.main.open_hwc("stress")))
         bh.addStretch()
         ov.addLayout(bh)
         v.addWidget(oc)
-        v.addStretch()
-        outer.addWidget(scroller(body), 1)
         self.msi_rows = []
         self.msi_loaded = False
+        if main.hw:
+            self.set_hw(main.hw, main.checks or [])
 
     def set_hw(self, hw: dict, checks: list):
-        self.cards["cpu"].set(hw.get("cpu"), H.cpu_sub(hw))
-        gpus = hw.get("gpus", [])
-        mining = {m["name"]: m["model"] for m in hw.get("mining") or []}
-
-        def gpu_sub(name, vr, dt):
-            drv = tr("hw.driver", d=dt) if dt else ""
-            if H.is_integrated(name, vr):
-                return ", ".join(x for x in (tr("hw.integrated"), drv) if x)
-            mine = tr("hw.mining", model=mining[name]) if name in mining else ""
-            return ", ".join(x for x in (mine, H.vram_text(vr), drv) if x)
-        self.cards["gpu"].set("\n".join(n for n, _, _ in gpus), "\n".join(gpu_sub(*g) for g in gpus))
-        self.cards["ram"].set(tr("u.gb", v=H.fmt_gb(hw["ram_gb"])) if hw.get("ram_gb") else "", H.ram_sub(hw))
-        self.cards["disk"].set(H.disk_kind(hw), hw.get("disk_name", ""))
-        rc, rm = hw.get("refresh") or (0, 0)
-        self.cards["display"].set(tr("hw.hz", hz=rc) if rc else "", tr("hw.hz_max", hz=rm) if rm else "")
-        self.cards["os"].set(hw.get("os", ""), tr("hw.build", b=hw["build"]) if hw.get("build") else "")
         clear_layout(self.notes)
         for key in ("x3d_dual", "hybrid", "xeon", "old", "laptop"):
             if hw.get(key):
@@ -541,9 +494,10 @@ class HardwarePage(QWidget):
                 fh.addWidget(label(tr(f"plat.{key}.d"), "desc", wrap=True))
                 self.notes.addWidget(f)
         clear_layout(self.check_box)
-        for c in sorted(checks, key=lambda c: {"warn": 0, "info": 1, "ok": 2}[c["level"]]):
+        for c in sorted(checks or [], key=lambda c: {"warn": 0, "info": 1, "ok": 2}[c["level"]]):
             self.check_box.addWidget(CheckRow(c, self.main))
-        self.btn_copy.setEnabled(True)
+        if not checks:
+            self.check_box.addWidget(label(tr("hw.detecting"), "muted"))
 
     def on_show(self):
         if not self.msi_loaded:
@@ -580,13 +534,6 @@ class HardwarePage(QWidget):
             return E.apply_tweaks([H.msi_tweak(row.d, on)], log, header=False)
         self.main.run_quick(row.d["name"], job, ok_msg=tr("msi.changed"), on_done=lambda _r: self.load_msi())
 
-    def copy(self):
-        hw = self.main.hw or {}
-        text = tr(OC_PROMPT_KEY, cpu=hw.get("cpu", "?"), gpu=RP.gpus_line(hw) or "?", ram=H.ram_line(hw),
-                  os=f"{hw.get('os', '')} {hw.get('build', '')}")
-        QGuiApplication.clipboard().setText(text)
-        self.main.toast(tr("oc.copied"))
-
     def open_afterburner(self):
         cands = [os.path.join(APP_DIR, d, "MSIAfterburner.exe") for d in ("MSI", "msi")]
         for env in ("ProgramFiles(x86)", "ProgramFiles"):
@@ -602,9 +549,9 @@ class HardwarePage(QWidget):
                     os.startfile(c)  # лише Windows
                     self.main.toast(tr("oc.ab_start"))
                 except Exception as e:
-                    Ask.info(self, tr("oc.ab_fail"), str(e))
+                    Ask.info(self.page, tr("oc.ab_fail"), str(e))
                 return
-        if Ask.ask(self, tr("oc.ab_none_t"), tr("oc.ab_none_d"), tr("oc.ab_open")):
+        if Ask.ask(self.page, tr("oc.ab_none_t"), tr("oc.ab_none_d"), tr("oc.ab_open")):
             webbrowser.open(AFTERBURNER_URL)
 
 
@@ -938,149 +885,6 @@ class StartupPage(QWidget):
             subprocess.Popen(["explorer.exe", "/select,", path])
         else:
             self.main.toast(tr("st.no_file"), "warn")
-
-
-# ───────────────────────── Вигляд ─────────────────────────
-class ColorEditor(QFrame):
-    def __init__(self, tid: str, main):
-        super().__init__()
-        self.tid, self.main = tid, main
-        self.t = E.BY_ID[tid]
-        self._sync = False
-        self.setObjectName("row")
-        v = vbox(self, (14, 12, 14, 12), 10)
-        top = hbox(spacing=14)
-        self.swatch = QPushButton()
-        self.swatch.setFixedSize(44, 44)
-        self.swatch.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.swatch.setToolTip(tr("lk.pick"))
-        self.swatch.clicked.connect(self._pick)
-        top.addWidget(self.swatch)
-        tv = vbox(spacing=3)
-        tv.addWidget(label(self.t.title, "rowTitle"))
-        tv.addWidget(label(self.t.desc, "desc", wrap=True))
-        top.addLayout(tv, 1)
-        v.addLayout(top)
-        g = QGridLayout()
-        g.setHorizontalSpacing(10)
-        g.setVerticalSpacing(6)
-        self.sl, self.vals = [], []
-        for i, (ch, col) in enumerate((("R", T["bad"]), ("G", T["ok"]), ("B", T["acc"]))):
-            g.addWidget(label(ch, "muted"), i, 0)
-            s = QSlider(Qt.Orientation.Horizontal)
-            s.setRange(0, 255)
-            s.setStyleSheet(f"QSlider::sub-page:horizontal {{ background:{col}; border-radius:2px; }}")
-            s.valueChanged.connect(self._from_sliders)
-            g.addWidget(s, i, 1)
-            val = label("0", "muted")
-            val.setFixedWidth(30)
-            val.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            g.addWidget(val, i, 2)
-            self.sl.append(s)
-            self.vals.append(val)
-        v.addLayout(g)
-        bh = hbox(spacing=8)
-        self.hex = QLineEdit()
-        self.hex.setFixedWidth(110)
-        self.hex.setFont(make_font(13, mono=True))
-        self.hex.setValidator(QRegularExpressionValidator(QRegularExpression(r"#?[0-9A-Fa-f]{0,6}")))
-        self.hex.textEdited.connect(self._from_hex)
-        bh.addWidget(self.hex)
-        bh.addStretch()
-        self.btn_reset = button(tr("lk.reset"), None, self._reset)
-        self.btn_apply = button(tr("btn.apply"), "primary", self._apply)
-        bh.addWidget(self.btn_reset)
-        bh.addWidget(self.btn_apply)
-        v.addLayout(bh)
-        self.set_rgb(E.current_color(tid))
-
-    def rgb(self):
-        return tuple(s.value() for s in self.sl)
-
-    def set_rgb(self, rgb) -> None:
-        self._sync = True
-        for s, val, c in zip(self.sl, self.vals, rgb):
-            s.setValue(int(c))
-            val.setText(str(int(c)))
-        self.hex.setText("#{:02X}{:02X}{:02X}".format(*rgb))
-        self._sync = False
-        self._paint()
-
-    def _paint(self):
-        r, g, b = self.rgb()
-        self.swatch.setStyleSheet(f"QPushButton {{ background: rgb({r},{g},{b}); border: 2px solid {T['line3']};"
-                                  f" border-radius: 10px; }} QPushButton:hover {{ border-color: {T['text']}; }}")
-
-    def _from_sliders(self, _=None):
-        if self._sync:
-            return
-        rgb = self.rgb()
-        for val, c in zip(self.vals, rgb):
-            val.setText(str(c))
-        self._sync = True
-        self.hex.setText("#{:02X}{:02X}{:02X}".format(*rgb))
-        self._sync = False
-        self._paint()
-
-    def _from_hex(self, text: str):
-        h = text.lstrip("#")
-        if len(h) == 6:
-            self.set_rgb(tuple(int(h[i:i + 2], 16) for i in (0, 2, 4)))
-
-    def _pick(self):
-        c = QColorDialog.getColor(QColor(*self.rgb()), self, self.t.title)
-        if c.isValid():
-            self.set_rgb((c.red(), c.green(), c.blue()))
-
-    def _apply(self):
-        rgb = self.rgb()
-        self.main.run_quick(self.t.title, lambda log, p: E.apply_tweaks([E.color_tweak(self.tid, rgb)], log,
-                                                                         header=False),
-                            busy=self.btn_apply, ok_msg=tr("lk.applied", what=self.t.title))
-
-    def _reset(self):
-        self.main.run_quick(self.t.title, lambda log, p: E.undo_or_default(self.t, log), busy=self.btn_reset,
-                            on_done=lambda _r: self.set_rgb(E.current_color(self.tid)),
-                            ok_msg=tr("lk.restored", what=self.t.title))
-
-
-class LookPage(QWidget):
-    def __init__(self, main):
-        super().__init__()
-        self.main = main
-        self.rows = []
-        outer = vbox(self)
-        outer.addWidget(page_header(tr("nav.look"), tr("lk.sub")))
-        body, v = page_body()
-        cols = hbox(spacing=14)
-        c1, c1v = section_card(tr("lk.explorer"), tr("lk.explorer_d"))
-        for t in E.TWEAKS:
-            if t.group == "visual" and not t.custom:
-                c1v.addWidget(toggle_row(main, t, self.rows))
-        c2, c2v = section_card(tr("lk.colors"), tr("lk.colors_d"))
-        self.colors = [ColorEditor("sel_color", main), ColorEditor("sel_text_color", main)]
-        for ce in self.colors:
-            c2v.addWidget(ce)
-        c3, c3v = section_card(tr("grp.explorer"), tr("grp.explorer.d"))
-        for t in E.TWEAKS:
-            if t.group == "explorer":
-                c3v.addWidget(toggle_row(main, t, self.rows))
-        lc = vbox(spacing=14)
-        lc.addWidget(c1)
-        lc.addWidget(c3)
-        lc.addStretch()
-        rc = vbox(spacing=14)
-        rc.addWidget(c2)
-        rc.addStretch()
-        cols.addLayout(lc, 1)
-        cols.addLayout(rc, 1)
-        v.addLayout(cols)
-        v.addStretch()
-        outer.addWidget(scroller(body), 1)
-        self.sync()
-
-    def sync(self):
-        sync_toggles(self.rows, self.main.hw or {})
 
 
 # ───────────────────────── Резервні копії ─────────────────────────

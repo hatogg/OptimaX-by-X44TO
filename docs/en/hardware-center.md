@@ -22,6 +22,7 @@ Hardware Center is a page in the Device group that brings hardware diagnostics, 
 | --- | --- |
 | **Overview** | The latest status of each check, plus Pre-purchase PC check and Create a report |
 | **Hardware info** | CPU (architecture, cores and threads, hybrid cores, clock, SSE2…AVX-512), graphics cards, memory per slot (size, type, speed, maker, part number), motherboard, BIOS/UEFI and Secure Boot, disks, network adapters, monitors with EDID, battery |
+| **Build check** | Typical build mistakes with Fix buttons (XMP, refresh rate, an old driver, core isolation, Resizable BAR…), platform notes, MSI Mode for graphics, network and audio, step-by-step GPU overclocking with MSI Afterburner checked by a stress test |
 | **CPU** | Single-core and all-core tests (scores to compare), a 1–60 min stress test: thermal throttling, power limit, unstable clocks, wrong results, crashes |
 | **GPU** | The cards DirectX sees, the latest GPU test and stress test, graphics driver resets (TDR) in 30 days; the test itself lives on the Benchmarks page with the graphics card picker |
 | **VRAM** | Writes and verifies patterns in GPU buffers on the chosen card |

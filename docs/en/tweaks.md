@@ -2,7 +2,7 @@
 
 [← Back to the main page](../../README.en.md) · [Українська](../uk/tweaks.md)
 
-Generated from the program code (129 optimizations in 16 sections, version 6.10.1). Marks: 🔴 affects everyday habits, 🟡 moderate impact, 🔵 safe. “Rollback” tells whether OptimaX restores the change to your own original value.
+Generated from the program code (129 optimizations in 17 sections, version 6.10.1). Marks: 🔴 affects everyday habits, 🟡 moderate impact, 🔵 safe. “Rollback” tells whether OptimaX restores the change to your own original value.
 
 Before applying, OptimaX checks compatibility with your hardware and Windows version: irrelevant items are disabled, items harmful to your PC (for example, turning off Game Bar on AMD X3D) are blocked, and the reason is shown under the item.
 
@@ -148,6 +148,22 @@ Classic context menu, fast folders, End task, less clutter in menus.
 | 🟡 | No recent files or frequent folders | Quick access stops listing what you opened recently — more private and a little faster. | — | yes |
 | 🟡 | Less context-menu clutter | Removes Share, Give access to, Restore previous versions, Cast to Device and Ask Copilot. | — | yes |
 
+## Appearance
+
+Icons and file extensions, the Windows theme, Alt+Tab, Aero Shake and Sticky Keys.
+
+| | Optimization | What it does | Profiles | Rollback |
+| --- | --- | --- | --- | --- |
+| 🔵 | Remove shortcut arrows | Clean icons without the arrow. | — | yes |
+| 🔵 | Show file extensions | .exe, .mp4 and other extensions are always visible. | — | yes |
+| 🔵 | Show hidden files | Folders and files with the Hidden attribute. | — | yes |
+| 🔵 | Windows dark mode | Dark theme for the system and apps. | — | yes |
+| 🔵 | Turn off Aero Shake | Shaking a window no longer minimizes the others. | — | yes |
+| 🔵 | Fast Alt+Tab and menus | Menus and previews open without delay. | — | yes |
+| 🔵 | Turn off Sticky Keys | No Sticky Keys prompt after pressing Shift five times. | — | yes |
+| 🔵 | Mouse selection color | The file selection box and fill. | — | yes |
+| 🔵 | Selected text color | Text color inside a selection. | — | yes |
+
 ## Windows Update
 
 No driver swaps, no restarts mid-work, pause and version lock.
@@ -239,20 +255,6 @@ Remove unneeded Windows 10 and 11 apps: from Clipchamp and Teams to Copilot.
 | 🔴 | Remove Tips and Get Help <sub>(irreversible)</sub> | The Tips (Get Started) and Get Help apps. | — | no |
 | 🔴 | Remove Power Automate <sub>(irreversible)</sub> | Office task automation. | — | no |
 | 🔴 | Remove the Cortana app <sub>(irreversible)</sub> | The Cortana assistant (Windows 10 and early Windows 11). | — | no |
-
-## Appearance
-
-| | Optimization | What it does | Profiles | Rollback |
-| --- | --- | --- | --- | --- |
-| 🔵 | Remove shortcut arrows | Clean icons without the arrow. | — | yes |
-| 🔵 | Show file extensions | .exe, .mp4 and other extensions are always visible. | — | yes |
-| 🔵 | Show hidden files | Folders and files with the Hidden attribute. | — | yes |
-| 🔵 | Windows dark mode | Dark theme for the system and apps. | — | yes |
-| 🔵 | Turn off Aero Shake | Shaking a window no longer minimizes the others. | — | yes |
-| 🔵 | Fast Alt+Tab and menus | Menus and previews open without delay. | — | yes |
-| 🔵 | Turn off Sticky Keys | No Sticky Keys prompt after pressing Shift five times. | — | yes |
-| 🔵 | Mouse selection color | The file selection box and fill. | — | yes |
-| 🔵 | Selected text color | Text color inside a selection. | — | yes |
 
 ## Removed from OptimaX
 

@@ -28,7 +28,7 @@ Everything the program can do, from the first analysis to the emergency rollback
 ## How it works
 
 1. **Analysis.** OptimaX detects the CPU (including P/E cores, AMD X3D and Xeon), graphics cards, memory, drives, monitor and battery, and shows the optimization and privacy levels, the speed-up potential and the weakest spot of the build.
-2. **Choose a path.** The *Wizard* asks a few simple questions and builds a plan for you. The *Expert menu* has 129 optimizations in 16 sections, each with an explanation, its current state and the exact list of changes.
+2. **Choose a path.** The *Wizard* asks a few simple questions and builds a plan for you. The *Expert menu* has 129 optimizations in 17 sections, each with an explanation, its current state and the exact list of changes.
 3. **Review the changes.** Before anything is applied, the plan is colour-coded: red affects everyday habits, yellow is a moderate change, blue is safe.
 4. **Apply.** First a Windows restore point, then the changes with a console, progress and a Stop button. Optionally, **Trial mode**: after a restart OptimaX asks whether to keep the changes and puts everything back if nobody answers.
 5. **Check.** The **Before/after FPS test** shows whether things really got better, and **Why is it lagging?** explains what slows a game down. **Smart optimization** does this on its own: it measures before and after, keeps only what doesn't hurt and finds a harmful change by splitting the changes in halves, then removes it. “Proven” applies only to changes measured on their own; a batch gain doesn't make each change in it proven.
@@ -64,20 +64,18 @@ OptimaX won't let you turn on something that harms your particular hardware. For
 | Section | What's there |
 | --- | --- |
 | **Analysis** | Optimization and privacy levels, speed-up potential, weakest spot, your PC, build check, live readings, before and after with a card for social networks, notices from the settings guard, trial mode, emergency rollback and about a PC crash; in the simple view — a PC score, one Optimize button and problems with Fix |
-| **Optimization** | Wizard and Expert menu, 6 profiles, search, 16 sections, “What will change” for every item, colour-coded review before applying, trial mode, smart optimization |
+| **Optimization** | Wizard and Expert menu, 6 profiles, search, 17 sections, “What will change” for every item, colour-coded review before applying, trial mode, smart optimization |
 | **Library** | All games from Steam, Epic, GOG, Ubisoft and My games with covers, launch with game mode, play time, FPS history per game |
 | **Games** | Game mode (services, background apps, memory, power, timer, Do Not Disturb, background balancer, auto mode — also for Steam / Epic / GOG / Ubisoft games; “Lowest latency” and “Stable frametime” profiles, global or per game); per game: priority, discrete GPU, no Fullscreen Optimizations, cores; an ISLC-style memory cleaner; 0.5 ms timer; on a PC with a mining card — “Games on the P106” (Universal GPU Renderer: a render mode per game, a check of which card renders it, driver, PCIe, memory and shader cache analyzers) |
 | **Diagnostics** | Why is it lagging? (with PresentMon frames and stutter causes when it is downloaded, plus a history of runs), before/after FPS test with a graph, forum report; further down — Why did the PC crash? with a memory test and the phone monitor |
 | **Benchmarks** | Smart optimization (an A/B test of changes on the GPU test or your game), OptimaX GPU test (1080p, 1440p, 4K), 5–60 minute stress test with a stability check and sensors, result history; FurMark 2 with an automatic result, Superposition, Cinebench, OCCT, CrystalDiskMark, 3DMark |
-| **Hardware Center** | Hardware diagnostics and tests: hardware info, CPU, GPU, VRAM, RAM, disks (SMART / NVMe, speed, surface read), display, laptop, peripherals, stress tests with an emergency stop, background processes during games, Windows and dump diagnostics, a pre-purchase PC check, HTML / JSON / PDF reports and an FPS overlay — [details](hardware-center.md) |
-| **Hardware** | Specifications, build check with fix buttons, MSI Mode for graphics, network and audio devices, GPU overclocking (a prompt for DeepSeek, MSI Afterburner) |
+| **Hardware Center** | Hardware diagnostics and tests: hardware info, CPU, GPU, VRAM, RAM, disks (SMART / NVMe, speed, surface read), display, laptop, peripherals, stress tests with an emergency stop, background processes during games, Windows and dump diagnostics, a build check with fix buttons, MSI Mode and GPU overclocking with MSI Afterburner, a pre-purchase PC check, HTML / JSON / PDF reports and an FPS overlay — [details](hardware-center.md) |
 | **Laptop** | (shown on laptops only) Battery wear, power on AC and battery, cool mode, sleep without drain, classic S3 sleep, refresh rate by power source, charge limit (ASUS and Dell right from the program, for other makers where to find it in their utility) |
 | **Cleanup** | Cleanup and repair, shader cache, freeing space; the “What takes up space” tab (disk analyzer) and “Old drivers” (old versions in the driver store) |
 | **Startup apps** | Apps from the registry, startup folders and Task Scheduler, with switches |
 | **Apps** | Update all apps through winget, install popular apps for gaming and work |
 | **Network** | Fastest DNS (Cloudflare, Google, Quad9, AdGuard, OpenDNS against yours) with DNS-over-HTTPS, ping and jitter to 12 data-centre regions and to your own server, bufferbloat test graded A+…F |
 | **Ad blocker** | A Pi-hole-style DNS filter: 24-hour statistics, query log, top blocked domains, devices, 13 lists, custom rules, pause, whole-network mode; light mode with AdGuard DNS or Control D in one click |
-| **Appearance** | File Explorer and taskbar (classic context menu, End task, fast folders…), selection colours |
 | **Backups** | Change journal with rollback, emergency rollback and OptimaX-Rescue.cmd, settings guard, Windows restore points, settings profiles |
 | **Settings** | Language, tray, autostart, scheduled maintenance, hotkeys (Ctrl+Alt+G for game mode, Ctrl+Alt+M to clean memory), simple view, What's new, report a problem, settings transfer to another PC |
 

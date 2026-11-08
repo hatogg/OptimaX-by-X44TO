@@ -24,10 +24,10 @@ import hwtests as HT
 from i18n import tr
 from pages_extra import page_body, log_strip
 from ui_kit import (T, label, button, card, vbox, hbox, badge, style_badge, dot, scroller, page_header, clear_layout,
-                    section_card, Segmented, Ask, Spark, Worker, LOG, chip)
+                    section_card, Segmented, Ask, Spark, Worker, LOG, chip, FlowLayout)
 
-SECTIONS = ("overview", "info", "cpu", "gpu", "vram", "ram", "storage", "display", "laptop", "peripherals", "stress",
-            "procs", "windiag", "inspect", "reports", "overlay")
+SECTIONS = ("overview", "info", "build", "cpu", "gpu", "vram", "ram", "storage", "display", "laptop", "peripherals",
+            "stress", "procs", "windiag", "inspect", "reports", "overlay")
 STATUS_KIND = {HT.PASS: "ok", HT.WARN: "warn", HT.FAIL: "bad", HT.SKIPPED: "muted", HT.NA: "muted"}
 LEVEL_COLOR = {HT.FAIL: "bad", HT.WARN: "warn", "info": "sub"}
 
@@ -251,16 +251,14 @@ class HwCenterPage(QWidget):
         outer = vbox(self)
         outer.addWidget(page_header(tr("nav.hwc"), tr("hwc.sub")))
         nav = QWidget()
-        g = QGridLayout(nav)
+        g = FlowLayout(nav)
         g.setContentsMargins(32, 0, 32, 8)
-        g.setHorizontalSpacing(6)
-        g.setVerticalSpacing(6)
         self.chips = {}
-        for i, key in enumerate(SECTIONS):
+        for key in SECTIONS:
             c = chip(tr(f"hwc.sec.{key}"))
             c.clicked.connect(lambda _=False, k=key: self.show_section(k))
             self.chips[key] = c
-            g.addWidget(c, i // 8, i % 8)
+            g.addWidget(c)
         outer.addWidget(nav)
         self.stack = QStackedWidget()
         outer.addWidget(self.stack, 1)
@@ -278,6 +276,8 @@ class HwCenterPage(QWidget):
     def set_hw(self, hw: dict) -> None:
         if self.current == "overview":
             self.refresh_overview()
+        if getattr(self, "buildcheck", None):
+            self.buildcheck.set_hw(hw, self.main.checks or [])
 
     def show_section(self, key: str) -> None:
         for k, c in self.chips.items():
@@ -497,6 +497,14 @@ class HwCenterPage(QWidget):
                 ("hwc.i.wear", f"{b['wear']:.0f}%" if b.get("design") else None), ("hwc.i.cycles", b.get("cycles") or None)]
 
     # ───────────────────────── Процесор ─────────────────────────
+    # ───────────────────────── Перевірка збірки (колишня сторінка «Залізо») ─────────────────────────
+    def _build_build(self, v):
+        import pages_tools as PT
+        self.buildcheck = PT.BuildCheck(self.main, v)
+
+    def _show_build(self):
+        self.buildcheck.on_show()
+
     def _build_cpu(self, v):
         c, cv = self.section(v, tr("hwc.cpu.title"), tr("hwc.cpu.sub"))
         r1 = hbox(margins=(14, 4, 14, 4), spacing=10)

@@ -189,7 +189,7 @@ class ExpertView(QWidget):
         self.chips = {}
         groups = [None] + E.GROUP_IDS
         per = 6
-        for part in (groups[i:i + per] for i in range(0, len(groups), per)):  # 17 категорій — три рядки
+        for part in (groups[i:i + per] for i in range(0, len(groups), per)):  # «Усі» + 17 розділів — три рядки
             row = hbox(spacing=6)
             for gid in part:
                 c = chip(tr("opt.all") if gid is None else tr(f"grp.{gid}"))
@@ -201,7 +201,8 @@ class ExpertView(QWidget):
         self.chips[None].setChecked(True)
         for gid in E.GROUP_IDS:
             # прибрані в 6.9 — лише якщо вже застосовані: видно, що це, і що краще відкотити (у «Резервних копіях»)
-            items = [t for t in E.TWEAKS if t.group == gid and (not t.retired or E.JOURNAL.has(t.id))]
+            # кольори виділення (custom) — не перемикачі: застосовані раніше видно й відкочуються в «Резервних копіях»
+            items = [t for t in E.TWEAKS if t.group == gid and not t.custom and (not t.retired or E.JOURNAL.has(t.id))]
             sec = Section(gid, items)
             sec.changed.connect(self._changed)
             for r in sec.rows:
@@ -971,7 +972,7 @@ class HomePage(QWidget):
         self.chk_box = vbox(spacing=6)
         cv.addLayout(self.chk_box)
         cv.addStretch()
-        cv.addWidget(button(tr("home.all_checks"), "ghost", lambda: main.go("hardware")), 0,
+        cv.addWidget(button(tr("home.all_checks"), "ghost", lambda: main.open_hwc("build")), 0,
                      Qt.AlignmentFlag.AlignLeft)
         two.addWidget(chk, 2)
         v.addLayout(two)

@@ -25,6 +25,7 @@ STRINGS = {
     # ── розділи ──
     "hwc.sec.overview": ("Огляд", "Обзор", "Overview"),
     "hwc.sec.info": ("Залізо", "Железо", "Hardware info"),
+    "hwc.sec.build": ("Перевірка збірки", "Проверка сборки", "Build check"),
     "hwc.sec.cpu": ("Процесор", "Процессор", "CPU"),
     "hwc.sec.gpu": ("Відеокарта", "Видеокарта", "GPU"),
     "hwc.sec.vram": ("Відеопам'ять", "Видеопамять", "VRAM"),

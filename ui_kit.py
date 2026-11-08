@@ -9,10 +9,11 @@ import os
 import sys
 
 from PyQt6.QtCore import (Qt, QThread, pyqtSignal, pyqtProperty, QTimer, QPropertyAnimation, QEasingCurve,
-                          QRectF, QPointF, QSize, QObject)
+                          QRectF, QPointF, QSize, QObject, QRect, QPoint)
 from PyQt6.QtGui import (QColor, QPainter, QPen, QIcon, QPixmap, QPainterPath, QFont, QLinearGradient)
 from PyQt6.QtWidgets import (QWidget, QFrame, QLabel, QPushButton, QAbstractButton, QHBoxLayout, QVBoxLayout,
-                             QScrollArea, QPlainTextEdit, QProgressBar, QDialog, QGraphicsOpacityEffect, QSizePolicy)
+                             QScrollArea, QPlainTextEdit, QProgressBar, QDialog, QGraphicsOpacityEffect, QSizePolicy,
+                             QLayout)
 
 import engine as E
 from i18n import tr
@@ -937,6 +938,65 @@ class Segmented(QFrame):
             b.setChecked(j == i)
         if emit:
             self.changed.emit(i)
+
+
+class FlowLayout(QLayout):
+    """Елементи в рядок із перенесенням, кожен — своєї ширини (чипи розділів): у сітці з рівними колонками довгі
+    назви обрізались («агностика Windo»)."""
+
+    def __init__(self, parent=None, hspacing: int = 6, vspacing: int = 6):
+        super().__init__(parent)
+        self._items = []
+        self._h, self._v = hspacing, vspacing
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, i):
+        return self._items[i] if 0 <= i < len(self._items) else None
+
+    def takeAt(self, i):
+        return self._items.pop(i) if 0 <= i < len(self._items) else None
+
+    def expandingDirections(self):
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._place(QRect(0, 0, width, 0), True)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._place(rect, False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for it in self._items:
+            size = size.expandedTo(it.minimumSize())
+        m = self.contentsMargins()
+        return size + QSize(m.left() + m.right(), m.top() + m.bottom())
+
+    def _place(self, rect, test: bool) -> int:
+        m = self.contentsMargins()
+        r = rect.adjusted(m.left(), m.top(), -m.right(), -m.bottom())
+        x, y, line = r.x(), r.y(), 0
+        for it in self._items:
+            w = it.sizeHint()
+            if x + w.width() > r.right() + 1 and line:
+                x, y, line = r.x(), y + line + self._v, 0
+            if not test:
+                it.setGeometry(QRect(QPoint(x, y), w))
+            x += w.width() + self._h
+            line = max(line, w.height())
+        return y + line - rect.y() + m.bottom()
 
 
 def chip(text: str) -> QPushButton:

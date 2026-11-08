@@ -47,11 +47,9 @@ STRINGS = {
     "nav.home": ("Аналіз", "Анализ", "Analysis"),
     "nav.optimize": ("Оптимізація", "Оптимизация", "Optimization"),
     "nav.games": ("Ігри", "Игры", "Games"),
-    "nav.hardware": ("Залізо", "Железо", "Hardware"),
     "nav.laptop": ("Ноутбук", "Ноутбук", "Laptop"),
     "nav.cleanup": ("Очищення", "Очистка", "Cleanup"),
     "nav.startup": ("Автозавантаження", "Автозагрузка", "Startup apps"),
-    "nav.look": ("Вигляд", "Внешний вид", "Appearance"),
     "nav.backup": ("Резервні копії", "Резервные копии", "Backups"),
     "nav.settings": ("Налаштування", "Настройки", "Settings"),
 
@@ -223,6 +221,9 @@ STRINGS = {
     "grp.metro.d": ("Видалення непотрібних додатків Windows 10 і 11: від Clipchamp і Teams до Copilot.", "Удаление ненужных приложений Windows 10 и 11: от Clipchamp и Teams до Copilot.",
                    "Remove unneeded Windows 10 and 11 apps: from Clipchamp and Teams to Copilot."),
     "grp.visual": ("Вигляд", "Внешний вид", "Appearance"),
+    "grp.visual.d": ("Значки й розширення файлів, тема Windows, Alt+Tab, Aero Shake і залипання клавіш.",
+                     "Значки и расширения файлов, тема Windows, Alt+Tab, Aero Shake и залипание клавиш.",
+                     "Icons and file extensions, the Windows theme, Alt+Tab, Aero Shake and Sticky Keys."),
 
     # ── майстер ──
     "wz.step": ("Крок {i} з {n}", "Шаг {i} из {n}", "Step {i} of {n}"),
@@ -457,8 +458,6 @@ STRINGS = {
     "tm.off": ("Таймер 0.5 мс вимкнено", "Таймер 0.5 мс выключен", "0.5 ms timer is off"),
 
     # ── залізо ──
-    "hw.sub": ("Характеристики, перевірка збірки, MSI Mode і поради з розгону.", "Характеристики, проверка сборки, MSI Mode и "
-               "советы по разгону.", "Specs, build check, MSI Mode and overclocking tips."),
     "hw.cpu": ("Процесор", "Процессор", "CPU"),
     "hw.gpu": ("Відеокарта", "Видеокарта", "Graphics"),
     "hw.ram": ("Оперативна пам'ять", "Оперативная память", "Memory"),
@@ -536,15 +535,26 @@ STRINGS = {
     "msi.cls.HDC": ("Накопичувач", "Накопитель", "Storage"),
     "msi.cls.MEDIA": ("Звук", "Звук", "Audio"),
     "oc.title": ("Розгін відеокарти", "Разгон видеокарты", "GPU overclocking"),
-    "oc.sub": ("«Копіювати» кладе в буфер обміну ваше залізо разом із готовим запитом про розгін через MSI Afterburner. "
-               "Вставте його в DeepSeek — отримаєте покроковий план.",
-               "«Копировать» кладёт в буфер обмена ваше железо вместе с готовым запросом о разгоне через MSI "
-               "Afterburner. Вставьте его в DeepSeek — получите пошаговый план.",
-               "“Copy” puts your hardware and a ready-made MSI Afterburner overclocking request on the clipboard. "
-               "Paste it into DeepSeek for a step-by-step plan."),
-    "oc.copy": ("Копіювати характеристики", "Копировать характеристики", "Copy specs"),
-    "oc.deepseek": ("Відкрити DeepSeek", "Открыть DeepSeek", "Open DeepSeek"),
-    "oc.copied": ("Скопійовано — вставте в чат DeepSeek", "Скопировано — вставьте в чат DeepSeek", "Copied — paste it into DeepSeek"),
+    "oc.sub": ("Розганяти безпечно — маленькими кроками й з перевіркою після кожного. Частоти й ліміти змінює MSI "
+               "Afterburner, а OptimaX перевіряє стабільність стрес-тестом із датчиками й аварійною зупинкою.",
+               "Разгонять безопасно — маленькими шагами и с проверкой после каждого. Частоты и лимиты меняет MSI "
+               "Afterburner, а OptimaX проверяет стабильность стресс-тестом с датчиками и аварийной остановкой.",
+               "Overclock safely — in small steps, checking after each one. MSI Afterburner changes the clocks and "
+               "limits; OptimaX checks stability with a stress test that has sensors and an emergency stop."),
+    "oc.step1": ("Power Limit і Temp Limit — на максимум, який дозволяє карта; криву вентиляторів зробіть активнішою.",
+                 "Power Limit и Temp Limit — на максимум, который позволяет карта; кривую вентиляторов сделайте "
+                 "активнее.",
+                 "Set Power Limit and Temp Limit to the maximum the card allows and make the fan curve more aggressive."),
+    "oc.step2": ("Core Clock +25…50 МГц за крок, після кожного — стрес-тест відеокарти на 5–10 хвилин.",
+                 "Core Clock +25…50 МГц за шаг, после каждого — стресс-тест видеокарты на 5–10 минут.",
+                 "Raise Core Clock by 25–50 MHz per step and run a 5–10 minute GPU stress test after each one."),
+    "oc.step3": ("Артефакти, вильот гри чи скидання драйвера — поверніть попередній стабільний крок.",
+                 "Артефакты, вылет игры или сброс драйвера — верните предыдущий стабильный шаг.",
+                 "Artifacts, a game crash or a driver reset: go back to the last stable step."),
+    "oc.step4": ("Потім так само Memory Clock (+50…100 МГц за крок); наприкінці — довгий стрес-тест на 30 хвилин.",
+                 "Затем так же Memory Clock (+50…100 МГц за шаг); в конце — долгий стресс-тест на 30 минут.",
+                 "Then do the same for Memory Clock (+50–100 MHz per step), and finish with a 30-minute stress test."),
+    "oc.stress": ("Стрес-тест", "Стресс-тест", "Stress test"),
     "oc.ab_start": ("MSI Afterburner запускається", "MSI Afterburner запускается", "MSI Afterburner is starting"),
     "oc.ab_fail": ("Не вдалося запустити", "Не удалось запустить", "Could not start"),
     "oc.ab_none_t": ("MSI Afterburner не знайдено", "MSI Afterburner не найден", "MSI Afterburner not found"),
@@ -554,18 +564,6 @@ STRINGS = {
                      "загрузки?",
                      "Put MSIAfterburner.exe in an MSI folder next to OptimaX or install it. Open the download page?"),
     "oc.ab_open": ("Відкрити сторінку", "Открыть страницу", "Open the page"),
-    "oc.prompt": ("Моє залізо:\n- Процесор: {cpu}\n- Відеокарта: {gpu}\n- Пам'ять: {ram}\n- Система: {os}\n\n"
-                  "Допоможи безпечно розігнати відеокарту через MSI Afterburner: стартові значення Core Clock і Memory "
-                  "Clock для моєї моделі, Power Limit і Temp Limit, криву вентиляторів, крок збільшення частот і чим "
-                  "перевіряти стабільність після кожного кроку. Враховуй обсяг відеопам'яті й мій процесор.",
-                  "Моё железо:\n- Процессор: {cpu}\n- Видеокарта: {gpu}\n- Память: {ram}\n- Система: {os}\n\n"
-                  "Помоги безопасно разогнать видеокарту через MSI Afterburner: стартовые значения Core Clock и "
-                  "Memory Clock для моей модели, Power Limit и Temp Limit, кривую вентиляторов, шаг увеличения частот "
-                  "и чем проверять стабильность после каждого шага. Учитывай объём видеопамяти и мой процессор.",
-                  "My hardware:\n- CPU: {cpu}\n- GPU: {gpu}\n- Memory: {ram}\n- OS: {os}\n\n"
-                  "Help me safely overclock my GPU with MSI Afterburner: starting Core Clock and Memory Clock values "
-                  "for my model, Power Limit and Temp Limit, a fan curve, how much to raise clocks per step and how to "
-                  "test stability after each step. Take my VRAM size and CPU into account."),
 
     # ── ноутбук ──
     "lp.sub": ("Живлення від мережі й батареї, нагрів, сон і стан батареї.", "Питание от сети и батареи, нагрев, сон и "
@@ -632,18 +630,6 @@ STRINGS = {
     "st.src.task": ("планувальник", "планировщик", "Task Scheduler"),
 
     # ── вигляд ──
-    "lk.sub": ("Провідник, тема й кольори виділення. Усе застосовується одразу.", "Проводник, тема и цвета выделения. Всё "
-               "применяется сразу.", "Explorer, theme and selection colors. Everything applies right away."),
-    "lk.explorer": ("Провідник і система", "Проводник и система", "Explorer and system"),
-    "lk.explorer_d": ("Перемикачі застосовуються одразу й так само відкочуються.", "Переключатели применяются сразу и так же "
-                      "откатываются.", "Switches apply right away and revert the same way."),
-    "lk.colors": ("Кольори виділення", "Цвета выделения", "Selection colors"),
-    "lk.colors_d": ("Рамка виділення файлів і колір виділеного тексту.", "Рамка выделения файлов и цвет выделенного текста.",
-                    "File selection box and highlighted text color."),
-    "lk.pick": ("Обрати колір у палітрі", "Выбрать цвет в палитре", "Pick a color"),
-    "lk.reset": ("Повернути початковий", "Вернуть исходный", "Restore original"),
-    "lk.applied": ("{what}: застосовано", "{what}: применено", "{what}: applied"),
-    "lk.restored": ("{what}: початковий колір повернуто", "{what}: исходный цвет возвращён", "{what}: original color restored"),
 
     # ── резервні копії ──
     "bk.sub": ("Журнал усіх змін, точки відновлення Windows і профілі налаштувань.", "Журнал всех изменений, точки "

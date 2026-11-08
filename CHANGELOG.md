@@ -2,6 +2,24 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [Unreleased]
+
+До релізу 13 листопада. Прибрано зайве — за стратегією «головне нагорі».
+
+### Змінено
+
+- **Сторінка «Залізо» стала розділом Hardware Center «Перевірка збірки».** Характеристики вона дублювала з розділу «Залізо» Hardware Center, а перевірку збірки з кнопками «Виправити», особливості платформи, MSI Mode й розгін відеокарти тепер видно поруч із тестами заліза. Кнопка «Усі перевірки» на головній веде туди. У меню на один пункт менше.
+- **Сторінку «Вигляд» прибрано.** Перемикачі Провідника й панелі завдань і так були в експертному меню, а значки, розширення файлів, тема, Alt+Tab, Aero Shake і залипання клавіш тепер там у новій групі «Вигляд» — з переглядом змін перед застосуванням, як усі оптимізації. Редактора кольорів виділення більше немає; застосовані раніше кольори видно й відкочуються в «Резервних копіях».
+- **Розгін відеокарти — без DeepSeek.** Замість кнопки, що копіювала характеристики й відкривала сторонній AI-чат, — чотири безпечні кроки з MSI Afterburner і кнопка стрес-тесту OptimaX для перевірки кожного кроку.
+- Чипи розділів Hardware Center переносяться за шириною й не обрізають назви («Діагностика Windows», «Перевірка перед покупкою»).
+
+<details>
+<summary>English</summary>
+
+**Changed:** the Hardware page is now the Build check section of Hardware Center (its specs duplicated Hardware info; the build check with Fix buttons, platform notes, MSI Mode and GPU overclocking now sit next to the hardware tests), so the menu is one item shorter. The Appearance page is gone: File Explorer and taskbar switches were already in the Expert menu, and icons, file extensions, theme, Alt+Tab, Aero Shake and Sticky Keys move there as a new Appearance group with a preview before applying; the selection colour editor is removed, and colours applied earlier stay visible and reversible in Backups. GPU overclocking no longer copies a prompt for DeepSeek: four safe steps with MSI Afterburner and a button for the OptimaX stress test instead. Hardware Center section chips wrap instead of cutting their names.
+
+</details>
+
 ## [6.10.1] — 2026-11-08
 
 Виправлення інсталятора, простіше меню й підготовка до підпису коду.
