@@ -151,6 +151,10 @@ The portable `OptimaX-<version>-portable.exe` runs without installation. You nee
 
 Found a bug or have an idea for a new optimization? [Open an issue](https://github.com/hatogg/OptimaX-by-X44TO/issues/new/choose). Pull requests are welcome: how to add an optimization in two lines and run the tests is in [CONTRIBUTING.md](CONTRIBUTING.md). Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
+## Support
+
+OptimaX is free, with no ads and no paid features. If it helped you, you can support development through the [Monobank jar](https://send.monobank.ua/jar/8c6mp6KcpG). A star on GitHub and a post about your result help a lot too.
+
 ## License
 
 [MIT](LICENSE) © X44TO
