@@ -2,6 +2,25 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [6.12] — 2026-11-08
+
+«Чому зависає?» — ловець фризів, коли на 1–5 секунд зависає все одразу: картинка, відео й звук ([#10](https://github.com/hatogg/OptimaX-by-X44TO/issues/10)).
+
+### Додано
+
+- **Картка «Чому зависає?» на сторінці «Діагностика».** Перемикач «Ловити фризи у фоні» запускає окремий легкий процес (`OptimaX.exe --freeze-watch`, без Qt), поки OptimaX відкрита або в треї. Потік із пріоритетом TIME_CRITICAL прокидається кожні 50 мс і міряє запізнення за QueryUnbiasedInterruptTime: звичайне навантаження його не затримує, а сон і гібернація не рахуються. Окремий процес — щоб «фризом» не вважався зайнятий інтерфейс самої OptimaX.
+- **Чорна скринька й вердикт.** Щосекунди лічильники Windows: DPC і переривання (усього й на найгарячішому ядрі), процесор, черга й зайнятість диска, вільна пам'ять, читання з підкачки, найактивніший процес. Збір, що охоплює фриз, і журнал System за хвилину до й пів хвилини після (WHEA, скидання накопичувача 129 / 153, відеодрайвер 4101 і nvlddmkm, USB, ACPI, TPM, мережеві драйвери) дають причину: апаратна помилка, накопичувач, відеодрайвер, шторм DPC драйвера (мережевого, USB чи іншого), перевантажений диск, брак пам'яті, процесор — або «Windows нічого не робила»: зупинка поза Windows (прошивка чи залізо). Сон і modern standby поруч — не фриз, такі записи відкидаються. Підсумок — найчастіша причина й рід: залізо, драйвер, програма чи прошивка — з порадами.
+- **Перевірка AMD fTPM.** Якщо TPM вбудований у процесор AMD (Win32_Tpm: виробник «AMD»), картка попереджає про відомі фризи fTPM із заїканням звуку, показує дату BIOS і пояснює, як безпечно перевірити (з попередженням про BitLocker), а «тихі» фризи на такому ПК позначаються як fTPM.
+- **Глибокий запис драйверів (WPR).** За бажанням вбудований у Windows WPR тримає DPC, переривання й завантажені драйвери в кільцевому буфері (64 МБ, профіль `OptimaX.wprp`) і зберігає `.etl` саме в момент фризу — для Windows Performance Analyzer чи звіту. Лишаються три останні записи; ловець сам скасовує запис, коли зупиняється.
+- Про новий фриз — банер на головній і сповіщення (з трею теж). Самоперевірка на Windows перевіряє годинник, запит журналу, TPM і що WPR приймає профіль OptimaX. Новий модуль `freezecatch.py`.
+
+<details>
+<summary>English</summary>
+
+**Added:** Why does it freeze? on the Diagnostics page — a background freeze catcher for 1–5 second hangs where picture, video and sound stop at once (#10). A separate lightweight process (`OptimaX.exe --freeze-watch`, no Qt) runs a TIME_CRITICAL thread that wakes every 50 ms and measures lateness with QueryUnbiasedInterruptTime, so ordinary load doesn't trip it and sleep doesn't count. A per-second black box of Windows counters (DPCs and interrupts in total and on the hottest core, CPU, disk queue and busy time, free memory, page-file reads, top process) plus the System log around the freeze (WHEA, storage resets 129/153, graphics driver 4101 and nvlddmkm, USB, ACPI, TPM, network drivers) give a cause: hardware error, drive, graphics driver, a driver's DPC storm, overloaded disk, low memory, CPU, or “Windows was doing nothing” — a stall outside Windows (firmware or hardware). Sleep and modern standby are filtered out. A summary names the most common cause and whether it's hardware, a driver, software or firmware, with advice. AMD fTPM is detected (Win32_Tpm) with a warning, the BIOS date and a safe way to test it; quiet freezes on such PCs are marked as fTPM. Optional deep recording keeps DPCs, interrupts and loaded drivers in a 64 MB WPR ring buffer and saves an `.etl` at the moment of the freeze for Windows Performance Analyzer. New freezes show a home banner and a notification. The self-test on Windows checks the clock, the event query, the TPM and that WPR accepts the profile. New module `freezecatch.py`.
+
+</details>
+
 ## [6.11] — 2026-11-08
 
 Прибрано зайве — за стратегією «головне нагорі» — і чесний каталог оптимізацій.

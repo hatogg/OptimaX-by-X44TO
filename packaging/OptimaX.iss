@@ -2,7 +2,7 @@
 ; Збирається через build_installer.bat; версію та шлях до файлів програми підставляє скрипт збірки.
 
 #ifndef MyAppVersion
-  #define MyAppVersion "6.11"
+  #define MyAppVersion "6.12"
 #endif
 #ifndef AppBuildDir
   #define AppBuildDir "..\dist\OptimaX"
