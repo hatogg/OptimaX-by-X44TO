@@ -6,7 +6,11 @@ Generated from the program code (129 optimizations in 17 sections, version 6.10.
 
 Before applying, OptimaX checks compatibility with your hardware and Windows version: irrelevant items are disabled, items harmful to your PC (for example, turning off Game Bar on AMD X3D) are blocked, and the reason is shown under the item.
 
-## CPU and memory
+## Speed
+
+What shows up in measurements: FPS, latency, CPU and memory load. Check it with the FPS test or smart optimization.
+
+### CPU and memory
 
 Power plan, core parking, priorities, page file, memory compression.
 
@@ -25,7 +29,7 @@ Power plan, core parking, priorities, page file, memory compression.
 | 🔵 | Memory compression by RAM size <sub>(restart)</sub> | 32+ GB — compression off (plenty of RAM, less CPU work); up to 12 GB — on, so Windows pages to disk less. | Full, Medium, Laptop, Old PC, Xeon / X99 | yes |
 | 🔴 | Turn off Spectre and Meltdown mitigations <sub>(restart, lowers security)</sub> | A noticeable boost on old Intel CPUs (up to 8th–9th gen), but the PC becomes more exposed to malicious sites and apps. Only if you accept the risk. | — | yes |
 
-## Gaming
+### Gaming
 
 Game Bar, fullscreen, timers, mouse and keyboard, VRR, Auto HDR, GPU scheduling.
 
@@ -43,7 +47,7 @@ Game Bar, fullscreen, timers, mouse and keyboard, VRR, Auto HDR, GPU scheduling.
 | 🟡 | Auto HDR <sub>(Windows 11)</sub> | Windows adds HDR to older DirectX 11/12 games. HDR monitors only. | — | yes |
 | 🟡 | Fast keyboard repeat | Minimum repeat delay and maximum rate — a held key reacts instantly in games and text. | Full | yes |
 
-## Hardware and drivers
+### Hardware and drivers
 
 For your CPU and GPU: P/E-cores, MSI Mode, NVIDIA, AMD, VBS, PCIe, USB.
 
@@ -57,7 +61,7 @@ For your CPU and GPU: P/E-cores, MSI Mode, NVIDIA, AMD, VBS, PCIe, USB.
 | 🔵 | Turn off PCIe power saving | The GPU and NVMe drives never enter power saving — fewer micro-stutters. | Full, Medium, Xeon / X99 | yes |
 | 🔵 | Turn off USB selective suspend | Mice, keyboards and headsets stop dropping out or going to sleep. | Full, Medium, Laptop, Xeon / X99 | yes |
 
-## Network
+### Network
 
 Ping, Nagle, buffers, adapter power saving, Wi-Fi and Ethernet for gaming.
 
@@ -71,7 +75,7 @@ Ping, Nagle, buffers, adapter power saving, Wi-Fi and Ethernet for gaming.
 | 🔵 | Wi-Fi for gaming: less roaming <sub>(restart)</sub> | The adapter scans for other access points less often mid-game — fewer ping spikes. Best for a home with one router. | Full, Medium | yes |
 | 🟡 | Ethernet: minimum latency <sub>(restart)</sub> | Turns off Interrupt Moderation and Flow Control — packets are handled at once. Slightly more CPU load. | Full | yes |
 
-## Laptop
+### Laptop
 
 Plugged-in and battery power, heat, sleep that doesn't drain the battery.
 
@@ -84,7 +88,7 @@ Plugged-in and battery power, heat, sleep that doesn't drain the battery.
 | 🔵 | No wake timers | Updates and tasks won't wake the laptop on battery. | Laptop, Old PC | yes |
 | 🟡 | Classic sleep (S3) instead of Modern Standby <sub>(restart)</sub> | The laptop stops draining and heating up in a bag. Works only if the firmware supports S3 — otherwise just roll back. | — | yes |
 
-## Lightweight
+### Lightweight
 
 For weak and old PCs: animations, background apps, widgets, Defender, NTFS, Windows 10 clutter.
 
@@ -105,7 +109,20 @@ For weak and old PCs: animations, background apps, widgets, Defender, NTFS, Wind
 | 🔵 | Turn off Windows Ink Workspace <sub>(Windows 10)</sub> | The pen workspace no longer starts. Skip this if you draw with a pen. | Full, Medium, Old PC, Xeon / X99 | yes |
 | 🔵 | Remove Meet Now <sub>(Windows 10)</sub> | The Skype Meet Now button leaves the taskbar. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
 
-## Windows 11: AI and ads
+### Services
+
+Background services and search indexing.
+
+| | Optimization | What it does | Profiles | Rollback |
+| --- | --- | --- | --- | --- |
+| 🟡 | Turn off unneeded services | Turns off Windows services most people don't need: telemetry, error reporting, fax, retail demo, offline maps, remote registry, location, wallet. PC and laptop maker services, drivers, anti-cheats and VPNs are left alone. | Full, Medium, Old PC, Xeon / X99 | yes |
+| 🔴 | Turn off search indexing | The drive isn't scanned in the background. Searching files from Start gets slower. | Old PC | yes |
+
+## Comfort and privacy
+
+Fewer ads, less tracking and clutter, a tidy disk and File Explorer. This doesn't raise FPS — and we don't promise it does.
+
+### Windows 11: AI and ads
 
 Copilot, Recall, Click to Do, AI in apps, Start recommendations, tips, Bing in search.
 
@@ -123,7 +140,7 @@ Copilot, Recall, Click to Do, AI in apps, Start recommendations, tips, Bing in s
 | 🔵 | No fun facts on the lock screen | The lock screen shows only the picture — no tips or ads. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
 | 🟡 | Search without Bing <sub>(sign out and in)</sub> | Start search looks only for files and apps on the PC — faster, and nothing is sent to the web. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
 
-## Privacy
+### Privacy
 
 Telemetry, advertising ID, data collection and tracking tasks.
 
@@ -134,7 +151,7 @@ Telemetry, advertising ID, data collection and tracking tasks.
 | 🔵 | Turn off telemetry tasks, Copilot and Recall | 14 data-collection scheduled tasks, Copilot, Windows AI analysis and Recall. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
 | 🟡 | Turn off tracking tasks | Maps, Family Safety, location and the background app broker. | Full, Medium, Laptop, Old PC, Xeon / X99 | yes |
 
-## File Explorer and taskbar
+### File Explorer and taskbar
 
 Classic context menu, fast folders, End task, less clutter in menus.
 
@@ -148,7 +165,7 @@ Classic context menu, fast folders, End task, less clutter in menus.
 | 🟡 | No recent files or frequent folders | Quick access stops listing what you opened recently — more private and a little faster. | — | yes |
 | 🟡 | Less context-menu clutter | Removes Share, Give access to, Restore previous versions, Cast to Device and Ask Copilot. | — | yes |
 
-## Appearance
+### Appearance
 
 Icons and file extensions, the Windows theme, Alt+Tab, Aero Shake and Sticky Keys.
 
@@ -161,10 +178,8 @@ Icons and file extensions, the Windows theme, Alt+Tab, Aero Shake and Sticky Key
 | 🔵 | Turn off Aero Shake | Shaking a window no longer minimizes the others. | — | yes |
 | 🔵 | Fast Alt+Tab and menus | Menus and previews open without delay. | — | yes |
 | 🔵 | Turn off Sticky Keys | No Sticky Keys prompt after pressing Shift five times. | — | yes |
-| 🔵 | Mouse selection color | The file selection box and fill. | — | yes |
-| 🔵 | Selected text color | Text color inside a selection. | — | yes |
 
-## Windows Update
+### Windows Update
 
 No driver swaps, no restarts mid-work, pause and version lock.
 
@@ -175,7 +190,7 @@ No driver swaps, no restarts mid-work, pause and version lock.
 | 🔴 | Pause updates for 5 weeks | No updates for 35 days — handy before a tournament or deadline. Security patches wait too, so don't keep it paused forever. | — | yes |
 | 🟡 | Lock the current Windows version | Windows stays on its current version (e.g., 24H2) and gets only security patches — no big feature updates that reset settings. | — | yes |
 
-## Audio
+### Audio
 
 Lower audio latency and no game ducking during calls.
 
@@ -184,7 +199,7 @@ Lower audio latency and no game ducking during calls.
 | 🟡 | Turn off audio enhancements | No driver "enhancements" (virtual surround, EQ) — lower latency and less crackling. If the sound gets worse, roll back. | Full, Medium | yes |
 | 🔵 | Don't lower volume during calls | When someone talks in Discord or Teams, the game and music stay at full volume. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
 
-## System
+### System
 
 Defender, OneDrive, classic photo viewer, fast startup.
 
@@ -194,16 +209,7 @@ Defender, OneDrive, classic photo viewer, fast startup.
 | 🔵 | Turn off Fast Startup | Shut down really powers off: fewer driver glitches, proper dual boot, updates install correctly. On an SSD the boot-time difference is barely noticeable. | Full, Medium, Xeon / X99 | yes |
 | 🔵 | Classic photo viewer | Brings back the fast Windows Photo Viewer for JPG, PNG, BMP, GIF and TIFF. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
 
-## Services
-
-Background services and search indexing.
-
-| | Optimization | What it does | Profiles | Rollback |
-| --- | --- | --- | --- | --- |
-| 🟡 | Turn off unneeded services | Turns off Windows services most people don't need: telemetry, error reporting, fax, retail demo, offline maps, remote registry, location, wallet. PC and laptop maker services, drivers, anti-cheats and VPNs are left alone. | Full, Medium, Old PC, Xeon / X99 | yes |
-| 🔴 | Turn off search indexing | The drive isn't scanned in the background. Searching files from Start gets slower. | Old PC | yes |
-
-## Disk space
+### Disk space
 
 Windows compression, hibernation file, reserved storage.
 
@@ -213,7 +219,7 @@ Windows compression, hibernation file, reserved storage.
 | 🔴 | Turn off hibernation | Deletes hiberfil.sys (nearly the size of your RAM). Hibernate and Fast Startup go away. | Old PC | yes |
 | 🔵 | Turn off reserved storage | Gives back the ~7 GB Windows keeps aside for updates. | Old PC | yes |
 
-## Maintenance
+### Maintenance
 
 One-time actions: cleanup, disk and driver checks.
 
@@ -226,7 +232,7 @@ One-time actions: cleanup, disk and driver checks.
 | 🔵 | Clear Explorer history | Recent documents, Run, typed paths and UserAssist. Also resets every folder's view (ShellBags). For privacy — it doesn't make the PC faster. | — | no |
 | 🔵 | Deep junk cleanup | Windows Update and Edge caches and temporary files, up to a minute. Old update copies (WinSxS) are a separate action under Cleanup because they take long on laptops. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | no |
 
-## Built-in apps
+### Built-in apps
 
 Remove unneeded Windows 10 and 11 apps: from Clipchamp and Teams to Copilot.
 

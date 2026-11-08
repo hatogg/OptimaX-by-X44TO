@@ -2084,9 +2084,20 @@ def tw(id_, group, ops=None, **kw) -> Tweak:
     return t
 
 
-# «visual» (значки, розширення, тема, Alt+Tab…) — з 6.10.1 в експертному меню: окремої сторінки «Вигляд» більше немає
-GROUP_IDS = ["perf", "gaming", "hw", "net", "laptop", "lite", "ai", "privacy", "explorer", "visual", "wu", "audio",
-             "system", "svc", "space", "maint", "metro"]
+# Каталог чесно поділено на дві частини:
+#   speed   — «Швидкість»: те, що можна побачити в замірах (FPS, затримка, завантаження, простій ядер);
+#   comfort — «Зручність і приватність»: менше реклами, стеження й зайвого, порядок на диску. FPS від цього не росте,
+#             тож обіцянка «доводимо цифрами» стосується першої частини.
+# «visual» (значки, розширення, тема, Alt+Tab…) — в експертному меню: окремої сторінки «Вигляд» більше немає.
+GROUP_KINDS = {
+    "speed": ["perf", "gaming", "hw", "net", "laptop", "lite", "svc"],
+    "comfort": ["ai", "privacy", "explorer", "visual", "wu", "audio", "system", "space", "maint", "metro"],
+}
+GROUP_IDS = GROUP_KINDS["speed"] + GROUP_KINDS["comfort"]
+
+
+def group_kind(gid: str) -> str:
+    return next((k for k, gs in GROUP_KINDS.items() if gid in gs), "comfort")
 
 SP = r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
 MM = r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"

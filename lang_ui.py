@@ -220,6 +220,20 @@ STRINGS = {
     "grp.metro": ("Вбудовані додатки", "Встроенные приложения", "Built-in apps"),
     "grp.metro.d": ("Видалення непотрібних додатків Windows 10 і 11: від Clipchamp і Teams до Copilot.", "Удаление ненужных приложений Windows 10 и 11: от Clipchamp и Teams до Copilot.",
                    "Remove unneeded Windows 10 and 11 apps: from Clipchamp and Teams to Copilot."),
+    "kind.speed": ("Швидкість", "Скорость", "Speed"),
+    "kind.speed.d": ("Те, що видно в замірах: FPS, затримка, завантаження процесора й пам'яті. Перевіряйте тестом FPS "
+                     "або розумною оптимізацією.",
+                     "То, что видно в замерах: FPS, задержка, загрузка процессора и памяти. Проверяйте тестом FPS или "
+                     "умной оптимизацией.",
+                     "What shows up in measurements: FPS, latency, CPU and memory load. Check it with the FPS test or "
+                     "smart optimization."),
+    "kind.comfort": ("Зручність і приватність", "Удобство и приватность", "Comfort and privacy"),
+    "kind.comfort.d": ("Менше реклами, стеження й зайвого, порядок на диску й у Провіднику. FPS від цього не росте — "
+                       "і ми цього не обіцяємо.",
+                       "Меньше рекламы, слежки и лишнего, порядок на диске и в Проводнике. FPS от этого не растёт — "
+                       "и мы этого не обещаем.",
+                       "Fewer ads, less tracking and clutter, a tidy disk and File Explorer. This doesn't raise FPS — "
+                       "and we don't promise it does."),
     "grp.visual": ("Вигляд", "Внешний вид", "Appearance"),
     "grp.visual.d": ("Значки й розширення файлів, тема Windows, Alt+Tab, Aero Shake і залипання клавіш.",
                      "Значки и расширения файлов, тема Windows, Alt+Tab, Aero Shake и залипание клавиш.",

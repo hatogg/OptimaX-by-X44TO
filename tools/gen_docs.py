@@ -55,22 +55,11 @@ def build(lang: str) -> str:
     out = [f"# {t_['title']}", "",
            f"[{t_['back']}]({readme}) · [{t_['other']}]({t_['other_link']})", "",
            t_["intro"].format(n=len(items_all), g=len(E.GROUP_IDS), v=E.VERSION), "", t_["note"], ""]
-    for gid in E.GROUP_IDS:
-        items = [t for t in E.TWEAKS if t.group == gid and not t.retired]
-        if not items:
-            continue
-        out += [f"## {tr('grp.' + gid)}", ""]
-        d = tr(f"grp.{gid}.d")
-        if d and d != f"grp.{gid}.d":
-            out += [d, ""]
-        out += [t_["cols"], "| --- | --- | --- | --- | --- |"]
-        for t in items:
-            tags = [x for x, _ in t.badges()]
-            title = t.title + (f" <sub>({', '.join(tags)})</sub>" if tags else "")
-            profs = ", ".join(tr(f"prof.{k}.name") for k in "FMLTOX" if k in t.p) or "—"
-            desc = (t.desc or "").replace("|", "\\|").replace("\n", " ")
-            out.append(f"| {IMPACT[t.impact]} | {title} | {desc} | {profs} | {t_['yes'] if t.reversible else t_['no']} |")
-        out.append("")
+    # дві частини каталогу (engine.GROUP_KINDS): «Швидкість» — те, що видно в замірах; «Зручність і приватність»
+    for kind, gids in E.GROUP_KINDS.items():
+        out += [f"## {tr('kind.' + kind)}", "", tr(f"kind.{kind}.d"), ""]
+        for gid in gids:
+            out += group_table(gid, t_)
     gone = [t for t in E.TWEAKS if t.retired]
     if gone:
         out += [f"## {t_['retired']}", "", t_["retired_d"], "", t_["retired_cols"], "| --- | --- |"]
@@ -79,6 +68,25 @@ def build(lang: str) -> str:
             out.append(f"| {t.title} | {why[:1].upper() + why[1:]} |")
         out.append("")
     return "\n".join(out)
+
+
+def group_table(gid: str, t_: dict) -> list:
+    items = [t for t in E.TWEAKS if t.group == gid and not t.retired and not t.custom]
+    if not items:
+        return []
+    out = [f"### {tr('grp.' + gid)}", ""]
+    d = tr(f"grp.{gid}.d")
+    if d and d != f"grp.{gid}.d":
+        out += [d, ""]
+    out += [t_["cols"], "| --- | --- | --- | --- | --- |"]
+    for t in items:
+        tags = [x for x, _ in t.badges()]
+        title = t.title + (f" <sub>({', '.join(tags)})</sub>" if tags else "")
+        profs = ", ".join(tr(f"prof.{k}.name") for k in "FMLTOX" if k in t.p) or "—"
+        desc = (t.desc or "").replace("|", "\\|").replace("\n", " ")
+        out.append(f"| {IMPACT[t.impact]} | {title} | {desc} | {profs} | {t_['yes'] if t.reversible else t_['no']} |")
+    out.append("")
+    return out
 
 
 def main() -> int:
