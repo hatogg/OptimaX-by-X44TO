@@ -189,6 +189,33 @@ def test_wpr_profile_is_valid_and_small():
         root.find("./Profiles/SystemProvider").get("Id")
 
 
+def test_wpr_accepts_the_profile_on_windows():
+    """Справжній WPR: запис із профілем OptimaX стартує й одразу скасовується (кільцевий буфер у пам'яті, система не
+    змінюється). Окремим тестом — щоб у журналі CI було видно «пройшов» чи причину пропуску."""
+    if not IS_WIN:
+        skip("WPR exists only on Windows")
+    import engine as E
+    exe = FZ.wpr_path()
+    if not exe:
+        skip("wpr.exe is not in System32 on this Windows")
+    if not E.is_admin():
+        skip("WPR needs administrator rights")
+    d = tempfile.mkdtemp(prefix="oxfz_")
+    t = FZ.DeepTrace(d)
+    old, E.DRY_RUN = E.DRY_RUN, False  # DeepTrace не стартує в режимі перегляду; тут нічого, крім запису в пам'яті
+    try:
+        ok = t.start()
+    finally:
+        E.DRY_RUN = old
+    if not ok and ("already" in t.error.lower() or "уже" in t.error.lower()):
+        skip(f"another WPR session is running: {t.error}")
+    try:
+        assert ok, f"wpr rejected the OptimaX profile: {t.error}"
+    finally:
+        t.cancel()
+    assert not t.on
+
+
 def test_prune_etl_keeps_the_newest():
     d = tempfile.mkdtemp(prefix="oxfz_")
     names = [f"freeze-202611{day:02d}-120000.etl" for day in range(1, 7)] + ["other.etl"]
