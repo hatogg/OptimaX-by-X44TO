@@ -8,9 +8,11 @@ import html
 import os
 import sys
 
+import re
+
 from PyQt6.QtCore import (Qt, QThread, pyqtSignal, pyqtProperty, QTimer, QPropertyAnimation, QEasingCurve,
                           QRectF, QPointF, QSize, QObject, QRect, QPoint)
-from PyQt6.QtGui import (QColor, QPainter, QPen, QIcon, QPixmap, QPainterPath, QFont, QLinearGradient)
+from PyQt6.QtGui import (QColor, QPainter, QPen, QIcon, QPixmap, QPainterPath, QFont, QLinearGradient, QPalette)
 from PyQt6.QtWidgets import (QWidget, QFrame, QLabel, QPushButton, QAbstractButton, QHBoxLayout, QVBoxLayout,
                              QScrollArea, QPlainTextEdit, QProgressBar, QDialog, QGraphicsOpacityEffect, QSizePolicy,
                              QLayout)
@@ -32,32 +34,71 @@ def asset(name: str):
 
 
 # ───────────────────────── тема ─────────────────────────
-T = {
-    "bg": "#0A0C11", "side": "#0D1016", "surf": "#12161E", "surf2": "#181D27", "hover": "#1F2532",
-    "line": "#202734", "line2": "#2A3242", "line3": "#3A4458",
-    "text": "#ECEFF4", "sub": "#9AA3B5", "mute": "#646D80",
-    "acc": "#5B8CFF", "acc_h": "#7AA2FF", "acc2": "#9B6BFF", "acc_bg": "#141D33", "acc_line": "#28407A",
-    "ok": "#3DD68C", "ok_bg": "#0F2219", "ok_line": "#1C4A33",
-    "warn": "#F5B83D", "warn_bg": "#261E0E", "warn_line": "#4E3C14",
-    "bad": "#FF5D6C", "bad_h": "#FF7A87", "bad_bg": "#2A1216", "bad_line": "#55212A",
-    "logbg": "#07090D",
+# Дві палітри з однаковими ключами. Кожен колір унікальний у межах обох палітр (і не #FFFFFF / #000000): так
+# перемикання теми наживо може перефарбувати навіть рядки стилів, де колір уже підставлено (remap_hex).
+THEMES = {
+    "dark": {
+        "bg": "#060A13", "side": "#090E1A", "surf": "#0E1524", "surf2": "#131C2F", "hover": "#1A2440",
+        "line": "#19223A", "line2": "#243052", "line3": "#33416A",
+        "text": "#E9EFFA", "sub": "#93A0BA", "mute": "#5D6984",
+        "acc": "#3B82FF", "acc_h": "#6AA1FF", "acc2": "#8B5CF6", "acc2_h": "#A783FA", "acc_bg": "#10203F",
+        "acc_line": "#21407F", "acc2_bg": "#1A1438",
+        "ok": "#2FE5A7", "ok_bg": "#0A2620", "ok_line": "#165440", "ok_hover": "#0F3329",
+        "warn": "#FFB443", "warn_bg": "#291E0B", "warn_line": "#5A4113",
+        "bad": "#FF5A73", "bad_h": "#FF7C90", "bad_bg": "#2B101A", "bad_line": "#5B2033",
+        "logbg": "#04070E", "pink": "#D17BF5", "cyan": "#36C8F5", "knob": "#C3CAD6", "shade": "#010309",
+    },
+    "light": {
+        "bg": "#EDF1F8", "side": "#F6F8FC", "surf": "#FDFDFF", "surf2": "#F3F6FB", "hover": "#E8EDF6",
+        "line": "#DDE4EF", "line2": "#CBD4E3", "line3": "#B0BCD0",
+        "text": "#0D1424", "sub": "#4D5970", "mute": "#8892A7",
+        "acc": "#2563EB", "acc_h": "#1D4FD0", "acc2": "#7C3AED", "acc2_h": "#6928D9", "acc_bg": "#E4ECFE",
+        "acc_line": "#B5C9FB", "acc2_bg": "#EFE7FE",
+        "ok": "#0B9F6E", "ok_bg": "#E0F5EC", "ok_line": "#A3DEC6", "ok_hover": "#CDEEDF",
+        "warn": "#B86E00", "warn_bg": "#FFF2DB", "warn_line": "#EFCD92",
+        "bad": "#DC2F4A", "bad_h": "#E84A62", "bad_bg": "#FCE6EA", "bad_line": "#F2B3BE",
+        "logbg": "#F4F6FA", "pink": "#A94BD6", "cyan": "#0A8FBF", "knob": "#FCFCFE", "shade": "#22314F",
+    },
 }
+T = dict(THEMES["dark"])  # поточна палітра; змінюється на місці (set_theme), тож `from ui_kit import T` бачить нову
+THEME = {"name": "dark"}
+MOTION = {"on": True}  # плавні анімації (у налаштуваннях можна вимкнути — для слабких ПК і тих, кого вони втомлюють)
+
+
+def dur(ms: int) -> int:
+    """Тривалість анімації з урахуванням налаштування «Плавні анімації»."""
+    return ms if MOTION["on"] else 0
+
+
+def is_dark() -> bool:
+    return THEME["name"] == "dark"
+
+
+def qc(key: str, alpha: int = 255) -> QColor:
+    """Колір палітри з прозорістю: qc("acc", 60)."""
+    c = QColor(T[key])
+    c.setAlpha(alpha)
+    return c
+
+
 IMPACT_COLOR = {"habits": "bad", "medium": "warn", "safe": "acc"}
 
 QSS = """
 QWidget { color: @text; }
 QWidget#root, QWidget#page, QDialog { background: @bg; }
 QFrame#side { background: @side; border-right: 1px solid @line; }
-QWidget#sideNav { background: @side; }
+QWidget#sideNav { background: transparent; }
 QLabel { background: transparent; }
 QLabel#display { font-size: 28px; font-weight: 700; }
-QLabel#h1 { font-size: 24px; font-weight: 600; }
+QLabel#hero { font-size: 46px; font-weight: 700; }
+QLabel#h1 { font-size: 26px; font-weight: 700; }
 QLabel#h2 { font-size: 16px; font-weight: 600; }
 QLabel#h3 { font-size: 14px; font-weight: 600; }
 QLabel#brand { font-size: 16px; font-weight: 700; }
 QLabel#sub { color: @sub; font-size: 13px; }
 QLabel#desc { color: @sub; font-size: 12px; }
 QLabel#muted { color: @mute; font-size: 12px; }
+QLabel#micro { color: @mute; font-size: 10px; font-weight: 700; letter-spacing: 1px; }
 QLabel#navcap { color: @mute; font-size: 11px; padding: 8px 14px 3px 14px; }
 QLabel#rowTitle { font-size: 14px; }
 QLabel#value { font-size: 15px; font-weight: 600; }
@@ -70,43 +111,47 @@ QLabel#warnNote { color: @warn; font-size: 12px; padding: 8px 14px 4px 14px; }
 QLabel#stepNum { background: @surf2; border: 1px solid @line2; border-radius: 12px; color: @sub;
                  font-size: 12px; font-weight: 600; }
 
-QFrame#card { background: @surf; border: 1px solid @line; border-radius: 14px; }
-QFrame#cardAccent { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #151D33, stop:1 #1A1530);
-                    border: 1px solid @acc_line; border-radius: 16px; }
+QFrame#card { background: @surf; border: 1px solid @line; border-radius: 16px; }
+QFrame#card:hover { border-color: @line2; }
+QFrame#cardAccent { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 @acc_bg, stop:0.55 @surf, stop:1 @acc2_bg);
+                    border: 1px solid @acc_line; border-radius: 18px; }
+QFrame#glass { background: @surf; border: 1px solid @line2; border-radius: 20px; }
 QFrame#row { background: transparent; border-radius: 10px; }
 QFrame#row:hover { background: @surf2; }
 QFrame#bar { background: @side; border-top: 1px solid @line; }
-QFrame#banner { background: @bad_bg; border: 1px solid @bad_line; border-radius: 12px; }
-QFrame#bannerWarn { background: @warn_bg; border: 1px solid @warn_line; border-radius: 12px; }
-QFrame#bannerInfo { background: @acc_bg; border: 1px solid @acc_line; border-radius: 12px; }
-QFrame#toast { background: @surf2; border: 1px solid @line3; border-radius: 12px; }
-QFrame#segbar { background: @surf; border: 1px solid @line; border-radius: 11px; }
+QFrame#banner { background: @bad_bg; border: 1px solid @bad_line; border-radius: 14px; }
+QFrame#bannerWarn { background: @warn_bg; border: 1px solid @warn_line; border-radius: 14px; }
+QFrame#bannerInfo { background: @acc_bg; border: 1px solid @acc_line; border-radius: 14px; }
+QFrame#toast { background: @surf2; border: 1px solid @line3; border-radius: 14px; }
+QFrame#segbar { background: @surf; border: 1px solid @line; border-radius: 12px; }
 
-QPushButton { background: @surf2; border: 1px solid @line2; border-radius: 9px; padding: 8px 16px; color: @text; }
+QPushButton { background: @surf2; border: 1px solid @line2; border-radius: 10px; padding: 8px 16px; color: @text; }
 QPushButton:hover { background: @hover; border-color: @line3; }
 QPushButton:pressed { background: @surf; }
 QPushButton:disabled { color: @mute; background: @surf; border-color: @line; }
 QPushButton:focus { border-color: @acc; }
 QPushButton#primary { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 @acc, stop:1 @acc2); border: none;
-                      color: #FFFFFF; font-weight: 600; padding: 10px 22px; }
-QPushButton#primary:hover { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 @acc_h, stop:1 #AE85FF); }
+                      color: #FFFFFF; font-weight: 600; padding: 10px 22px; border-radius: 12px; }
+QPushButton#primary:hover { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 @acc_h, stop:1 @acc2_h); }
+QPushButton#primary:pressed { background: @acc; }
 QPushButton#primary:disabled { background: @surf2; color: @mute; }
-QPushButton#danger { background: @bad; border: 1px solid @bad; color: #FFFFFF; font-weight: 600; padding: 10px 22px; }
+QPushButton#danger { background: @bad; border: 1px solid @bad; color: #FFFFFF; font-weight: 600; padding: 10px 22px;
+                     border-radius: 12px; }
 QPushButton#danger:hover { background: @bad_h; border-color: @bad_h; }
-QPushButton#good { background: @ok_bg; border: 1px solid @ok_line; color: @ok; padding: 10px 20px; }
-QPushButton#good:hover { background: #133126; border-color: @ok; }
+QPushButton#good { background: @ok_bg; border: 1px solid @ok_line; color: @ok; padding: 10px 20px; border-radius: 12px; }
+QPushButton#good:hover { background: @ok_hover; border-color: @ok; }
 QPushButton#good:disabled { color: @mute; background: @surf; border-color: @line; }
 QPushButton#ghost { background: transparent; border: none; color: @acc; padding: 4px 8px; }
 QPushButton#ghost:hover { color: @acc_h; }
 QPushButton#ghost:disabled { color: @mute; }
 QPushButton#sideUpd { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 @acc, stop:1 @acc2); border: none;
                       color: #FFFFFF; font-weight: 600; padding: 8px 12px; border-radius: 10px; text-align: left; }
-QPushButton#sideUpd:hover { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 @acc_h, stop:1 #AE85FF); }
+QPushButton#sideUpd:hover { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 @acc_h, stop:1 @acc2_h); }
 QPushButton#nav { text-align: left; background: transparent; border: none; border-radius: 10px;
                   padding: 7px 14px; color: @sub; font-size: 14px; }
 QPushButton#nav:hover { background: @surf; color: @text; }
 QPushButton#nav:checked { background: @acc_bg; color: @text; font-weight: 600; }
-QPushButton#seg { background: transparent; border: none; border-radius: 8px; padding: 7px 18px; color: @sub;
+QPushButton#seg { background: transparent; border: none; border-radius: 9px; padding: 7px 18px; color: @sub;
                   font-weight: 600; }
 QPushButton#seg:hover { color: @text; }
 QPushButton#seg:checked { background: @acc; color: #FFFFFF; }
@@ -115,21 +160,22 @@ QPushButton#chip { background: transparent; border: 1px solid @line2; border-rad
 QPushButton#chip:hover { color: @text; border-color: @line3; }
 QPushButton#chip:checked { background: @acc_bg; border-color: @acc; color: @text; }
 
-QLineEdit, QSpinBox { background: @surf; border: 1px solid @line2; border-radius: 9px; padding: 7px 10px;
-                      selection-background-color: @acc; }
-QLineEdit:focus, QSpinBox:focus { border-color: @acc; }
+QLineEdit, QSpinBox, QComboBox { background: @surf; border: 1px solid @line2; border-radius: 10px; padding: 7px 10px;
+                                 selection-background-color: @acc; selection-color: #FFFFFF; }
+QLineEdit:focus, QSpinBox:focus, QComboBox:focus { border-color: @acc; }
+QComboBox QAbstractItemView { background: @surf2; border: 1px solid @line2; selection-background-color: @acc_bg; }
 
 QScrollArea { border: none; background: transparent; }
-QScrollBar:vertical { background: transparent; width: 12px; margin: 2px; }
-QScrollBar::handle:vertical { background: @line2; border-radius: 4px; min-height: 36px; margin: 0 2px; }
+QScrollBar:vertical { background: transparent; width: 10px; margin: 2px; }
+QScrollBar::handle:vertical { background: @line2; border-radius: 3px; min-height: 36px; margin: 0 2px; }
 QScrollBar::handle:vertical:hover { background: @line3; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
-QScrollBar:horizontal { background: transparent; height: 12px; margin: 2px; }
-QScrollBar::handle:horizontal { background: @line2; border-radius: 4px; min-width: 36px; margin: 2px 0; }
+QScrollBar:horizontal { background: transparent; height: 10px; margin: 2px; }
+QScrollBar::handle:horizontal { background: @line2; border-radius: 3px; min-width: 36px; margin: 2px 0; }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
 
-QPlainTextEdit#log { background: @logbg; border: 1px solid @line; border-radius: 12px; padding: 8px 10px;
+QPlainTextEdit#log { background: @logbg; border: 1px solid @line; border-radius: 14px; padding: 8px 10px;
                      color: @sub; selection-background-color: @acc_bg; }
 QProgressBar { background: @surf2; border: none; border-radius: 4px; }
 QProgressBar#sizebar { background: @surf2; border-radius: 3px; }
@@ -152,6 +198,164 @@ def build_qss() -> str:
     return s
 
 
+def app_palette() -> QPalette:
+    pal = QPalette()
+    roles = {
+        QPalette.ColorRole.Window: T["bg"], QPalette.ColorRole.WindowText: T["text"],
+        QPalette.ColorRole.Base: T["surf"], QPalette.ColorRole.AlternateBase: T["surf2"],
+        QPalette.ColorRole.Text: T["text"], QPalette.ColorRole.Button: T["surf2"],
+        QPalette.ColorRole.ButtonText: T["text"], QPalette.ColorRole.Highlight: T["acc"],
+        QPalette.ColorRole.HighlightedText: "#FFFFFF", QPalette.ColorRole.ToolTipBase: T["surf2"],
+        QPalette.ColorRole.ToolTipText: T["text"], QPalette.ColorRole.PlaceholderText: T["mute"],
+        QPalette.ColorRole.Link: T["acc"],
+    }
+    for role, col in roles.items():
+        pal.setColor(role, QColor(col))
+    return pal
+
+
+def system_theme() -> str:
+    """Тема Windows для програм («Персоналізація → Кольори»): dark | light."""
+    try:
+        from PyQt6.QtGui import QGuiApplication
+        scheme = QGuiApplication.styleHints().colorScheme()
+        if scheme == Qt.ColorScheme.Light:
+            return "light"
+        if scheme == Qt.ColorScheme.Dark:
+            return "dark"
+    except Exception:
+        pass
+    if E.IS_WIN:
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as k:
+                return "light" if winreg.QueryValueEx(k, "AppsUseLightTheme")[0] else "dark"
+        except OSError:
+            pass
+    return "dark"
+
+
+def resolve_theme(pref) -> str:
+    """Налаштування теми (system | dark | light) -> палітра."""
+    return pref if pref in THEMES else system_theme()
+
+
+class ThemeBus(QObject):
+    """Сповіщає віджети, які малюють щось заздалегідь (іконки, кеші), що палітра змінилася."""
+    changed = pyqtSignal(str)
+
+
+THEME_BUS = ThemeBus()
+_HEX = re.compile(r"#[0-9A-Fa-f]{6}\b")
+
+
+def remap_hex(text: str, remap: dict) -> str:
+    return _HEX.sub(lambda m: remap.get(m.group(0).upper(), m.group(0)), text)
+
+
+def _remap_value(v, remap: dict):
+    if isinstance(v, QColor):
+        n = remap.get(v.name().upper())
+        if n:
+            c = QColor(n)
+            c.setAlpha(v.alpha())
+            return c
+        return v
+    if isinstance(v, str) and len(v) == 7 and v.startswith("#"):
+        return remap.get(v.upper(), v)
+    if isinstance(v, list) and v and all(isinstance(x, tuple) for x in v):  # ряди графіків [(значення, колір)]
+        return [tuple(_remap_value(y, remap) for y in x) for x in v]
+    return v
+
+
+def remap_widget(w: QWidget, remap: dict) -> None:
+    """Перефарбувати один віджет: рядок стилю з уже підставленими кольорами і збережені кольори (Ring.c тощо)."""
+    try:
+        ss = w.styleSheet()
+        if ss and "#" in ss:
+            new = remap_hex(ss, remap)
+            if new != ss:
+                w.setStyleSheet(new)
+        for k, v in list(vars(w).items()):
+            nv = _remap_value(v, remap)
+            if nv is not v:
+                setattr(w, k, nv)
+        if hasattr(w, "retheme"):
+            w.retheme()
+    except RuntimeError:  # віджет уже знищено на боці C++
+        pass
+
+
+_APP = {"qss": None}  # тема, з якою стоїть стиль усієї програми (app.setStyleSheet)
+
+
+def apply_app_theme(app) -> None:
+    """Стиль усієї програми. Повна перебудова стилю займає понад секунду на кількох тисячах віджетів, тож під час
+    роботи її робимо лише тоді, коли вікно сховане (flush_app_theme)."""
+    app.setPalette(app_palette())
+    app.setStyleSheet(build_qss())
+    _APP["qss"] = THEME["name"]
+
+
+def style_window(w: QWidget) -> None:
+    """Вікно, відкрите після перемикання теми наживо, отримує стиль нової теми на рівні вікна (у 4–5 разів швидше,
+    ніж перебудова стилю всієї програми). Вікна з власним стилем не чіпаємо."""
+    if w.styleSheet() and not getattr(w, "_ox_qss", False):
+        return
+    want = "" if THEME["name"] == _APP["qss"] else build_qss()
+    if w.styleSheet() != want:
+        w._ox_qss = bool(want)
+        w.setStyleSheet(want)
+
+
+def flush_app_theme(app=None) -> None:
+    """Коли вікно сховане (у треї): привести стиль усієї програми до поточної теми й прибрати стилі рівня вікон."""
+    if app is None:
+        from PyQt6.QtWidgets import QApplication
+        app = QApplication.instance()
+    if app is None or _APP["qss"] == THEME["name"]:
+        return
+    apply_app_theme(app)
+    for w in app.topLevelWidgets():
+        if getattr(w, "_ox_qss", False):
+            w._ox_qss = False
+            w.setStyleSheet("")
+
+
+def set_theme(name: str, app=None) -> bool:
+    """Перемкнути палітру наживо. -> чи щось змінилося."""
+    if name not in THEMES or THEMES[name] == T:
+        THEME["name"] = name if name in THEMES else THEME["name"]
+        return False
+    old = dict(T)
+    new = THEMES[name]
+    remap = {old[k].upper(): new[k] for k in new if k in old}
+    T.clear()
+    T.update(new)
+    THEME["name"] = name
+    if app is None:
+        from PyQt6.QtWidgets import QApplication
+        app = QApplication.instance()
+    if app is not None:
+        if _APP["qss"] is None or not app.topLevelWidgets():
+            apply_app_theme(app)  # ще до створення вікон — дешево
+        else:
+            app.setPalette(app_palette())
+            for w in app.topLevelWidgets():
+                if w.isWindow() and (w.isVisible() or getattr(w, "_ox_qss", False)):
+                    style_window(w)
+        for w in app.allWidgets():
+            remap_widget(w, remap)
+        for w in app.topLevelWidgets():
+            if w.isWindow() and w.isVisible():
+                dark_titlebar(w)
+        for w in app.allWidgets():
+            w.update()
+    THEME_BUS.changed.emit(name)
+    return True
+
+
 def make_font(px: int, weight=QFont.Weight.Normal, mono=False) -> QFont:
     f = QFont()
     f.setFamilies(["Cascadia Mono", "Consolas", "DejaVu Sans Mono", "monospace"] if mono else
@@ -167,10 +371,14 @@ def mix(a: QColor, b: QColor, k: float) -> QColor:
 
 
 def dark_titlebar(w: QWidget) -> None:
+    """Заголовок вікна Windows у тон теми: темний або світлий, колір — як у бічної панелі. Вікна, що відкриваються
+    після перемикання теми наживо, тут же отримують її стиль (style_window)."""
+    if w.isWindow() and _APP["qss"] is not None and _APP["qss"] != THEME["name"]:
+        style_window(w)
     if not E.IS_WIN:
         return
     try:
-        hwnd, on = ctypes.c_void_p(int(w.winId())), ctypes.c_int(1)
+        hwnd, on = ctypes.c_void_p(int(w.winId())), ctypes.c_int(1 if is_dark() else 0)
         dwm = ctypes.windll.dwmapi
         if dwm.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(on), 4) != 0:
             dwm.DwmSetWindowAttribute(hwnd, 19, ctypes.byref(on), 4)
@@ -305,6 +513,51 @@ def icon_pixmap(name: str, color: str, size: int = 20) -> QPixmap:
     elif name == "block":
         path.addEllipse(QPointF(12, 12), 8.6, 8.6)
         path.moveTo(5.9, 5.9); path.lineTo(18.1, 18.1)
+    elif name == "ram":  # планка пам'яті
+        path.addRoundedRect(QRectF(2.5, 7, 19, 9), 1.6, 1.6)
+        for x in (6.5, 10.5, 14.5):
+            path.addRect(QRectF(x, 9.5, 2.6, 4))
+        for x in (5, 8, 11, 14, 17, 20):
+            path.moveTo(x - 0.5, 16); path.lineTo(x - 0.5, 18.5)
+    elif name == "disk":
+        path.addRoundedRect(QRectF(3, 6, 18, 12), 2.5, 2.5)
+        path.moveTo(3, 13.5); path.lineTo(21, 13.5)
+        p.drawPath(path)
+        path = QPainterPath()
+        p.setBrush(QColor(color))
+        p.drawEllipse(QPointF(17.3, 15.8), 0.9, 0.9)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+    elif name == "thermo":
+        path.moveTo(10, 14.2); path.lineTo(10, 5.5)
+        path.cubicTo(10, 3.2, 14, 3.2, 14, 5.5); path.lineTo(14, 14.2)
+        path.cubicTo(16.6, 15.6, 16, 20.5, 12, 20.5); path.cubicTo(8, 20.5, 7.4, 15.6, 10, 14.2)
+        path.moveTo(12, 9); path.lineTo(12, 16.5)
+    elif name == "panel":  # бічна панель (закріпити меню)
+        path.addRoundedRect(QRectF(3.5, 4.5, 17, 15), 2.5, 2.5)
+        path.moveTo(9.5, 4.5); path.lineTo(9.5, 19.5)
+        path.moveTo(13, 9.5); path.lineTo(15.5, 12); path.lineTo(13, 14.5)
+    elif name == "download":
+        path.moveTo(12, 4); path.lineTo(12, 15)
+        path.moveTo(7.5, 10.5); path.lineTo(12, 15); path.lineTo(16.5, 10.5)
+        path.moveTo(5, 19.5); path.lineTo(19, 19.5)
+    elif name == "sun":
+        path.addEllipse(QPointF(12, 12), 4, 4)
+        import math
+        for i in range(8):
+            a = i * math.pi / 4
+            path.moveTo(12 + 6.6 * math.cos(a), 12 + 6.6 * math.sin(a))
+            path.lineTo(12 + 8.8 * math.cos(a), 12 + 8.8 * math.sin(a))
+    elif name == "moon":
+        path.moveTo(19.5, 14.5)
+        path.cubicTo(17.5, 19.5, 10.5, 21, 6.8, 17.2); path.cubicTo(3, 13.4, 4.4, 6.4, 9.5, 4.5)
+        path.cubicTo(8, 9, 10.5, 13.8, 15, 15); path.cubicTo(16.5, 15.4, 18.2, 15.2, 19.5, 14.5)
+    elif name == "monitor":
+        path.addRoundedRect(QRectF(3, 4.5, 18, 12), 2, 2)
+        path.moveTo(9, 20); path.lineTo(15, 20); path.moveTo(12, 16.5); path.lineTo(12, 20)
+    elif name == "sparkle":
+        path.moveTo(12, 3); path.cubicTo(12.8, 8.5, 15.5, 11.2, 21, 12)
+        path.cubicTo(15.5, 12.8, 12.8, 15.5, 12, 21); path.cubicTo(11.2, 15.5, 8.5, 12.8, 3, 12)
+        path.cubicTo(8.5, 11.2, 11.2, 8.5, 12, 3)
     p.drawPath(path)
     p.end()
     return pm
@@ -532,6 +785,12 @@ class LogView(QPlainTextEdit):
             append_log(self, h)
         LOG.line.connect(lambda s: append_log(self, s))
 
+    def retheme(self):
+        """Кольори рядків журналу вшиті в HTML — після зміни теми перемальовуємо історію."""
+        self.clear()
+        for h in LOG.history[-200:]:
+            append_log(self, h)
+
 
 # ───────────────────────── віджети ─────────────────────────
 class Switch(QAbstractButton):
@@ -561,6 +820,7 @@ class Switch(QAbstractButton):
 
     def _animate(self, on):
         self._a.stop()
+        self._a.setDuration(dur(170))
         self._a.setStartValue(self._k)
         self._a.setEndValue(1.0 if on else 0.0)
         self._a.start()
@@ -587,7 +847,10 @@ class Switch(QAbstractButton):
         p.drawRoundedRect(r, r.height() / 2, r.height() / 2)
         d = r.height() - 6
         x = r.left() + 3 + (r.width() - 6 - d) * self._k
-        p.setBrush(mix(QColor("#C3CAD6"), QColor("#FFFFFF"), self._k))
+        if not is_dark():  # на світлому тлі біла кулька без тіні губиться
+            p.setBrush(QColor(0, 0, 0, 28))
+            p.drawEllipse(QRectF(x, r.top() + 3.8, d, d))
+        p.setBrush(mix(QColor(T["knob"]), QColor("#FFFFFF"), self._k))
         p.drawEllipse(QRectF(x, r.top() + 3, d, d))
         if self.hasFocus():
             p.setPen(QPen(QColor(T["acc_h"]), 1.4))
@@ -652,6 +915,7 @@ class Ring(QWidget):
         if color:
             self.c = QColor(color)
         self._a.stop()
+        self._a.setDuration(dur(900))
         self._a.setStartValue(self._v)
         self._a.setEndValue(max(0.0, min(1.0, v)))
         self._a.start()
@@ -666,6 +930,12 @@ class Ring(QWidget):
         p.setPen(pen)
         p.drawArc(r, 0, 360 * 16)
         if self._v > 0.004:
+            glow = QColor(self.c)
+            glow.setAlpha(46)
+            gp = QPen(glow, w + 5)
+            gp.setCapStyle(Qt.PenCapStyle.RoundCap)
+            p.setPen(gp)
+            p.drawArc(r, 90 * 16, -int(self._v * 360 * 16))
             pen.setColor(self.c)
             p.setPen(pen)
             p.drawArc(r, 90 * 16, -int(self._v * 360 * 16))
@@ -1023,6 +1293,8 @@ class Toast(QFrame):
         self.setGraphicsEffect(self.eff)
         self.anim = QPropertyAnimation(self.eff, b"opacity", self)
         self.anim.finished.connect(self._after)
+        self.slide = QPropertyAnimation(self, b"pos", self)
+        self.slide.setEasingCurve(QEasingCurve.Type.OutBack)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self._fade_out)
@@ -1033,13 +1305,19 @@ class Toast(QFrame):
         self.text.setText(text)
         self.adjustSize()
         a = area or QRectF(self.parent().rect())
-        self.move(int(a.left() + (a.width() - self.width()) / 2), int(a.bottom() - self.height() - 92))
+        end = QPoint(int(a.left() + (a.width() - self.width()) / 2), int(a.bottom() - self.height() - 92))
         start = self.eff.opacity() if self.isVisible() else 0.0
         self.anim.stop()
         self.eff.setOpacity(start)
         self.raise_()
         self.show()
-        self.anim.setDuration(200)
+        self.slide.stop()
+        self.slide.setDuration(dur(320))
+        self.slide.setStartValue(end + QPoint(0, 0 if start > 0.5 else 18))
+        self.slide.setEndValue(end)
+        self.move(self.slide.startValue())
+        self.slide.start()
+        self.anim.setDuration(dur(220))
         self.anim.setStartValue(start)
         self.anim.setEndValue(1.0)
         self.anim.start()
@@ -1047,7 +1325,7 @@ class Toast(QFrame):
 
     def _fade_out(self):
         self.anim.stop()
-        self.anim.setDuration(350)
+        self.anim.setDuration(dur(350))
         self.anim.setStartValue(1.0)
         self.anim.setEndValue(0.0)
         self.anim.start()
@@ -1077,6 +1355,23 @@ class Worker(QThread):
         self.result.emit(res)
 
 
+def fade_in_window(w: QWidget, ms: int = 200) -> None:
+    """Плавна поява окремого вікна (діалогу). На платформах без прозорості вікон нічого не робить."""
+    if not MOTION["on"] or getattr(w, "_faded", False):
+        return
+    w._faded = True
+    try:
+        w.setWindowOpacity(0.0)
+        a = QPropertyAnimation(w, b"windowOpacity", w)
+        a.setDuration(ms)
+        a.setStartValue(0.0)
+        a.setEndValue(1.0)
+        a.setEasingCurve(QEasingCurve.Type.OutCubic)
+        a.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+    except Exception:
+        w.setWindowOpacity(1.0)
+
+
 class Ask(QDialog):
     def __init__(self, parent, title: str, text: str, ok: str = None, cancel: str = None, kind: str = "primary"):
         super().__init__(parent)
@@ -1100,6 +1395,7 @@ class Ask(QDialog):
 
     def showEvent(self, e):
         dark_titlebar(self)
+        fade_in_window(self)
         super().showEvent(e)
 
     @staticmethod
@@ -1162,6 +1458,7 @@ class RunDialog(QDialog):
 
     def showEvent(self, e):
         dark_titlebar(self)
+        fade_in_window(self)
         super().showEvent(e)
 
     def _progress(self, i: int, total: int, text: str):

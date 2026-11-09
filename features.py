@@ -61,6 +61,10 @@ DEFAULTS = {
     "freeze": {"enabled": False, "deep": False, "seen": 0, "cleared": 0},
     "seen_version": None,  # версія, для якої вже показано «Що нового»
     "simple_ui": False,  # простий вигляд
+    "theme": "dark",  # тема інтерфейсу: system (як у Windows) | dark | light
+    "motion": True,  # плавні анімації
+    "splash": True,  # заставка під час запуску
+    "rail_pinned": False,  # бічне меню закріплене розгорнутим (інакше розгортається при наведенні)
     "gpu_probe": None,  # що бачать DirectX і Vulkan (gpuinfo.probe)
     "hwc_last": {},  # Hardware Center: останній результат кожного тесту {test: result} (hwtests.result)
     "hwc_hist": [],  # Hardware Center: історія результатів (без рядів для графіків)

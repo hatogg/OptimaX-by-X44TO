@@ -1038,8 +1038,12 @@ _last_cpu: list = [None]
 
 def sys_stats() -> dict:
     d = {"cpu": 0.0, "ram": 0.0, "ram_total": 0.0, "disk_free": 0.0, "disk_total": 0.0}
-    if not E.IS_WIN:
-        d.update(cpu=0.18, ram=0.42, ram_total=32.0)
+    if not E.IS_WIN:  # демо: показники трохи «живуть», щоб графіки на головній рухалися
+        import math
+        import random
+        t = time.time()
+        d.update(cpu=max(0.02, 0.18 + 0.08 * math.sin(t / 3.1) + random.uniform(-0.04, 0.04)),
+                 ram=0.42 + 0.012 * math.sin(t / 7), ram_total=32.0)
     else:
         try:
             s = E.mem_status()

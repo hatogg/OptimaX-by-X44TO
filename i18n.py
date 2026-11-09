@@ -95,6 +95,7 @@ def _load() -> None:
     from lang_life import STRINGS as life
     from lang_hwc import STRINGS as hwc
     from lang_hwc2 import STRINGS as hwc2
+    from lang_v613 import STRINGS as v613
     from lang_tweaks import TEXTS
     STR.update(eng)
     STR.update(ui)
@@ -108,6 +109,7 @@ def _load() -> None:
     STR.update(life)
     STR.update(hwc)
     STR.update(hwc2)
+    STR.update(v613)
     TWEAK_TEXT.update(TEXTS)
 
 

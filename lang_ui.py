@@ -44,7 +44,7 @@ STRINGS = {
     "nav.g.device": ("Пристрій", "Устройство", "Device"),
     "nav.g.tools": ("Інструменти", "Инструменты", "Tools"),
     "nav.g.system": ("Система", "Система", "System"),
-    "nav.home": ("Аналіз", "Анализ", "Analysis"),
+    "nav.home": ("Дашборд", "Дашборд", "Dashboard"),
     "nav.optimize": ("Оптимізація", "Оптимизация", "Optimization"),
     "nav.games": ("Ігри", "Игры", "Games"),
     "nav.laptop": ("Ноутбук", "Ноутбук", "Laptop"),

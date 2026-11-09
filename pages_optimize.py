@@ -11,6 +11,8 @@ import features as F
 import hardware as H
 import modes as MD
 from i18n import tr
+import ui_kit as UKX
+import ui_motion as UM
 from ui_kit import (T, IMPACT_COLOR, label, button, card, vbox, hbox, badge, style_badge, dot, scroller, page_header,
                     section_card, bottom_bar, clear_layout, Switch, Ring, ProfileCard, OptionCard, Segmented, chip,
                     Ask, icon_pixmap, FlowLayout)
@@ -852,14 +854,55 @@ def fmt_metric(key: str, v) -> str:
     return str(int(v))
 
 
+def perf_axes(hw: dict, an: dict, checks: list, stats: dict) -> list:
+    """Складові оцінки продуктивності (радар на головній): [(ключ, частка 0…1)]. Лише те, що OptimaX справді
+    перевірив: застосовані рекомендовані оптимізації, приватність, перевірка збірки, баланс заліза, пам'ять, диск."""
+    warns = len([c for c in checks if c["level"] == "warn"])
+    infos = len([c for c in checks if c["level"] == "info"])
+    build = max(0.0, 1.0 - 0.18 * warns - 0.05 * infos)
+    balance = 1.0 if an.get("neck") == "none" else 0.55
+    load = stats.get("ram", 0.5)
+    mem = max(0.2, 1.0 - max(0.0, load - 0.55) * 1.6)
+    if (hw.get("ram_gb") or 16) < 7.5:
+        mem = min(mem, 0.45)
+    disk = 1.0
+    if stats.get("disk_total"):
+        disk = max(0.15, min(1.0, stats["disk_free"] / stats["disk_total"] * 4))
+    if hw.get("hdd"):
+        disk = min(disk, 0.55)
+    return [("opt", an["opt"] / 100), ("privacy", an["privacy"] / 100), ("build", build), ("balance", balance),
+            ("memory", mem), ("disk", disk)]
+
+
+SCORE_WEIGHTS = {"opt": 0.35, "privacy": 0.10, "build": 0.20, "balance": 0.15, "memory": 0.10, "disk": 0.10}
+
+
+def perf_score(axes: list) -> int:
+    return round(100 * sum(SCORE_WEIGHTS[k] * v for k, v in axes))
+
+
 class HomePage(QWidget):
     def __init__(self, main):
         super().__init__()
         self.main = main
+        self.axes = []
+        self.score = None
         outer = vbox(self)
         body = QWidget()
-        v = vbox(body, (32, 26, 32, 24), 16)
+        v = vbox(body, (32, 24, 32, 24), 16)
         self._outer_v = v
+
+        # заголовок дашборда
+        head = hbox(spacing=12)
+        hv = vbox(spacing=3)
+        hv.addWidget(label(tr("dash.title"), "h1"))
+        hv.addWidget(label(tr("dash.sub"), "sub", wrap=True))
+        head.addLayout(hv, 1)
+        self.btn_an = button(tr("home.reanalyze"), None, main.run_analysis)
+        head.addWidget(self.btn_an, 0, Qt.AlignmentFlag.AlignVCenter)
+        head.addWidget(button(tr("home.s.simple"), "ghost", lambda: main.apply_simple(True)), 0,
+                       Qt.AlignmentFlag.AlignVCenter)
+        v.addLayout(head)
 
         # сповіщення: пробний режим і сторож налаштувань
         self.banner = QFrame()
@@ -908,21 +951,57 @@ class HomePage(QWidget):
         self.simple.hide()
         v.addWidget(self.simple)
 
-        # аналіз
+        # оцінка продуктивності й радар
         an = card("cardAccent")
         self.an_card = an
-        av = vbox(an, (24, 20, 24, 20), 14)
-        head = hbox(spacing=12)
-        hv = vbox(spacing=3)
-        hv.addWidget(label(tr("home.analysis"), "display"))
-        self.an_state = label(tr("home.analyzing"), "sub")
-        hv.addWidget(self.an_state)
-        head.addLayout(hv, 1)
-        self.btn_an = button(tr("home.reanalyze"), None, main.run_analysis)
-        head.addWidget(self.btn_an, 0, Qt.AlignmentFlag.AlignTop)
-        head.addWidget(button(tr("home.s.simple"), "ghost", lambda: main.apply_simple(True)), 0,
-                       Qt.AlignmentFlag.AlignTop)
-        av.addLayout(head)
+        av = vbox(an, (26, 22, 26, 22), 16)
+        top = hbox(spacing=26)
+        sc = vbox(spacing=6)
+        cap = hbox(spacing=8)
+        cap.addWidget(label(tr("dash.score").upper(), "micro"))
+        cap.addStretch()
+        self.btn_how = button(tr("dash.how"), "ghost", self.explain_score)
+        cap.addWidget(self.btn_how)
+        sc.addLayout(cap)
+        num = hbox(spacing=6)
+        self.score_lbl = UM.CountLabel(lambda x: f"{x:.0f}", "hero", 1300)
+        self.score_lbl.setText("—")
+        num.addWidget(self.score_lbl, 0, Qt.AlignmentFlag.AlignBottom)
+        of = label(tr("dash.of100"), "muted")
+        of.setContentsMargins(0, 0, 0, 10)
+        num.addWidget(of, 0, Qt.AlignmentFlag.AlignBottom)
+        num.addSpacing(10)
+        stv2 = vbox(spacing=2)
+        stv2.addStretch()
+        self.score_verdict = label(tr("home.analyzing"), "h3", wrap=True)
+        stv2.addWidget(self.score_verdict)
+        self.an_state = label(tr("home.analyzing"), "desc", wrap=True)
+        stv2.addWidget(self.an_state)
+        stv2.addSpacing(8)
+        num.addLayout(stv2, 1)
+        sc.addLayout(num)
+        self.bars = UM.ScoreBars(46, 88)
+        sc.addWidget(self.bars)
+        act = hbox(spacing=10)
+        self.hw_line = label("", "desc")
+        act.addWidget(self.hw_line, 1)
+        self.btn_all = button(tr("dash.optimize_all"), "primary", main.quick_optimize)
+        act.addWidget(self.btn_all)
+        sc.addLayout(act)
+        top.addLayout(sc, 3)
+        rd = vbox(spacing=4)
+        rcap = hbox(spacing=8)
+        rcap.addWidget(label(tr("dash.profile").upper(), "micro"))
+        rcap.addStretch()
+        self.radar_dot = QLabel()
+        self.radar_dot.setFixedSize(8, 8)
+        rcap.addWidget(self.radar_dot)
+        rcap.addWidget(label(tr("dash.your_pc"), "muted"))
+        rd.addLayout(rcap)
+        self.radar = UM.Radar(230)
+        rd.addWidget(self.radar, 1)
+        top.addLayout(rd, 2)
+        av.addLayout(top)
         tiles = hbox(spacing=12)
         self.t_opt = Tile(tr("home.opt_level"), T["acc"])
         self.t_priv = Tile(tr("home.privacy_level"), T["ok"])
@@ -933,20 +1012,61 @@ class HomePage(QWidget):
         av.addLayout(tiles)
         v.addWidget(an)
 
+        # швидкі дії
+        self.quick_box = QWidget()
+        qv = vbox(self.quick_box, spacing=10)
+        qv.addWidget(label(tr("dash.quick").upper(), "micro"))
+        qh = hbox(spacing=12)
+        self.q_mem = UM.ActionTile("ram", tr("dash.q.mem"), tr("dash.q.mem_d"), "ok")
+        self.q_mem.clicked.connect(lambda: main.free_memory())
+        self.q_clean = UM.ActionTile("broom", tr("dash.q.clean"), tr("dash.q.clean_d"), "acc")
+        self.q_clean.clicked.connect(lambda: main.go("cleanup"))
+        self.q_boost = UM.ActionTile("rocket", tr("g.btn_on"), tr("dash.q.boost_d"), "pink")
+        self.q_boost.clicked.connect(main.toggle_booster)
+        self.q_lag = UM.ActionTile("gauge", tr("dash.q.lag"), tr("dash.q.lag_d"), "warn")
+        self.q_lag.clicked.connect(lambda: main.go("diagnose"))
+        for t in (self.q_mem, self.q_clean, self.q_boost, self.q_lag):
+            t.setText(t.title)
+            qh.addWidget(t)
+        qv.addLayout(qh)
+        v.addWidget(self.quick_box)
+
+        # живі показники — і в простому вигляді
+        lv = vbox(spacing=10)
+        live = hbox(spacing=8)
+        self.live_dot = QLabel()
+        self.live_dot.setFixedSize(8, 8)
+        live.addWidget(self.live_dot)
+        live.addWidget(label(tr("dash.live").upper(), "micro"))
+        live.addStretch()
+        lv.addLayout(live)
+        stats = hbox(spacing=12)
+        self.s_cpu = UM.MetricTile("chip", tr("home.cpu"), "acc")
+        self.s_ram = UM.MetricTile("ram", tr("home.ram"), "pink")
+        self.s_disk = UM.MetricTile("disk", tr("home.disk"), "cyan")
+        self.s_gpu = UM.MetricTile("thermo", tr("home.gpu_temp"), "ok", "°C")
+        for s_ in (self.s_cpu, self.s_ram, self.s_disk, self.s_gpu):
+            stats.addWidget(s_)
+        lv.addLayout(stats)
+        v.addLayout(lv)
+
         # вибір шляху
         self.adv = QWidget()  # усе, чого немає в простому вигляді
         av2 = vbox(self.adv, spacing=16)
         v.addWidget(self.adv)
         v = av2
-        v.addWidget(label(tr("home.choose_path"), "h2"))
+        v.addWidget(label(tr("home.choose_path").upper(), "micro"))
         paths = hbox(spacing=14)
+        self.path_icons = []
         for key, ico, cb, obj in (("wizard", "wand", main.open_wizard, "primary"),
                                   ("expert", "sliders", main.open_expert, None)):
             c = card()
             cv = vbox(c, (22, 18, 22, 18), 8)
             top = hbox(spacing=12)
             ic = QLabel()
-            ic.setPixmap(icon_pixmap(ico, T["acc_h"], 26))
+            ic.setFixedSize(40, 40)
+            ic.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.path_icons.append((ic, ico))
             top.addWidget(ic)
             top.addWidget(label(tr(f"home.{key}.t"), "h2"), 1)
             cv.addLayout(top)
@@ -998,17 +1118,6 @@ class HomePage(QWidget):
                      Qt.AlignmentFlag.AlignLeft)
         two.addWidget(chk, 2)
         v.addLayout(two)
-        v = self._outer_v  # живі показники — і в простому вигляді
-
-        # живі показники
-        stats = hbox(spacing=12)
-        self.s_cpu = StatMini(tr("home.cpu"), T["acc"])
-        self.s_ram = StatMini(tr("home.ram"), "#C07AF0")
-        self.s_disk = StatMini(tr("home.disk"), T["warn"])
-        self.s_gpu = StatMini(tr("home.gpu_temp"), T["bad"])
-        for s in (self.s_cpu, self.s_ram, self.s_disk, self.s_gpu):
-            stats.addWidget(s)
-        v.addLayout(stats)
 
         # до і після
         ba = card()
@@ -1028,7 +1137,7 @@ class HomePage(QWidget):
         bv.addWidget(self.ba_note)
         v.addWidget(ba)
         self.ba_card = ba
-        v.addStretch()
+        self._outer_v.addStretch()
         outer.addWidget(scroller(body), 1)
 
         bar, bbh = bottom_bar()
@@ -1042,15 +1151,32 @@ class HomePage(QWidget):
         outer.addWidget(bar)
 
         self.metrics = None
+        self.blink = 0
+        self.retheme()
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(1500)
         self.tick()
         self.render_metrics()
 
+    def retheme(self):
+        for ic, name in self.path_icons:
+            ic.setPixmap(icon_pixmap(name, T["acc_h"] if UKX.is_dark() else T["acc"], 24))
+            ic.setStyleSheet(f"background:{T['acc_bg']};border-radius:12px;")
+        self.radar_dot.setStyleSheet(f"background:{T['acc']};border-radius:4px;")
+        self.live_dot.setStyleSheet(f"background:{T['ok']};border-radius:4px;")
+
+    def explain_score(self):
+        if not self.axes:
+            return
+        lines = [tr("dash.how_d")]
+        for k, val in self.axes:
+            lines.append(f"• {tr(f'dash.ax.{k}')}: {round(val * 100)} / 100 — {tr(f'dash.ax.{k}.d')}")
+        Ask.info(self, tr("dash.how_t", n=self.score if self.score is not None else "—"), "\n".join(lines))
+
     def set_simple(self, on: bool):
         self.simple.setVisible(on)
-        for w in (self.an_card, self.adv, self.ba_card):
+        for w in (self.an_card, self.adv, self.ba_card, self.quick_box):
             w.setVisible(not on)
 
     def fill_simple(self, an: dict, checks: list):
@@ -1096,38 +1222,57 @@ class HomePage(QWidget):
     # ── живі показники ──
     def tick(self):
         s = H.sys_stats()
-        self.s_cpu.ring.set_value(s["cpu"])
-        self.s_cpu.detail.setText(tr("home.cpu_d"))
-        self.s_ram.ring.set_value(s["ram"])
-        self.s_ram.detail.setText(tr("home.ram_d", used=f"{s['ram'] * s['ram_total']:.1f}", total=f"{s['ram_total']:.0f}"))
+        self.stats = s
+        self.s_cpu.push(s["cpu"] * 100, s["cpu"], tr("home.cpu_d"))
+        self.s_ram.push(s["ram"] * 100, s["ram"],
+                        tr("home.ram_d", used=f"{s['ram'] * s['ram_total']:.1f}", total=f"{s['ram_total']:.0f}"))
         if s["disk_total"]:
-            self.s_disk.ring.set_value(1 - s["disk_free"] / s["disk_total"])
-            self.s_disk.detail.setText(tr("home.disk_d", free=f"{s['disk_free']:.0f}"))
+            frac = 1 - s["disk_free"] / s["disk_total"]
+            self.s_disk.set_color("warn" if frac >= 0.9 else "cyan")
+            self.s_disk.push(frac * 100, frac, tr("home.disk_d", free=f"{s['disk_free']:.0f}"))
         self.update_booster()
+        self.blink ^= 1
+        self.live_dot.setVisible(bool(self.blink) or not UKX.MOTION["on"])
 
     def set_gpu_temp(self, t):
         if t is None:
-            self.s_gpu.ring.text = "—"
-            self.s_gpu.ring.set_value(0)
+            self.s_gpu.num.anim.set(0)
+            self.s_gpu.num.setText("—")
             self.s_gpu.detail.setText(tr("home.gpu_na"))
         else:
-            self.s_gpu.ring.text = f"{t}°"
-            self.s_gpu.ring.set_value(t / 100, T["ok"] if t < 70 else T["warn"] if t < 83 else T["bad"])
-            self.s_gpu.detail.setText(tr("home.gpu_d"))
+            self.s_gpu.set_color("ok" if t < 70 else "warn" if t < 83 else "bad")
+            self.s_gpu.push(t, t / 100, tr("home.gpu_d"))
 
     def update_booster(self):
         on = F.BOOSTER.active
         self.btn_boost.setText(tr("g.btn_off") if on else tr("g.btn_on"))
+        self.q_boost.title = tr("g.btn_off") if on else tr("g.btn_on")
+        self.q_boost.setText(self.q_boost.title)
+        self.q_boost.set_badge(tr("dash.q.boost_on") if on else "")
 
     # ── аналіз ──
     def set_analyzing(self):
         self.an_state.setText(tr("home.analyzing"))
+        self.score_verdict.setText(tr("dash.v.wait"))
         self.btn_an.setEnabled(False)
 
     def set_analysis(self, hw: dict, an: dict, checks: list):
         self.btn_an.setEnabled(True)
         self.an_state.setText(tr("home.analyzed"))
         self.fill_simple(an, checks)
+        self.axes = perf_axes(hw, an, checks, getattr(self, "stats", None) or H.sys_stats())
+        self.score = perf_score(self.axes)
+        self.score_lbl.set_value(self.score)
+        self.bars.set_value(self.score / 100)
+        self.radar.set_axes([(tr(f"dash.ax.{k}"), val) for k, val in self.axes])
+        self.score_verdict.setText(tr("dash.v.great" if self.score >= 85 else "dash.v.good" if self.score >= 65
+                                      else "dash.v.low"))
+        parts = [hw.get("cpu", "")]
+        if hw.get("gpus"):
+            parts.append(hw["gpus"][0][0])
+        if hw.get("ram_gb"):
+            parts.append(tr("u.gb", v=int(round(hw["ram_gb"]))) + " RAM")
+        self.hw_line.setText("  ·  ".join(x for x in parts if x))
         self.t_opt.ring.set_value(an["opt"] / 100)
         self.t_opt.sub.setText(tr("home.opt_sub", n=an["left"]))
         self.t_priv.ring.set_value(an["privacy"] / 100)

@@ -2,6 +2,33 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [6.13] — 2026-11-09
+
+Новий дизайн: дашборд, бічне меню, що розгортається, плавні анімації, світла й темна тема — і сторінка «Пам'ять».
+
+### Додано
+
+- **Світла й темна тема — або як у Windows.** «Налаштування → Вигляд» з мініатюрами тем і кнопка внизу меню. Тема перемикається одразу, без перезапуску: нова розходиться колом від кнопки. Заголовок вікна Windows теж світлий або темний. Обидві палітри — в `ui_kit.THEMES`, кожен колір унікальний, тож перемикання перефарбовує навіть уже підставлені в стилі кольори (`remap_hex`).
+- **Сторінка «Пам'ять».** Кільце-шкала зайнятої RAM і живий графік останньої хвилини, «Використовується / Доступно / Кеш (standby) / Усього» — так само, як рахує «Диспетчер завдань». Список «Хто займає пам'ять»: програми з усіма процесами разом і станом — активна, у фоні чи спить.
+- **«Звільнити пам'ять» — чесно.** Скляне вікно з кроками: стиснути робочі набори лише програм, що сплять у фоні (майже не брали процесор, не активне вікно, не гра з бібліотеки чи Steam/Epic/GOG, не системний процес, не антивірус і не звук), очистити кеш standby, заміряти. Результат «було → стало», а через хвилину — скільки втрималося і скільки Windows забрала назад. Примусово стискати все підряд, як деякі «прискорювачі», OptimaX не стане: велика цифра «звільнено» потім обертається фризами в грі. Новий модуль `memtools.py`.
+- **Дашборд замість «Аналізу».** Оцінка продуктивності з 0 до 100 з анімованою шкалою і радаром складових: оптимізація, приватність, перевірка збірки, баланс заліза, пам'ять і диск. «З чого складається?» показує кожну складову та її вагу — оцінка лише з того, що OptimaX справді перевірив. Швидкі дії (звільнити пам'ять, очищення, режим гри, «Чому лагає?») і живі графіки процесора, пам'яті, диска й температури відеокарти.
+- **Рух.** Сторінки змінюються плавно (стара тане, нова підіймається), числа набігають, графіки прокручуються, сповіщення виїжджають, діалоги проявляються, вибраний пункт меню переїжджає, а не перестрибує. Заставка під час запуску. «Плавні анімації» і заставку можна вимкнути в «Налаштуваннях → Вигляд».
+- Нові модулі `ui_motion.py` (анімації й нові елементи) і `pages_memory.py`.
+
+### Змінено
+
+- **Бічне меню**: згорнуте — лише іконки, при наведенні розгортається поверх сторінки з підписами. Кнопкою «Закріпити меню» (або в налаштуваннях) воно лишається розгорнутим, як раніше. Версія — під назвою програми.
+- Нова палітра: глибший синій, м'ятний для «добре», скло й світіння на головних картках.
+
+<details>
+<summary>English</summary>
+
+**Added:** light and dark themes (or follow Windows) in Settings → Appearance and on a button at the bottom of the menu; the theme switches instantly with a circular reveal, including the Windows title bar. New Memory page: a gauge and a live chart of RAM in use, In use / Available / Standby cache / Total as Task Manager counts it, and the apps holding memory with their state (active, background, asleep). Free up memory works honestly: it trims working sets only of apps asleep in the background (never the active window, games, system processes, antivirus or audio), clears the standby cache and measures before → after, then checks a minute later how much stayed free. New module `memtools.py`. The Analysis page became a Dashboard: a 0–100 performance score with an animated scale and a radar of its parts (optimization, privacy, build check, hardware balance, memory, disk), explained by “How is it calculated?”, quick actions and live CPU, memory, disk and GPU temperature charts. Motion everywhere: page transitions, counting numbers, scrolling charts, sliding toasts, fading dialogs, a sliding menu highlight and a splash screen; animations and the splash can be turned off. New modules `ui_motion.py` and `pages_memory.py`.
+
+**Changed:** the side menu shows icons only and slides out on hover over the page; pin it to keep it expanded. New palette: deeper blue, mint for “good”, glass and glow on the main cards.
+
+</details>
+
 ## [6.12] — 2026-11-08
 
 «Чому зависає?» — ловець фризів, коли на 1–5 секунд зависає все одразу: картинка, відео й звук ([#10](https://github.com/hatogg/OptimaX-by-X44TO/issues/10)).

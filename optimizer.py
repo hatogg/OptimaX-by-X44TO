@@ -41,10 +41,10 @@ if __name__ == "__main__":
         import selftest  # самоперевірка збірки (CI): тимчасові налаштування й режим перегляду — до імпорту engine
         selftest.prepare(sys.argv)
 
-from PyQt6.QtCore import Qt, QTimer, QRectF, QSize, pyqtSignal
-from PyQt6.QtGui import QColor, QIcon, QPalette
-from PyQt6.QtWidgets import (QApplication, QWidget, QFrame, QLabel, QPushButton, QStackedWidget, QButtonGroup,
-                             QSystemTrayIcon, QMenu, QFileDialog, QScrollArea)
+from PyQt6.QtCore import Qt, QTimer, QRectF, pyqtSignal
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import (QApplication, QWidget, QFrame, QPushButton, QButtonGroup, QSystemTrayIcon, QMenu,
+                             QFileDialog, QScrollArea)
 
 import engine as E
 import features as F
@@ -73,16 +73,19 @@ import sharecard as SC
 import smart_ui as SM
 from pages_optimize import OptimizePage, HomePage
 from pages_library import LibraryPage
+from pages_memory import MemoryPage
 import pages_life as PL
 from pages_tools import (GamesPage, LaptopPage, CleanupPage, StartupPage, BackupPage,
                          SettingsPage)
-from ui_kit import (T, build_qss, make_font, label, vbox, hbox, dot, styled, nav_icon, logo_pixmap, Toast, Worker,
-                    Ask, RunDialog, LOG, dark_titlebar)
+import ui_kit as UK
+import ui_motion as UM
+from ui_kit import (make_font, hbox, styled, logo_pixmap, Toast, Worker, Ask, RunDialog, LOG, dark_titlebar)
 
 ADMIN = E.is_admin()
 
 NAV = [
     ("nav.g.optimize", [("home", "pulse", "nav.home"), ("optimize", "wand", "nav.optimize"),
+                        ("memory", "ram", "nav.memory"),
                         ("library", "library", "nav.library"), ("games", "gamepad", "nav.games"),
                         ("diagnose", "gauge", "nav.diagnose"),
                         ("bench", "bolt", "nav.bench")]),
@@ -190,11 +193,15 @@ class Main(QWidget):
         self.ipc = L.start_server(self.show_window)  # друга копія програми просить показати це вікно
 
         h = hbox(self)
-        h.addWidget(self._sidebar())
-        self.stack = QStackedWidget()
+        self.rail_space = QWidget()  # місце під згорнуте (або закріплене) меню; саме меню лежить поверх сторінок
+        h.addWidget(self.rail_space)
+        self.stack = UM.FadeStack()
         h.addWidget(self.stack, 1)
+        self.rail_shadow = UM.RailShadow(self)
+        self._sidebar()
         self.pages = Pages(self._make_page, (
-            ("home", HomePage), ("optimize", OptimizePage), ("library", LibraryPage), ("games", GamesPage),
+            ("home", HomePage), ("optimize", OptimizePage), ("memory", MemoryPage), ("library", LibraryPage),
+            ("games", GamesPage),
             ("diagnose", DiagnosePage), ("bench", BenchPage), ("hwcenter", HwCenterPage),
             ("laptop", LaptopPage), ("network", NetworkPage), ("cleanup", CleanupPage), ("adblock", AdblockPage),
             ("apps", AppsPage), ("startup", StartupPage), ("backup", BackupPage),
@@ -203,6 +210,11 @@ class Main(QWidget):
         self._toast = Toast(self)
         self._tray()
         self.go("home")
+        UK.THEME_BUS.changed.connect(self._on_theme)
+        try:
+            QApplication.styleHints().colorSchemeChanged.connect(self._system_scheme_changed)
+        except Exception:
+            pass
         QTimer.singleShot(0, self._build_pages)
         # FPS-оверлей в іграх (overlay_ui) і запис фонових процесів під час ігор (procmon)
         from overlay_ui import OverlayController
@@ -344,6 +356,7 @@ class Main(QWidget):
             self.nav.button(i).setVisible(self.nav_visible(key))
         for cap, keys in self.nav_caps:
             cap.setVisible(any(self.nav_visible(k) for k in keys))
+        QTimer.singleShot(0, self.snap_indicator)
 
     def apply_simple(self, on: bool):
         """Простий вигляд: у меню лише головне, на головній — оцінка, одна кнопка й проблеми з «Виправити»."""
@@ -450,75 +463,169 @@ class Main(QWidget):
 
     # ── бічне меню ──
     def _sidebar(self) -> QFrame:
-        side = QFrame()
+        """Бічне меню (6.13): згорнуте — лише іконки, при наведенні плавно розгортається поверх сторінки;
+        кнопкою внизу його можна закріпити розгорнутим. Вибраний пункт підсвічується «плашкою», що переїжджає."""
+        side = QFrame(self)
         side.setObjectName("side")
-        side.setFixedWidth(244)
-        v = vbox(side, (14, 18, 14, 14), 2)
-        brand = hbox(margins=(6, 0, 0, 0), spacing=12)
-        lg = QLabel()
-        lg.setPixmap(logo_pixmap(38))
-        brand.addWidget(lg)
-        bv = vbox()
-        bv.addWidget(label(E.APP_NAME, "brand"))
-        bv.addWidget(label(f"by {E.AUTHOR}", "muted"))
-        brand.addLayout(bv, 1)
-        v.addLayout(brand)
-        v.addSpacing(10)
+        self.side = side
+        self.k = 0.0  # 0 — згорнуте, 1 — розгорнуте
+        self.rail_pinned = bool(F.CFG["rail_pinned"])
+        v = UK.vbox(side, (12, 16, 12, 12), 2)
+        v.addWidget(UM.Brand(self, E.APP_NAME, f"by {E.AUTHOR}", f"v{E.VERSION} · by {E.AUTHOR}"))
+        v.addSpacing(8)
         nav_w = QWidget()
         nav_w.setObjectName("sideNav")
-        nv = vbox(nav_w, (0, 0, 4, 0), 2)
+        self.nav_w = nav_w
+        nv = UK.vbox(nav_w, (0, 0, 0, 0), 1)
+        self.nav_ind = UM.NavIndicator(nav_w)
         sa = QScrollArea()
         sa.setWidgetResizable(True)
         sa.setFrameShape(QFrame.Shape.NoFrame)
         sa.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        sa.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         sa.setWidget(nav_w)
+        sa.viewport().setAutoFillBackground(False)
         self.nav = QButtonGroup(self)
         self.nav.setExclusive(True)
         self.nav_keys = []
         self.nav_caps = []  # [(заголовок групи, [ключі])] — для простого вигляду
         for cap, items in NAV:
-            cl = label(tr(cap), "navcap")
+            cl = UM.NavCap(self, tr(cap))
             nv.addWidget(cl)
             self.nav_caps.append((cl, [k for k, _, _ in items]))
             for key, ic, text in items:
-                b = QPushButton(tr(text))
-                b.setObjectName("nav")
-                b.setCheckable(True)
-                b.setCursor(Qt.CursorShape.PointingHandCursor)
-                b.setFocusPolicy(Qt.FocusPolicy.TabFocus)
-                b.setIcon(nav_icon(ic))
-                b.setIconSize(QSize(19, 19))
+                b = UM.NavItem(self, tr(text), ic)
                 self.nav.addButton(b, len(self.nav_keys))
                 self.nav_keys.append(key)
                 nv.addWidget(b)
         nv.addStretch()
         v.addWidget(sa, 1)
+        self.nav_fades = (UM.ScrollFade(sa, True), UM.ScrollFade(sa, False))
+        sa.installEventFilter(self)
+        self.nav_area = sa
         self.nav.idClicked.connect(lambda i: self.go(self.nav_keys[i]))
-        st = hbox(margins=(10, 0, 0, 4), spacing=8)
+        v.addSpacing(6)
         kind, text = (("warn", tr("app.preview")) if E.DRY_RUN else
                       ("ok", tr("app.admin")) if ADMIN else ("bad", tr("app.no_admin")))
-        st.addWidget(dot(T[kind]))
-        st.addWidget(label(text, "muted"), 1)
-        v.addLayout(st)
-        self.boost_line = hbox(margins=(10, 0, 0, 4), spacing=8)
-        self.boost_dot = dot(T["ok"])
-        self.boost_lbl = label(tr("g.on"), "muted")
-        self.boost_line.addWidget(self.boost_dot)
-        self.boost_line.addWidget(self.boost_lbl, 1)
-        v.addLayout(self.boost_line)
+        v.addWidget(UM.StatusLine(self, kind, text))
+        self.boost_dot = self.boost_lbl = UM.StatusLine(self, "ok", tr("g.on"))
+        v.addWidget(self.boost_dot)
         self.boost_dot.hide()
-        self.boost_lbl.hide()
-        ver = label(tr("app.version", v=E.VERSION), "muted")
-        ver.setContentsMargins(10, 0, 0, 0)
-        v.addWidget(ver)
-        self.upd_side = QPushButton()  # видно на кожній сторінці, навіть коли на головній інший банер
-        self.upd_side.setObjectName("sideUpd")
-        self.upd_side.setCursor(Qt.CursorShape.PointingHandCursor)
+        v.addSpacing(4)
+        self.upd_side = UM.RailButton(self, "download", "", accent=True)  # видно на кожній сторінці
         self.upd_side.clicked.connect(self.install_update)
         self.upd_side.hide()
-        v.addSpacing(6)
         v.addWidget(self.upd_side)
+        self.btn_theme = UM.RailButton(self, "moon", "")
+        self.btn_theme.clicked.connect(lambda: self.toggle_theme(self.btn_theme))
+        v.addWidget(self.btn_theme)
+        self.btn_pin = UM.RailButton(self, "panel", "")
+        self.btn_pin.clicked.connect(lambda: self.pin_rail(not self.rail_pinned))
+        v.addWidget(self.btn_pin)
+        self._rail_texts()
+        self.rail_anim = UM.Anim(self, self._rail_step, 260, UM.OUT)
+        self.rail_open = QTimer(self)
+        self.rail_open.setSingleShot(True)
+        self.rail_open.timeout.connect(lambda: self.rail_anim.to(1.0))
+        self.rail_close = QTimer(self)
+        self.rail_close.setSingleShot(True)
+        self.rail_close.timeout.connect(lambda: self.rail_anim.to(0.0) if not self.rail_pinned else None)
+        side.installEventFilter(self)
+        self._rail_step(1.0 if self.rail_pinned else 0.0)
         return side
+
+    # ── бічне меню ──
+    def _rail_texts(self):
+        dark = UK.is_dark()
+        self.btn_theme.icon_name = "sun" if dark else "moon"
+        self.btn_theme.setText(tr("theme.to_light") if dark else tr("theme.to_dark"))
+        self.btn_pin.flip = self.rail_pinned
+        self.btn_pin.setText(tr("rail.unpin") if self.rail_pinned else tr("rail.pin"))
+        self.btn_pin.update()
+        self.btn_theme.update()
+
+    def _rail_step(self, k: float):
+        self.k = k
+        w = int(UM.RAIL_MIN + (UM.RAIL_MAX - UM.RAIL_MIN) * k)
+        self.side.setGeometry(0, 0, w, self.height())
+        self.rail_space.setFixedWidth(UM.RAIL_MAX if self.rail_pinned else UM.RAIL_MIN)
+        self.rail_shadow.k = 0.0 if self.rail_pinned else k
+        self.rail_shadow.setGeometry(w, 0, 30, self.height())
+        self.rail_shadow.setVisible(self.rail_shadow.k > 0.01)
+        for cap, _keys in self.nav_caps:  # згорнуте меню: замість підписів груп — короткі риски, тож тісніше
+            cap.setFixedHeight(int(14 + 10 * k))
+        for wd in self.side.findChildren(QWidget):
+            if isinstance(wd, (UM.NavItem, UM.NavCap, UM.Brand, UM.StatusLine, UM.RailButton)):
+                wd.update()
+
+    def pin_rail(self, on: bool):
+        self.rail_pinned = bool(on)
+        F.CFG["rail_pinned"] = self.rail_pinned
+        self._rail_texts()
+        self.rail_anim.to(1.0 if on else 0.0)
+        st = self.pages.get("settings") if hasattr(self, "pages") else None
+        if st is not None and hasattr(st, "sw_rail"):
+            st.sw_rail.set_quiet(self.rail_pinned)
+
+    def eventFilter(self, obj, ev):
+        if obj is getattr(self, "nav_area", None) and ev.type() == ev.Type.Resize:
+            for f in self.nav_fades:
+                f.sync()
+        if obj is getattr(self, "side", None) and not self.rail_pinned:
+            t = ev.type()
+            if t == ev.Type.Enter:
+                self.rail_close.stop()
+                if self.k < 1.0:
+                    self.rail_open.start(110)
+            elif t == ev.Type.Leave:
+                self.rail_open.stop()
+                self.rail_close.start(160)
+        return super().eventFilter(obj, ev)
+
+    def snap_indicator(self):
+        b = self.nav.checkedButton()
+        if b is not None and b.isVisible():
+            self.nav_ind.move_to(b.geometry(), animate=self.nav_ind.anim.running)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        if hasattr(self, "side"):
+            self._rail_step(self.k)
+
+    # ── тема ──
+    def toggle_theme(self, origin_widget=None):
+        new = "light" if UK.is_dark() else "dark"
+        self.set_theme_pref(new, origin_widget)
+
+    def set_theme_pref(self, pref: str, origin_widget=None):
+        """pref: system | dark | light. Перемикання — з колом, що розходиться від кнопки."""
+        F.CFG["theme"] = pref
+        name = UK.resolve_theme(pref)
+        origin = None
+        if origin_widget is not None and origin_widget.isVisible():
+            origin = origin_widget.mapTo(self, origin_widget.rect().center())
+        if name != UK.THEME["name"]:
+            UM.reveal_theme(self, name, origin)
+        self._rail_texts()
+        st = self.pages.get("settings")
+        if st is not None and hasattr(st, "sync_theme"):
+            st.sync_theme()
+
+    def _system_scheme_changed(self, *_):
+        if (F.CFG["theme"] or "system") == "system":
+            self.set_theme_pref("system")
+
+    def _on_theme(self, _name):
+        self._rail_texts()  # сторінки й віджети з retheme() перефарбовує сам ui_kit.set_theme
+
+    def set_motion(self, on: bool):
+        F.CFG["motion"] = bool(on)
+        UK.MOTION["on"] = bool(on)
+
+    def free_memory(self):
+        """Швидка дія «Звільнити пам'ять»: сторінка «Пам'ять» і одразу звільнення."""
+        self.go("memory")
+        QTimer.singleShot(UK.dur(320) + 30, self.pages["memory"].start_clean)
 
     def _make_page(self, key: str, cls):
         page = cls(self)
@@ -536,7 +643,10 @@ class Main(QWidget):
     def go(self, key: str):
         idx = self.nav_keys.index(key)
         self.stack.setCurrentWidget(self.pages[key])
-        self.nav.button(idx).setChecked(True)
+        btn = self.nav.button(idx)
+        btn.setChecked(True)
+        if btn.isVisible():
+            self.nav_ind.move_to(btn.geometry())
         page = self.pages[key]
         if hasattr(page, "on_show"):
             page.on_show()
@@ -833,7 +943,6 @@ class Main(QWidget):
         self.pages["home"].update_booster()
         self.tray_boost.setText(tr("g.btn_off") if on else tr("g.btn_on"))
         self.boost_dot.setVisible(on)
-        self.boost_lbl.setVisible(on)
 
     def set_timer_hold(self, on: bool):
         F.CFG["timer_hold"] = on
@@ -1319,6 +1428,11 @@ class Main(QWidget):
             dark_titlebar(self)
         super().showEvent(e)
 
+    def hideEvent(self, e):
+        super().hideEvent(e)
+        # тема, змінена наживо, стоїть на рівні вікон; поки вікно в треї — перебудувати стиль усієї програми
+        QTimer.singleShot(300, lambda: UK.flush_app_theme() if not self.isVisible() else None)
+
     def closeEvent(self, e):
         if not self.quitting and F.CFG["close_to_tray"] and self.tray.isVisible():
             e.ignore()
@@ -1358,22 +1472,12 @@ class Main(QWidget):
 
 
 def apply_theme(app: QApplication) -> None:
+    """Стиль, шрифт і палітра (6.13: темна, світла або як у Windows) перед створенням вікон."""
     app.setStyle("Fusion")
     app.setFont(make_font(13))
-    pal = QPalette()
-    roles = {
-        QPalette.ColorRole.Window: T["bg"], QPalette.ColorRole.WindowText: T["text"],
-        QPalette.ColorRole.Base: T["surf"], QPalette.ColorRole.AlternateBase: T["surf2"],
-        QPalette.ColorRole.Text: T["text"], QPalette.ColorRole.Button: T["surf2"],
-        QPalette.ColorRole.ButtonText: T["text"], QPalette.ColorRole.Highlight: T["acc"],
-        QPalette.ColorRole.HighlightedText: "#FFFFFF", QPalette.ColorRole.ToolTipBase: T["surf2"],
-        QPalette.ColorRole.ToolTipText: T["text"], QPalette.ColorRole.PlaceholderText: T["mute"],
-        QPalette.ColorRole.Link: T["acc"],
-    }
-    for role, col in roles.items():
-        pal.setColor(role, QColor(col))
-    app.setPalette(pal)
-    app.setStyleSheet(build_qss())
+    UK.MOTION["on"] = F.CFG["motion"] is not False
+    UK.set_theme(UK.resolve_theme(F.CFG["theme"] or "system"), app)
+    UK.apply_app_theme(app)
 
 
 def maintenance_main() -> int:
@@ -1417,11 +1521,23 @@ def main():
         sys.exit(0)  # OptimaX уже працює — ми лише показали його вікно
     apply_theme(app)
     tray_start = "--tray" in sys.argv
-    w = Main(start_hidden=tray_start)
-    if not tray_start:
-        w.show()
-    if F.CFG["smart"]:  # розумна оптимізація чекала перезавантаження
-        QTimer.singleShot(2500, w.resume_smart)
+    holder = {}
+
+    def build():
+        w = holder["w"] = Main(start_hidden=tray_start)
+        if not tray_start:
+            if splash is not None:
+                splash.finish(w)
+            else:
+                w.show()
+        if F.CFG["smart"]:  # розумна оптимізація чекала перезавантаження
+            QTimer.singleShot(2500, w.resume_smart)
+    splash = None
+    if not tray_start and UK.MOTION["on"] and F.CFG["splash"] is not False:
+        splash = UM.Splash(E.APP_NAME, tr("splash.sub"))
+        splash.play(build)
+    else:
+        build()
     sys.exit(app.exec())
 
 

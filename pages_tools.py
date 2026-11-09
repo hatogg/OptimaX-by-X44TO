@@ -21,6 +21,7 @@ import i18n
 import lifecycle as L
 import mining as MG
 import power as PW
+import ui_motion as UM
 import updater as U
 from i18n import tr
 from pages_optimize import TweakRow
@@ -1222,6 +1223,35 @@ class SettingsPage(QWidget):
         rb.addStretch()
         lv.addLayout(rb)
         v.addWidget(lc)
+
+        # вигляд (6.13): тема, анімації, бічне меню, заставка
+        ac, avl = section_card(tr("set.look"), tr("set.look_d"))
+        box = hbox(margins=(14, 4, 14, 8), spacing=12)
+        self.theme_cards = []
+        for name in ("system", "dark", "light"):
+            c = UM.ThemeCard(name, tr(f"theme.{name}"))
+            c.clicked.connect(lambda _=False, n=name, cc=c: self.pick_theme(n, cc))
+            box.addWidget(c)
+            self.theme_cards.append((name, c))
+        avl.addLayout(box)
+        for key, cb, state in (("motion", main.set_motion, F.CFG["motion"] is not False),
+                               ("rail", main.pin_rail, bool(F.CFG["rail_pinned"])),
+                               ("splash", self.set_splash, F.CFG["splash"] is not False)):
+            r = hbox(margins=(14, 4, 14, 4), spacing=12)
+            sw = Switch()
+            sw.set_quiet(state)
+            sw.clicked.connect(cb)
+            r.addWidget(sw)
+            tv = vbox(spacing=1)
+            tv.addWidget(label(tr(f"set.{key}"), "rowTitle"))
+            tv.addWidget(label(tr(f"set.{key}.d"), "desc", wrap=True))
+            r.addLayout(tv, 1)
+            avl.addLayout(r)
+            setattr(self, f"sw_{key}", sw)
+        avl.addSpacing(4)
+        v.addWidget(ac)
+        self.sync_theme()
+
         bc, bv = section_card(tr("set.bg"), tr("set.bg_d"))
         for key, cb, state in (("tray", self.set_tray, bool(F.CFG["close_to_tray"])),
                                ("autostart", self.set_autostart, False)):
@@ -1399,6 +1429,18 @@ class SettingsPage(QWidget):
         self.hk_state.setVisible(bool(busy))
         if busy:
             self.hk_state.setText(tr("hk.busy", keys=", ".join(HK.label(a) for a in busy)))
+
+    def pick_theme(self, name: str, card_w=None):
+        self.main.set_theme_pref(name, card_w)
+        self.sync_theme()
+
+    def sync_theme(self):
+        pref = F.CFG["theme"] or "system"
+        for name, c in self.theme_cards:
+            c.setChecked(name == pref)
+
+    def set_splash(self, on: bool):
+        F.CFG["splash"] = bool(on)
 
     def pick_lang(self, code: str):
         for c, card_ in self.lang_cards:
