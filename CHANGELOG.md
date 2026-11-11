@@ -2,9 +2,9 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
-## [6.13] — 2026-11-09
+## [6.13] — 2026-11-11
 
-Новий дизайн: дашборд, бічне меню, що розгортається, плавні анімації, світла й темна тема — і сторінка «Пам'ять».
+Новий дизайн: дашборд, бічне меню, що розгортається, плавні анімації, світла й темна тема — і сторінка «Пам'ять». А ще надійніший відкат: крок, який не вдалося повернути, більше не губиться.
 
 ### Додано
 
@@ -19,9 +19,28 @@
 
 - **Бічне меню**: згорнуте — лише іконки, при наведенні розгортається поверх сторінки з підписами. Кнопкою «Закріпити меню» (або в налаштуваннях) воно лишається розгорнутим, як раніше. Версія — під назвою програми.
 - Нова палітра: глибший синій, м'ятний для «добре», скло й світіння на головних картках.
+- **Файл підкачки, заданий вручну, OptimaX більше не змінює.** Раніше «Оптимізувати файл підкачки» міняла розмір і в цьому випадку, а повернути ваші значення було нічим.
+
+### Виправлено
+
+- **Відкат, який не спрацював, більше не вважається виконаним.** Якщо крок відкату — команда, задача планувальника, PowerShell чи параметр живлення — завершився помилкою, зупинкою або тайм-аутом, він лишається в журналі як частковий, і відкат можна повторити. Раніше код повернення перевірявся лише для реєстру та служб: такий пункт зникав із журналу, хоча система не поверталась. Команда, якій уже нічого повертати (значення чи задачі більше немає), як і раніше, не помилка.
+- **Приховані параметри живлення тепер мають запис відкату.** `powercfg /query` не показує приховані параметри (наприклад, паркування ядер), тож старе значення не читалося, і зміна лишалася без запису. Тепер значення читається через `powercfg /qh`, запис відкату робиться до зміни, а параметр, старе значення якого прочитати не вдалося, не змінюється.
+- **Мережеві адаптери:** попередження PowerShell перед відповіддю більше не лишає зміни без запису відкату.
+- Якщо після відкату журнал не вдалося записати на диск, про це сказано в журналі виконання.
+
+### Безпека
+
+- **Режим гри не довіряє своєму стану з файла налаштувань.** Служби та схема живлення, які він повертає після гри, беруться лише зі свого списку й передаються без `cmd.exe`. Раніше рядок із `settings.json`, куди може писати будь-яка програма користувача, потрапляв у команду з правами адміністратора — зокрема автоматично під час запуску.
+- **OneDrive після режиму гри запускається зі звичайними правами користувача**, а не з правами адміністратора, з якими працює OptimaX.
+- Знімок початкових налаштувань: режим служби приймається лише з відомих значень, команда — без `cmd.exe`.
+- Очищення ніколи не видаляє власні дані OptimaX (журнал відкату, Rescue), навіть якщо `%TEMP%` вказує на них.
 
 <details>
 <summary>English</summary>
+
+**Fixed:** a rollback step that failed (a command, a scheduled task, PowerShell or a power setting) is no longer counted as done — it stays in the journal as partial and can be retried; before, only registry and service steps were checked, so the entry vanished while the system was not restored. Hidden power settings (such as core parking) now get a rollback record: they are read with `powercfg /qh`, the record is written before the change, and a setting whose old value cannot be read is left alone. A PowerShell warning no longer leaves network adapter changes without a rollback record. A manually sized page file is no longer changed.
+
+**Security:** Game Mode no longer trusts its saved state from the settings file — services and the power plan are taken only from its own list and passed without `cmd.exe` (a line from `settings.json`, writable by any user program, used to reach an administrator command line, even automatically at startup). OneDrive is restarted with normal user rights after Game Mode, not as administrator. The baseline snapshot accepts only known service modes. Cleanup never deletes OptimaX's own data (rollback journal, Rescue).
 
 **Added:** light and dark themes (or follow Windows) in Settings → Appearance and on a button at the bottom of the menu; the theme switches instantly with a circular reveal, including the Windows title bar. New Memory page: a gauge and a live chart of RAM in use, In use / Available / Standby cache / Total as Task Manager counts it, and the apps holding memory with their state (active, background, asleep). Free up memory works honestly: it trims working sets only of apps asleep in the background (never the active window, games, system processes, antivirus or audio), clears the standby cache and measures before → after, then checks a minute later how much stayed free. New module `memtools.py`. The Analysis page became a Dashboard: a 0–100 performance score with an animated scale and a radar of its parts (optimization, privacy, build check, hardware balance, memory, disk), explained by “How is it calculated?”, quick actions and live CPU, memory, disk and GPU temperature charts. Motion everywhere: page transitions, counting numbers, scrolling charts, sliding toasts, fading dialogs, a sliding menu highlight and a splash screen; animations and the splash can be turned off. New modules `ui_motion.py` and `pages_memory.py`.
 
