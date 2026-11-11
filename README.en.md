@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/screens/en/analysis.png" alt="OptimaX main screen: system analysis" width="88%">
+  <img src="docs/assets/screens/en/analysis.png" alt="OptimaX main screen: a dashboard with the PC score, quick actions and live readings" width="88%">
 </p>
 
 ## What it does
@@ -36,7 +36,7 @@
 
 Measures FPS before and after and keeps only what doesn't hurt: if things got worse, it finds the culprit by splitting the changes in halves and removes it. “Proven” is shown only for changes measured on their own.
 
-<img src="docs/assets/screens/en/smart.png" alt="Smart optimization removed a harmful change">
+<img src="docs/assets/screens/en/smart.png" alt="Smart optimization: before and after measurements, the FPS gain shown with its measurement error">
 </td>
 <td width="50%" valign="top">
 
@@ -99,6 +99,16 @@ While you play, it watches the CPU, GPU, memory, disk and temperatures, then nam
 An image for Telegram, Discord or a forum: FPS before and after, Windows boot time, processes, memory. Only numbers that were actually measured.
 
 <img src="docs/assets/screens/en/share-card.png" alt="Result card for social networks">
+</td>
+</tr>
+<tr>
+<td colspan="2" valign="top">
+
+### Memory: an honest clean-up
+
+How much RAM is really in use and what holds it. “Free up memory” trims only apps asleep in the background and clears the cache — never the game, the active window, system processes or the antivirus. It shows before → after, and a minute later how much stayed free.
+
+<p align="center"><img src="docs/assets/screens/en/memory.png" alt="The Memory page: RAM in use, what holds it, and the Free up memory button" width="70%"></p>
 </td>
 </tr>
 </table>
