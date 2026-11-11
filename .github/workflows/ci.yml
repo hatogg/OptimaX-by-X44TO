@@ -47,9 +47,15 @@ jobs:
           cache-dependency-path: requirements.txt
       - name: System libraries (Qt offscreen, Mesa OpenGL without a screen)
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends libegl1 libgl1 libegl-mesa0 libgl1-mesa-dri \
-            libxkbcommon0 libfontconfig1 libdbus-1-3 fonts-dejavu-core
+          pkgs="libegl1 libgl1 libegl-mesa0 libgl1-mesa-dri libxkbcommon0 libfontconfig1 libdbus-1-3 fonts-dejavu-core"
+          # Оновлення індексу пакунків іноді падає на раннері (недоступне дзеркало чи стороннє сховище) — саме це
+          # не має зупиняти перевірку: потрібні бібліотеки зазвичай ставляться й зі списків образу.
+          sudo apt-get update -q -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 \
+            || echo "::warning title=apt-get update::failed — using the package lists of the runner image"
+          sudo apt-get install -y -q --no-install-recommends $pkgs \
+            || { sleep 30; sudo apt-get update -q || true; sudo apt-get install -y -q --no-install-recommends $pkgs; }
+          # якщо хоч однієї бібліотеки немає — помилка тут, а не тихо пропущені тести вікна й OpenGL
+          dpkg -s $pkgs > /dev/null
       - name: Python packages
         run: python -m pip install -r requirements.txt pytest cryptography
       - name: Tests
