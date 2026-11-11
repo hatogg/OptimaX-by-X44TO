@@ -297,7 +297,7 @@ def run_argv(a):
         if v in ("/list", "-list", "/l"):
             return 0, "\n".join(f"Power Scheme GUID: {g}  ({n}){' *' if g == PW['active'] else ''}"
                                 for g, n in SCHEMES.items())
-        if v in ("/query", "-query", "/q"):
+        if v in ("/query", "-query", "/q", "/qh"):
             g, sub, st = a[2].lower(), a[3], a[4]
             ac, dc = PW["vals"].get((g, sub, st), (0, 0))
             return 0, f"    Current AC Power Setting Index: 0x{ac:08x}\n    Current DC Power Setting Index: 0x{dc:08x}"

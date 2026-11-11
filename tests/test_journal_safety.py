@@ -89,6 +89,13 @@ def test_baseline_snapshot_recovers_changes_when_the_journal_is_lost():
     assert r["baseline9_restored"]
 
 
+def test_failed_command_undo_is_kept_and_can_be_retried():
+    """6.14: команда відкату, що не спрацювала, — не «виконано»: запис лишається в журналі й у Rescue-файлі."""
+    r = crash_report()
+    assert r["cmd10"] == {"partial": 1, "undone": 0, "in_journal": True, "left": 1, "in_rescue": True}, r["cmd10"]
+    assert r["cmd10_retry"] == {"undone": 1, "partial": 0, "in_journal": False}, r["cmd10_retry"]
+
+
 def test_overlapping_settings_are_declared_conflicts():
     """Два твіки, що ставлять одному параметру різні значення, мають бути позначені як конфліктні —
     інакше результат залежав би від порядку, а відкат одного повертав би проміжне значення."""

@@ -137,6 +137,9 @@ BOOST_PROFILES = {
 }
 BOOST_KEYS = ("power", "services", "kill", "purge", "timer", "dnd", "balance")
 HIGH_PRIORITY = 0x80
+# класи пріоритету Windows, які режим гри може повертати процесу: idle, below normal, normal, above normal, high,
+# realtime
+PRIORITY_CLASSES = (0x40, 0x4000, 0x20, 0x8000, 0x80, 0x100)
 
 
 def boost_profile(game_path: str = None) -> str:
@@ -224,27 +227,41 @@ class GameBooster:
 
     def stop(self, log) -> dict:
         state = self.cfg["booster_state"]
-        if not state:
+        if not isinstance(state, dict) or not state:
+            if state:  # не словник — файл налаштувань зіпсовано чи підмінено: відновлювати за ним нічого
+                self.cfg["booster_state"] = None
             return {"ok": True}
         log(tr("g.boost_off"))
-        for s in state.get("services", []):
-            E.run(f"net start {s}", 30, log)
-        if state.get("plan"):
-            E.run(f"powercfg -setactive {state['plan']}", 15, log)
-        if state.get("onedrive") and os.path.exists(ONEDRIVE_EXE) and not E.DRY_RUN:
-            try:
-                subprocess.Popen([ONEDRIVE_EXE, "/background"], creationflags=E.CREATE_NO_WINDOW)
-            except OSError:
-                pass
+        # 6.14: стан режиму гри лежить у settings.json, куди може писати будь-яка програма користувача, а ці команди
+        # виконуються з правами адміністратора. Тож із файлу беремо лише те, що режим гри сам міг туди записати
+        # (служби зі свого списку, GUID схеми живлення), і передаємо аргументи списком — без cmd.exe.
+        services = state.get("services")
+        for s in services if isinstance(services, list) else []:
+            if s in BOOST_SERVICES:
+                E.run(["net", "start", s], 30, log)
+        plan = state.get("plan")
+        if isinstance(plan, str) and E.GUID_RE.fullmatch(plan):
+            E.run(["powercfg", "-setactive", plan], 15, log)
+        if state.get("onedrive") is True and os.path.exists(ONEDRIVE_EXE) and not E.DRY_RUN:
+            # OneDrive — програма користувача з його папки: запускаємо її зі звичайними правами, а не з правами
+            # адміністратора, які має OptimaX
+            E.start_as_user(ONEDRIVE_EXE, "/background", log)
         if state.get("timer") and not CFG["timer_hold"]:
             E.set_timer_resolution(False)
-        if state.get("dnd") is not None:
-            _set_toasts(None if state["dnd"] == -1 else state["dnd"])
-        if state.get("prio") and E.IS_WIN:
+        dnd = state.get("dnd")
+        if isinstance(dnd, int) and not isinstance(dnd, bool):
+            _set_toasts(None if dnd == -1 else dnd)
+        prio = state.get("prio")
+        if isinstance(prio, list) and prio and E.IS_WIN:
             import monitor as M
             alive = {pid: (n or "").lower() for pid, n in E.processes()}
-            for pid, name, old in state["prio"]:
-                if alive.get(pid) == (name or "").lower():  # той самий процес ще працює — повертаємо пріоритет
+            for item in prio:
+                if not (isinstance(item, (list, tuple)) and len(item) == 3):
+                    continue
+                pid, name, old = item
+                if not (isinstance(pid, int) and isinstance(name, str) and old in PRIORITY_CLASSES):
+                    continue
+                if alive.get(pid) == name.lower():  # той самий процес ще працює — повертаємо пріоритет
                     M._set_priority(pid, old)
         self.cfg["booster_state"] = None
         log(tr("g.restored"))

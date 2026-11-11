@@ -23,9 +23,15 @@ STRINGS = {
                    "  · 0.5 ms timer is on (works while OptimaX is running)"),
     "e.timer_fail": ("  ⚠ таймер 0.5 мс недоступний на цьому залізі", "  ⚠ таймер 0.5 мс недоступен на этом железе",
                      "  ⚠ 0.5 ms timer is not supported on this hardware"),
-    "e.pf_manual": ("  · розмір файла підкачки був заданий вручну — автоматичний відкат недоступний",
-                    "  · размер файла подкачки был задан вручную — автоматический откат недоступен",
-                    "  · page file size was set manually — automatic rollback is unavailable"),
+    "e.pf_manual": ("  · розмір файла підкачки заданий вручну — OptimaX його не змінює",
+                    "  · размер файла подкачки задан вручную — OptimaX его не меняет",
+                    "  · the page file size is set manually — OptimaX leaves it as it is"),
+    "e.journal_stale": ("  ⚠ Відкат виконано, але журнал не записався ({err}). Після перезапуску OptimaX може "
+                        "показати цей пункт знову.",
+                        "  ⚠ Откат выполнен, но журнал не записался ({err}). После перезапуска OptimaX может "
+                        "показать этот пункт снова.",
+                        "  ⚠ The rollback was done, but the journal could not be saved ({err}). OptimaX may show "
+                        "this item again after a restart."),
     "e.tamper": ("  ⚠ «Захист від підробки» може блокувати вимкнення — вимкніть його в «Безпека Windows»",
                  "  ⚠ «Защита от подделки» может блокировать отключение — выключите её в «Безопасность Windows»",
                  "  ⚠ Tamper Protection may block this — turn it off in Windows Security"),

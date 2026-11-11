@@ -211,6 +211,30 @@ R["baseline9_restored"] = snapshot([A, B]) == part([A, B])
 E.JOURNAL.data["applied"].clear()  # система вже як до OptimaX — записи журналу більше не потрібні
 E.JOURNAL._save()
 
+# 10. Крок відкату — команда, яка не спрацювала (6.14): запис лишається в журналі, Rescue-файл його містить,
+#     повторний відкат завершує справу. Раніше такий відкат вважався виконаним, і запис зникав.
+import rescue as RS  # noqa: E402
+T = E.Tweak("test_cmd_undo", "perf", [E.C("fsutil behavior set disablelastaccess 1",
+                                          "fsutil behavior set disablelastaccess 2")], _title="cmd undo")
+_run = E.run
+
+
+def undo_denied(cmd, *a, **k):
+    if isinstance(cmd, str) and cmd.endswith("disablelastaccess 2"):
+        return 5, "Access is denied."
+    return _run(cmd, *a, **k)
+
+
+E.apply_tweaks([T], log, header=False)
+E.run = undo_denied
+r1 = E.undo_ids([T.id], log)
+E.run = _run
+R["cmd10"] = {"partial": r1["partial"], "undone": r1["undone"], "in_journal": E.JOURNAL.has(T.id),
+              "left": len((E.JOURNAL.get(T.id) or {}).get("undo", [])),
+              "in_rescue": "fsutil behavior set disablelastaccess 2" in RS.build_script()}
+r2 = E.undo_ids([T.id], log)
+R["cmd10_retry"] = {"undone": r2["undone"], "partial": r2["partial"], "in_journal": E.JOURNAL.has(T.id)}
+
 out_dir = sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else "."
 with open(os.path.join(out_dir, "roundtrip.json"), "w", encoding="utf-8") as f:
     json.dump(R, f, ensure_ascii=False, indent=1, default=str)

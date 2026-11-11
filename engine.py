@@ -431,7 +431,9 @@ def pw_get(guid: str, sub: str, setting: str, mode: str = "ac"):
     """Поточне значення параметра схеми живлення (від мережі або від батареї) або None."""
     if not IS_WIN:
         return None
-    _, out = run(f"powercfg /query {guid} {sub} {setting}", 10, ro=True)
+    # /qh, а не /query: приховані параметри (паркування ядер тощо) /query не показує зовсім — старе значення
+    # тоді не читалося, і зміна лишалася без запису відкату (6.14)
+    _, out = run(["powercfg", "/qh", guid, sub, setting], 10, ro=True)
     vals = re.findall(r"0x[0-9a-fA-F]{8}", out)
     if len(vals) < 2:
         return None
@@ -1011,14 +1013,19 @@ def exec_op(op, ctx: Ctx) -> None:
         _, sub, setting, value, mode = op
         g = active_scheme()
         old = pw_get(g, sub, setting, mode)
+        if old is None and not DRY_RUN:
+            # 6.14: старе значення не прочиталося — параметр не змінюємо: його не було б як повернути
+            log(tr("e.pw_na", setting=setting))
+            return
+        rec = {"t": "pw", "g": g, "s": sub, "st": setting, "old": old, "m": mode}
+        ctx.undo.append(rec)  # запис відкату — до зміни, як і для реєстру
         verb = "-setdcvalueindex" if mode == "dc" else "-setacvalueindex"
         rc, _ = run(f"powercfg {verb} {g} {sub} {setting} {value}", 10, log)
         if rc != 0:
+            ctx.undo.remove(rec)  # нічого не змінилося — і повертати нічого
             log(tr("e.pw_na", setting=setting))
             return
         run(f"powercfg -setactive {g}", 10, log)
-        if old is not None or DRY_RUN:
-            ctx.undo.append({"t": "pw", "g": g, "s": sub, "st": setting, "old": old, "m": mode})
     elif k == "file":
         _, src, dest = op
         if SF.system_target(os.path.dirname(dest)):  # «папка гри» з налаштувань веде в Windows (чи це посилання туди)
@@ -1058,6 +1065,11 @@ def exec_op(op, ctx: Ctx) -> None:
             ctx.undo.insert(0, {"t": "live", "k": op[1]})  # під час відкату виконається останнім
 
 
+# Команда відкату, яка «не знайшла що видаляти», — не збій: значення вже таке, як до OptimaX
+# (те саме правило, що й в OptimaX-Rescue.cmd: rescue.GONE_OK)
+UNDO_GONE_OK = ("reg delete ", "bcdedit /deletevalue ")
+
+
 def _undo_record(rec: dict, log: Callable, deferred: set = None) -> None:
     if not valid_undo(rec):  # зіпсований чи підкинутий запис не виконуємо — він лишиться в журналі як невдалий
         raise ValueError(tr("e.undo_bad", what=str(rec)[:80]))
@@ -1080,17 +1092,33 @@ def _undo_record(rec: dict, log: Callable, deferred: set = None) -> None:
         rc, out = run(["sc", "config", rec["n"], "start=", rec["old"]], 15, log)
         if rc not in (0, 1060):  # 1060 — служби вже немає: повертати нічого
             raise RuntimeError(f"sc config {rec['n']}: {first_line(out, 70) or rc}")
+    # 6.14: невдалий крок — це виняток, як і для реєстру та служб. Раніше код повернення команд, задач, PowerShell
+    # і живлення не перевірявся: відкат, який не спрацював, вважався виконаним, і запис зникав із журналу —
+    # зміну потім не було як повернути ні з програми, ні через OptimaX-Rescue.cmd.
     elif t == "task":
-        run(["schtasks", "/Change", "/Enable", "/TN", rec["n"]], 15, log)
+        rc, out = run(["schtasks", "/Change", "/Enable", "/TN", rec["n"]], 15, log)
+        if rc != 0:
+            gone, _ = run(["schtasks", "/Query", "/TN", rec["n"]], 15, ro=True)
+            if gone == 0:  # задача є, але не ввімкнулася; якщо її вже немає — повертати нічого
+                raise RuntimeError(f"schtasks /Enable {rec['n']}: {first_line(out, 70) or rc}")
     elif t == "cmd":
-        run(rec["c"], 1800, log)
+        rc, out = run(rec["c"], 1800, log)
+        if rc not in (0, 3010) and not rec["c"].lower().startswith(UNDO_GONE_OK):
+            raise RuntimeError(f"{rec['c'][:60]}: {first_line(out, 70) or rc}")
     elif t == "ps":
-        ps(rec["c"], 120, log)
+        code = rec["c"]
+        if not code.strip() or code.lstrip().startswith("#"):  # порожній крок (запис режиму перегляду)
+            return
+        rc, out = ps(code, 120, log)
+        if rc != 0:
+            raise RuntimeError(f"PowerShell: {first_line(out, 70) or rc}")
     elif t == "pw":
         if rec.get("old") is None:
             return
         verb = "-setdcvalueindex" if rec.get("m") == "dc" else "-setacvalueindex"
-        run(["powercfg", verb, rec["g"], rec["s"], rec["st"], str(rec["old"])], 10, log)
+        rc, out = run(["powercfg", verb, rec["g"], rec["s"], rec["st"], str(rec["old"])], 10, log)
+        if rc != 0:
+            raise RuntimeError(f"powercfg {rec['st']}: {first_line(out, 70) or rc}")
         if active_scheme() == rec["g"]:
             run(["powercfg", "-setactive", rec["g"]], 10, log)
     elif t == "live":
@@ -1156,9 +1184,11 @@ def undo_one(tid: str, log: Callable, deferred: set = None):
     failed = _rollback(entry["undo"], log, deferred)
     if failed:
         JOURNAL.replace_undo(tid, failed)
-        return "partial"
-    JOURNAL.pop(tid)
-    return True
+    else:
+        JOURNAL.pop(tid)
+    if JOURNAL.save_error:  # 6.14: відкат зроблено, але журнал на диску лишився старим — кажемо про це
+        log(tr("e.journal_stale", err=JOURNAL.save_error))
+    return "partial" if failed else True
 
 
 # ───────────────────────── Explorer і миттєве застосування ─────────────────────────
@@ -1176,6 +1206,25 @@ def explorer_start(log=None) -> None:
 def restart_explorer(log=None) -> None:
     run("taskkill /f /im explorer.exe", 10, log)
     explorer_start(log)
+
+
+USER_TASK = "OptimaX Launch"
+
+
+def start_as_user(path: str, args: str = "", log=None) -> bool:
+    """Запускає програму зі звичайними правами користувача, а не з правами адміністратора, з якими працює OptimaX
+    (6.14). Одноразова задача планувальника з рівнем LIMITED: на відміну від explorer.exe <шлях>, їй можна
+    передати аргументи. Задача одразу видаляється — програма, яку вона запустила, працює далі."""
+    if not path or '"' in path or '"' in args:
+        return False
+    command = f'"{path}"' + (f" {args}" if args else "")
+    rc, _ = run(["schtasks", "/Create", "/TN", USER_TASK, "/TR", command, "/SC", "ONCE", "/ST", "00:00",
+                 "/RL", "LIMITED", "/IT", "/F"], 20, log)
+    if rc != 0:
+        return False
+    rc, _ = run(["schtasks", "/Run", "/TN", USER_TASK], 20, log)
+    run(["schtasks", "/Delete", "/TN", USER_TASK, "/F"], 20, log)
+    return rc == 0
 
 
 def _apply_syscolors() -> None:
@@ -1366,6 +1415,13 @@ def clean_dir(path: str) -> int:
     freed = 0
     if not path or not os.path.isdir(path):
         return 0
+    # 6.14: шлях приходить зі змінних середовища (%TEMP%, %LOCALAPPDATA%), які користувач — і будь-яка його
+    # програма — може перевизначити, а видаляємо ми з правами адміністратора. Власні дані OptimaX (журнал відкату,
+    # Rescue), посилання на місці папки й корінь диска не чистимо ніколи.
+    real = os.path.realpath(path)
+    own = SF.data_root()
+    if SF.is_reparse(path) or os.path.dirname(real) == real or (own and SF.is_under(real, os.path.realpath(own))):
+        return 0
     for root, dirs, files in os.walk(path, topdown=False):
         for f in files:
             fp = os.path.join(root, f)
@@ -1460,14 +1516,17 @@ def f_pagefile(ctx: Ctx) -> None:
         ctx.undo.append({"t": "ps", "c": PF_UNDO})
         return
     _, out = ps("(Get-CimInstance Win32_ComputerSystem).AutomaticManagedPagefile", 20, ro=True)
-    was_auto = out.strip().lower() == "true"
+    state = out.strip().lower()
+    if state != "true":
+        # 6.14: файл підкачки, заданий вручну (або стан, який не вдалося прочитати), не чіпаємо. Раніше розмір усе
+        # одно змінювався, а запису відкату не було: ваші значення губилися назавжди.
+        ctx.log(tr("e.pf_manual") if state == "false" else
+                tr("e.skipped", why=first_line(out, 60) or "?", cmd="Win32_PageFileSetting"))
+        return
+    ctx.undo.append({"t": "ps", "c": PF_UNDO})  # запис відкату — до зміни
     rc, out = ps(PF_APPLY, 45)
     if rc != 0:
         ctx.log(f"  ⚠ pagefile: {first_line(out)}")
-    if was_auto:
-        ctx.undo.append({"t": "ps", "c": PF_UNDO})
-    else:
-        ctx.log(tr("e.pf_manual"))
 
 
 @cmd_doc("Set-MpPreference -DisableRealtimeMonitoring $true")
@@ -1686,10 +1745,9 @@ def f_nic_power(ctx: Ctx) -> None:
         ctx.undo.append({"t": "ps", "c": "# restore adapter power settings"})
         return
     rc, out = ps(script, 90)
-    try:
-        saved = as_list(json.loads(out)) if out.strip() else []
-    except Exception:
-        saved = []
+    # 6.14: parse_json_out, а не json.loads — попередження PowerShell перед JSON інакше лишало вже зроблені зміни
+    # без жодного запису відкату
+    saved = as_list(parse_json_out(out))
     lines = []
     for s in saved:
         if not isinstance(s, dict):
@@ -1728,10 +1786,7 @@ def _nic_props(ctx: Ctx, media_filter: str, prop_filter: str, target: str) -> No
         ctx.undo.append({"t": "ps", "c": "# restore adapter properties"})
         return
     rc, out = ps(script, 90)
-    try:
-        saved = as_list(json.loads(out)) if out.strip() else []
-    except Exception:
-        saved = []
+    saved = as_list(parse_json_out(out))  # як у f_nic_power: попередження перед JSON не гублять записи відкату
     lines = [f"Set-NetAdapterAdvancedProperty -Name {_psq(s['n'])} -RegistryKeyword {_psq(s['k'])} "
              f"-RegistryValue {_psq(s['v'])} -NoRestart -ErrorAction SilentlyContinue"
              for s in saved if isinstance(s, dict) and s.get("k")]

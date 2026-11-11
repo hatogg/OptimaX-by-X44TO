@@ -91,7 +91,8 @@ def start_server(on_show):
 
 
 # ───────────────────────── службові режими для інсталятора ─────────────────────────
-TASKS = ("OptimaX", "OptimaX Trial", "OptimaX Maintenance", "OptimaX DNS", "OptimaX Safety", "OptimaX Smart")
+TASKS = ("OptimaX", "OptimaX Trial", "OptimaX Maintenance", "OptimaX DNS", "OptimaX Safety", "OptimaX Smart",
+         E.USER_TASK)  # остання — одноразова (engine.start_as_user); лишається, лише якщо її не вдалося видалити
 
 
 def uninstall_cleanup(revert: bool, log) -> dict:

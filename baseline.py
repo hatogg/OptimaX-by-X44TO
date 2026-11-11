@@ -148,7 +148,9 @@ def orphans(snap: dict = None, journal: E.Journal = None) -> list:
         if name not in snap.get("svc", {}) or name.lower() in c_svc:
             continue
         base, cur = snap["svc"][name], E.svc_get_start(name)
-        if base and cur and cur != base and cur in modes:
+        if base not in E._SVC_START:  # 6.14: знімок лежить у %APPDATA% — режим служби беремо лише з відомих значень
+            continue
+        if cur and cur != base and cur in modes:
             out.append(dict(kind="svc", key=name, name=name, base=base, cur=cur, tweaks=sorted(set(ids))))
     return out
 
@@ -172,7 +174,10 @@ def restore(items: list, log, progress=None) -> dict:
                 else:
                     E.reg_set(it["path"], it["name"], E._dec(it["base"][1]), it["base"][0])
             else:
-                rc, out = E.run(f"sc config {it['name']} start= {it['base']}", 15, log)
+                # 6.14: аргументи списком (без cmd.exe) і лише відомі режими — значення прийшло з файла знімка
+                if not (isinstance(it["name"], str) and E._SVC_NAME.match(it["name"]) and it["base"] in E._SVC_START):
+                    raise ValueError(tr("e.undo_bad", what=f"{it['name']}: {it['base']}"[:80]))
+                rc, out = E.run(["sc", "config", it["name"], "start=", it["base"]], 15, log)
                 if rc != 0:
                     raise RuntimeError(E.first_line(out, 70) or f"sc {rc}")
             ok += 1
