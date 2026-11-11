@@ -696,13 +696,29 @@ class Splash(QWidget):
         self.timer.stop()
         window.setWindowOpacity(0.0)
         window.show()
-        out = Anim(self, lambda v: (self.setWindowOpacity(1 - v), window.setWindowOpacity(v)), 360, OUT)
+        self._handed = False
+
+        def step(v):
+            if not self._handed:
+                self.setWindowOpacity(1 - v)
+                window.setWindowOpacity(v)
 
         def done():
+            if self._handed:
+                return
+            self._handed = True
+            self._out.a.stop()  # жодного кроку після передачі: запізнілий крок лишив би вікно напівпрозорим
             window.setWindowOpacity(1.0)
             self.close()
             self.deleteLater()
-        out.to(1.0, 0.0, done=done)
+        # 6.13.1: анімацію тримаємо в self. Як локальну змінну Python знищував її одразу після виходу з finish(),
+        # її кроки більше не викликалися — головне вікно лишалося повністю прозорим, а заставка висіла зверху
+        # («програма зависла на завантаженні»).
+        self._out = Anim(self, step, 360, OUT)
+        self._out.to(1.0, 0.0, done=done)
+        # запасний шлях: вікно з'явиться, навіть якщо анімація не дійшла до кінця (потік інтерфейсу одразу після
+        # появи вікна буває зайнятий кілька секунд — тоді цей таймер спрацьовує раніше за анімацію)
+        QTimer.singleShot(1500, done)
 
     def paintEvent(self, _):
         p = QPainter(self)

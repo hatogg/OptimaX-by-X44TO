@@ -81,6 +81,25 @@ def test_main_window(demo, lang):
     check_612(st)
 
 
+def test_splash_hands_over_to_the_main_window():
+    """6.13.1: заставка під час запуску передає місце головному вікну й закривається. У 6.13 цього шляху не
+    перевіряв жоден тест (самоперевірка створює вікно без заставки), і він зависав у всіх: вікно лишалося прозорим."""
+    if not has_qt():
+        skip("PyQt6 is not installed")
+    rc, out, r = run_script("splash_handoff.py", timeout=120)
+    assert rc == 0 and r, tail(out, 40)
+    assert r["motion"], "the splash is shown only with animations on — the test must run that way"
+    assert r["built"] and r["window_visible"] and r["splash_closed"], r
+    assert r["opacity"] == 1.0, "the main window must end fully opaque"
+    assert 0 <= r["handoff_ms"] < 1200, f"the hand-over animation did not run (took {r['handoff_ms']} ms)"
+    # потік інтерфейсу зайнятий одразу після появи вікна (сторінки будуються): запасний таймер спрацьовує раніше
+    # за анімацію, і її запізнілий крок не має лишити вікно напівпрозорим
+    rc, out, r = run_script("splash_handoff.py", "block", timeout=120)
+    assert rc == 0 and r, tail(out, 40)
+    assert r["built"] and r["window_visible"] and r["splash_closed"], r
+    assert r["opacity"] == 1.0, f"the main window was left at opacity {r['opacity']} after a busy start"
+
+
 def test_mining_card():
     """Майнінгова P106-100 (демо): розділ «Ігри на P106-100» — пошук і призначення ігор, Mesa для OpenGL-гри,
     примітка в GPU-тесті й повний відкат."""

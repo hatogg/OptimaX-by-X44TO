@@ -1524,7 +1524,12 @@ def main():
     holder = {}
 
     def build():
-        w = holder["w"] = Main(start_hidden=tray_start)
+        try:
+            w = holder["w"] = Main(start_hidden=tray_start)
+        except Exception:
+            if splash is not None:  # 6.13.1: помилка під час створення вікна не лишає заставку висіти назавжди
+                splash.close()
+            raise
         if not tray_start:
             if splash is not None:
                 splash.finish(w)

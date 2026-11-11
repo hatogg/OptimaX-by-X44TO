@@ -2,6 +2,25 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [6.13.1] — 2026-11-11
+
+Виправлення 6.13: програма зависала на заставці під час запуску.
+
+### Виправлено
+
+- **Заставка під час запуску більше не зависає.** У 6.13 після заставки головне вікно лишалося повністю прозорим, а сама заставка висіла поверх усього: анімація, що передає місце вікну, жила в тимчасовій змінній і зникала раніше, ніж встигала спрацювати. Запуск у трей (автозапуск) це не зачіпало. Тепер анімація тримається до кінця, а якщо комп'ютер у цю мить зайнятий — вікно все одно з'являється за півтори секунди.
+- Якщо головне вікно не вдалося створити, заставка закривається, а не лишається на екрані.
+- Новий тест перевіряє саме цей шлях запуску — із заставкою, зокрема на зайнятому комп'ютері. Раніше самоперевірка створювала вікно без заставки, тож помилку не ловила.
+
+**Якщо у вас 6.13 і вона «висить» на заставці:** закрийте OptimaX через «Диспетчер завдань» і встановіть 6.13.1 з цієї сторінки поверх. Налаштування й журнал змін залишаться.
+
+<details>
+<summary>English</summary>
+
+**Fixed:** the program hung on the startup splash screen in 6.13 — the main window stayed fully transparent under the splash, because the hand-over animation lived in a temporary variable and was destroyed before it could run (starting to the tray was not affected). The animation is now kept alive, the window appears within a second and a half even if the PC is busy at that moment, and a failure to create the main window closes the splash instead of leaving it on screen. A new test covers this exact startup path. If your 6.13 is stuck on the splash: end OptimaX in Task Manager and install 6.13.1 over it — settings and the change journal are kept.
+
+</details>
+
 ## [6.13] — 2026-11-11
 
 Новий дизайн: дашборд, бічне меню, що розгортається, плавні анімації, світла й темна тема — і сторінка «Пам'ять». А ще надійніший відкат: крок, який не вдалося повернути, більше не губиться.
