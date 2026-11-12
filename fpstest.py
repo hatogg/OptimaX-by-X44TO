@@ -490,7 +490,7 @@ def capture_runs(exe: str, seconds: int, runs: int, log, progress, pause: float 
                 diag.update(M.lag_diagnosis(hw, total, lambda *_: None, None, game=exe))
             except Exception:  # діагностика — додаток до заміру FPS, а не його умова
                 pass
-        watcher = threading.Thread(target=watch, daemon=True)
+        watcher = threading.Thread(target=E.inherit_cancel(watch), daemon=True)  # «Зупинити» зупиняє й стеження
         watcher.start()
     for i in range(runs):
         if E.CANCEL.is_set():

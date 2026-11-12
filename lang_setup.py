@@ -33,6 +33,15 @@ STRINGS = {
     "upd.found": ("Доступна версія {v}", "Доступна версия {v}", "Version {v} is available"),
     "upd.none": ("У вас найновіша версія", "У вас самая новая версия", "You have the latest version"),
     "upd.ask_t": ("Оновити до версії {v}?", "Обновить до версии {v}?", "Update to version {v}?"),
+    # 6.15: зупинка й мережа — окремо від «файл не пройшов перевірку»
+    "upd.cancelled": ("Оновлення скасовано", "Обновление отменено", "Update cancelled"),
+    "upd.net_fail_t": ("Не вдалося завантажити оновлення", "Не удалось скачать обновление", "Could not download the update"),
+    "upd.net_fail_d": ("{why}\n\nСхоже на проблему з мережею чи сервером — файл не завантажився повністю, тож нічого "
+                       "не запускалось. Спробуйте пізніше або завантажте оновлення зі сторінки релізу.",
+                       "{why}\n\nПохоже на проблему с сетью или сервером — файл не скачался полностью, поэтому ничего "
+                       "не запускалось. Попробуйте позже или скачайте обновление со страницы релиза.",
+                       "{why}\n\nThis looks like a network or server problem: the file did not download completely, so "
+                       "nothing was run. Try again later or download the update from the release page."),
     "upd.ask_d": ("Зараз встановлено {cur}. OptimaX завантажить нову версію, закриється й сам запуститься знову.",
                   "Сейчас установлена {cur}. OptimaX скачает новую версию, закроется и сам запустится снова.",
                   "You have {cur}. OptimaX will download the new version, close and start again by itself."),

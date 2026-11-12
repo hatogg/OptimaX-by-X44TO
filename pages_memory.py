@@ -511,7 +511,6 @@ class MemoryPage(QWidget):
         if self.running:
             return
         self.running = True
-        E.CANCEL.clear()
         self.btn.setEnabled(False)
         self.timer.start(700)  # під час звільнення кільце оновлюється частіше
         self.sheet = CleanSheet(self)

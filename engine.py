@@ -35,7 +35,86 @@ VERSION = "6.13.1"
 IS_WIN = sys.platform == "win32"
 DRY_RUN = (not IS_WIN) or ("--dry-run" in sys.argv)
 DEMO = os.environ.get("OPTIMAX_DEMO", "gaming")  # демо-залізо поза Windows: gaming/laptop/old/x3d/xeon
-CANCEL = threading.Event()
+
+
+# ───────────────────────── скасування ─────────────────────────
+# Раніше «Зупинити» було одним прапорцем на всю програму: кожна нова фонова дія скидала його (і губила щойно
+# натиснуту зупинку), а зупинка у вікні переривала й чужі фонові дії. Тепер у кожної дії свій токен
+# (ui_kit.Worker створює його й прив'язує до свого потоку), а CANCEL — це токен поточного потоку.
+class CancelToken:
+    """Скасування однієї дії. Під час закриття програми (stop_all) вважаються скасованими всі токени."""
+
+    def __init__(self):
+        self._ev = threading.Event()
+
+    def set(self) -> None:
+        self._ev.set()
+
+    def clear(self) -> None:
+        self._ev.clear()
+
+    def is_set(self) -> bool:
+        return self._ev.is_set() or _SHUTDOWN.is_set()
+
+    def wait(self, timeout: Optional[float] = None) -> bool:
+        end = None if timeout is None else time.time() + timeout
+        while not self.is_set():
+            left = 0.2 if end is None else min(0.2, end - time.time())
+            if left <= 0:
+                return False
+            self._ev.wait(left)
+        return True
+
+
+_SHUTDOWN = threading.Event()
+_TLS = threading.local()
+_DEFAULT_TOKEN = CancelToken()  # потоки без власного токена (служби, трей, командний рядок)
+
+
+def current_token() -> CancelToken:
+    return getattr(_TLS, "token", None) or _DEFAULT_TOKEN
+
+
+def bind_cancel(token: Optional[CancelToken]) -> None:
+    """Прив'язує токен до поточного потоку (None — повернути типовий)."""
+    _TLS.token = token
+
+
+def inherit_cancel(fn: Callable) -> Callable:
+    """Обгортка для дочірнього потоку дії: він бачить той самий токен, що й потік, який його створив."""
+    token = current_token()
+
+    def wrapped(*a, **kw):
+        bind_cancel(token)
+        try:
+            return fn(*a, **kw)
+        finally:
+            bind_cancel(None)
+    return wrapped
+
+
+def stop_all() -> None:
+    """Закриття програми: скасувати всі дії."""
+    _SHUTDOWN.set()
+
+
+class _CurrentCancel:
+    """E.CANCEL — токен поточного потоку; інтерфейс той самий, що в threading.Event."""
+
+    def set(self) -> None:
+        current_token().set()
+
+    def clear(self) -> None:
+        current_token().clear()
+
+    def is_set(self) -> bool:
+        return current_token().is_set()
+
+    def wait(self, timeout: Optional[float] = None) -> bool:
+        return current_token().wait(timeout)
+
+
+CANCEL = _CurrentCancel()
 
 if IS_WIN:
     SF.pin_environment()  # ComSpec, ProgramData, PSModulePath… — справжні, а не перевизначені користувачем
@@ -98,8 +177,10 @@ def first_line(s: str, n: int = 90) -> str:
 
 
 def run(cmd, timeout: int = 30, log: Optional[Callable] = None, input_text: Optional[str] = None,
-        enc: Optional[str] = None, ro: bool = False):
-    """-> (код повернення, вивід). ro=True — лише читання, виконується навіть у режимі перегляду."""
+        enc: Optional[str] = None, ro: bool = False, stoppable: Optional[bool] = None):
+    """-> (код повернення, вивід). ro=True — лише читання, виконується навіть у режимі перегляду.
+    «Зупинити» перериває читання й довгі команди (≥ 60 с); коротку команду, що змінює систему, дає завершити,
+    щоб не лишати зміну наполовину. stoppable — явно задати це правило (ps() так передає ro свого скрипту)."""
     shown = cmd if isinstance(cmd, str) else subprocess.list2cmdline(cmd)
     if not IS_WIN:
         if log and not ro:
@@ -129,14 +210,16 @@ def run(cmd, timeout: int = 30, log: Optional[Callable] = None, input_text: Opti
     # subprocess.run(timeout=…) на Windows після тайм-ауту вбиває лише cmd.exe і далі чекає, поки дочірні процеси
     # (dism → DismHost, wsreset → Store) закриють канал виводу, — тобто тайм-аут не спрацьовував узагалі,
     # а кнопка «Зупинити» не могла перервати довгу команду. Тепер зупиняємо все дерево процесів.
-    stoppable = not ro and timeout >= 60
+    if stoppable is None:
+        stoppable = ro or timeout >= 60
+    token = current_token()
     deadline = time.time() + timeout
     while True:
         try:
             p.wait(0.2)
             break
         except subprocess.TimeoutExpired:
-            if time.time() > deadline or (stoppable and CANCEL.is_set()):
+            if time.time() > deadline or (stoppable and token.is_set()):
                 kill_tree(p)
                 reader.join(5)
                 return TIMEOUT_RC, "[TIMEOUT]" if time.time() > deadline else "[CANCELLED]"
@@ -189,7 +272,7 @@ def ps(script: str, timeout: int = 30, log: Optional[Callable] = None, ro: bool 
         return (1, "") if (ro and not IS_WIN) else (0, "")
     b64 = base64.b64encode((PS_PREFIX + script).encode("utf-16-le")).decode("ascii")
     return run(["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-                "-EncodedCommand", b64], timeout, None, enc="utf-8-sig", ro=True)
+                "-EncodedCommand", b64], timeout, None, enc="utf-8-sig", ro=True, stoppable=ro or timeout >= 60)
 
 
 def ps_json(script: str, timeout: int = 40):
@@ -831,10 +914,16 @@ class Ctx:
         self.deferred = None  # множина «живих» оновлень, які виконаємо один раз наприкінці пакета
         self.appx_batch = None  # усі Metro-пакети цього пакета змін — видаляються одним PowerShell (_appx_remove)
         self.appx_done: dict = {}
+        self.failed: list = []  # кроки поточної оптимізації, що не вдалися (команда, служба, живлення…)
 
     def begin(self, track: bool = False) -> None:
         """track — кожен запис відкату одразу потрапляє в попередній запис журналу (Journal.begin/note)."""
         self.undo = UndoLog(self.journal.note if track else None)
+        self.failed = []
+
+    def fail(self, what: str) -> None:
+        """Крок не вдався, але решту оптимізації можна лишити: у підсумку вона буде «частково», а не «готово»."""
+        self.failed.append(str(what)[:120])
 
     def enabled_tasks(self):
         """Множина ввімкнених задач планувальника (у нижньому регістрі) або None."""
@@ -986,8 +1075,14 @@ def exec_op(op, ctx: Ctx) -> None:
         ctx.undo.append({"t": "svc", "n": name, "old": old})
         if start == "disabled":
             run(f"sc stop {name}", 12, log)
-        run(f"sc config {name} start= {start}", 12, log)
-        log(f"  [{start.upper()}] {name}")
+        rc, out = run(f"sc config {name} start= {start}", 12, log)
+        # 6.15: «[DISABLED] ім'я» лише тоді, коли режим справді змінився (захищену службу Windows не дає змінити)
+        now = start if DRY_RUN else svc_get_start(name)
+        if rc != 0 or now != start:
+            log(tr("e.svc_fail", name=name, why=first_line(out, 60) or tr("e.code", rc=rc)))
+            ctx.fail(f"svc {name}")
+        else:
+            log(f"  [{start.upper()}] {name}")
     elif k == "task":
         en, n = ctx.enabled_tasks(), 0
         for tn in op[1]:
@@ -997,6 +1092,8 @@ def exec_op(op, ctx: Ctx) -> None:
             if rc == 0:
                 ctx.undo.append({"t": "task", "n": tn})
                 n += 1
+            elif en is not None:  # задача точно є й увімкнена, але вимкнути не вдалося
+                ctx.fail(f"task {tn}")
         log(tr("e.tasks_disabled", n=n))
     elif k == "cmd":
         _, cmd, undo, to = op
@@ -1007,6 +1104,8 @@ def exec_op(op, ctx: Ctx) -> None:
             log(tr("e.slow", cmd=cmd[:60]))
         elif rc != 0:
             log(tr("e.skipped", why=first_line(out, 60) or tr("e.code", rc=rc), cmd=cmd[:55]))
+        if rc != 0:
+            ctx.fail(cmd[:60])
         if undo and rc == 0:
             ctx.undo.append({"t": "cmd", "c": undo})
     elif k == "pw":
@@ -1024,6 +1123,7 @@ def exec_op(op, ctx: Ctx) -> None:
         if rc != 0:
             ctx.undo.remove(rec)  # нічого не змінилося — і повертати нічого
             log(tr("e.pw_na", setting=setting))
+            ctx.fail(f"powercfg {setting}")
             return
         run(f"powercfg -setactive {g}", 10, log)
     elif k == "file":
@@ -1532,9 +1632,14 @@ def f_pagefile(ctx: Ctx) -> None:
 @cmd_doc("Set-MpPreference -DisableRealtimeMonitoring $true")
 def f_defender(ctx: Ctx) -> None:
     rc, _ = ps("Set-MpPreference -DisableRealtimeMonitoring $true", 25, ctx.log)
-    if rc != 0:
-        ctx.log(tr("e.tamper"))
     ctx.undo.append({"t": "ps", "c": "Set-MpPreference -DisableRealtimeMonitoring $false"})
+    if DRY_RUN:
+        return
+    # «Захист від підробки» мовчки відкидає зміну, і Set-MpPreference при цьому часто повертає 0 — перечитуємо
+    _, now = ps("(Get-MpPreference).DisableRealtimeMonitoring", 25, ro=True)
+    if rc != 0 or now.strip().lower() != "true":
+        ctx.log(tr("e.tamper"))
+        ctx.fail("defender")
 
 
 @cmd_doc("Set-MpPreference -ScanAvgCPULoadFactor 20 -EnableLowCpuPriority $true -ScanOnlyIfIdleEnabled $true")
@@ -2913,7 +3018,8 @@ def run_action(a: Action, log: Callable, hw: dict = None):
 
 # ───────────────────────── запуск, відкат, перевірка цілісності ─────────────────────────
 def run_tweak(t: Tweak, ctx: Ctx):
-    """-> True — застосовано, False — помилка, None — пропущено (не підходить цьому залізу чи Windows)."""
+    """-> True — застосовано, "partial" — частина кроків не вдалася (ctx.failed), False — помилка або не вдався
+    жоден крок, None — пропущено (не підходить цьому залізу чи Windows)."""
     if t.win11 and win_build() < 22000:
         ctx.log(tr("e.win11_only"))
         return None
@@ -2956,6 +3062,8 @@ def run_tweak(t: Tweak, ctx: Ctx):
                 raise
             ctx.journal.abort()
         return False
+    if ctx.failed:  # 6.15: не «✓ готово», якщо щось не вдалося
+        return "partial" if ctx.undo or len(ctx.failed) < len(t.ops) else False
     return True
 
 
@@ -3022,7 +3130,8 @@ def apply_tweaks(items, log: Callable, progress: Optional[Callable] = None, sfc:
         ctx.deferred = set()  # Провідник перезапускаємо один раз наприкінці, а не після кожного твіка
     ctx.appx_batch = [p for t in items for op in t.ops if op[0] == "fn" for p in getattr(op[1], "appx", ())]
     total = len(items) + (2 if sfc else 0) + (1 if restore_point else 0)
-    ok = fail = skipped = 0
+    ok = fail = skipped = partial = 0
+    failed_items: list = []
     reboot = False
     step = 0
     error = None
@@ -3071,11 +3180,18 @@ def apply_tweaks(items, log: Callable, progress: Optional[Callable] = None, sfc:
         if res is None:
             skipped += 1
             continue
-        if res:
+        if res == "partial":
+            partial += 1
+            failed_items.append(t.id)
+            log(tr("e.done_partial", n=len(ctx.failed)))
+        elif res:
             ok += 1
             log(tr("e.done_reboot") if t.reboot else tr("e.done"))
         else:
             fail += 1
+            failed_items.append(t.id)
+            if ctx.failed:
+                log(tr("e.not_applied"))
         reboot = reboot or t.reboot
     for kind in sorted(ctx.deferred or ()):
         live_refresh(kind, log)
@@ -3087,6 +3203,8 @@ def apply_tweaks(items, log: Callable, progress: Optional[Callable] = None, sfc:
     if header:
         log("\n" + "═" * 58)
         msg = tr("e.summary", ok=ok)
+        if partial:
+            msg += tr("e.summary_partial", n=partial)
         if fail:
             msg += tr("e.summary_fail", fail=fail)
         if skipped or dropped or retired:
@@ -3094,7 +3212,10 @@ def apply_tweaks(items, log: Callable, progress: Optional[Callable] = None, sfc:
         msg += tr("e.summary_reboot") if reboot else "."
         log(" " + msg)
         log("═" * 58)
-    res = {"ok": ok, "fail": fail, "skipped": skipped + len(retired), "reboot": reboot, "conflicts": dropped}
+    res = {"ok": ok, "fail": fail, "skipped": skipped + len(retired), "reboot": reboot, "conflicts": dropped,
+           "partial": partial, "failed_items": [entry_title(i) for i in failed_items]}
+    if CANCEL.is_set():
+        res["cancelled"] = True
     if error:
         res["error"] = error
     return res
@@ -3199,14 +3320,19 @@ def undo_or_default(t: Tweak, log: Callable) -> dict:
     res = undo_one(t.id, log)
     if res == "partial":
         log(tr("e.undo_partial", n=len((JOURNAL.get(t.id) or {}).get("undo", []))))
-    elif res:
+        return {"undone": 0, "partial": 1}
+    if res:
         log(tr("e.undone"))
-    elif t.off:
+        return {"undone": 1, "partial": 0}
+    if t.off:
         ctx = Ctx(log)
         ctx.begin()
         for op in t.off:
             exec_op(op, ctx)
+        if ctx.failed:  # 6.15: справжній результат, а не завжди «відкочено 1»
+            log(tr("e.undo_partial", n=len(ctx.failed)))
+            return {"undone": 0, "partial": 1, "defaults": True}
         log(tr("e.defaults"))
-    else:
-        log(tr("e.nothing"))
-    return {"undone": 1}
+        return {"undone": 1, "partial": 0, "defaults": True}
+    log(tr("e.nothing"))
+    return {"undone": 0, "partial": 0}

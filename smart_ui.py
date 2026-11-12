@@ -302,7 +302,6 @@ class SmartDialog(QDialog):
         first = a["do"] == "apply" and why == "apply"
         before = set(E.JOURNAL.data["applied"])
         rp = self.rp and first
-        E.CANCEL.clear()
 
         def job(log, prog):
             if a["do"] == "apply":
@@ -404,7 +403,6 @@ class SmartDialog(QDialog):
             then()
             return
         hw = self.main.hw or {}
-        E.CANCEL.clear()
         self._start_worker(lambda log, p: E.apply_tweaks([E.BY_ID[i] for i in missing if i in E.BY_ID], log, p,
                                                          header=False, hw=hw, by="smart"), lambda _r: then())
 

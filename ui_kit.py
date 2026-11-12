@@ -1337,7 +1337,8 @@ class Toast(QFrame):
 
 # ───────────────────────── фонові задачі й діалоги ─────────────────────────
 class Worker(QThread):
-    """Виконує job(log, progress) у фоні."""
+    """Виконує job(log, progress) у фоні. У кожної дії свій токен скасування (self.cancel): усередині job
+    E.CANCEL — саме він, тож «Зупинити» однієї дії не чіпає інших, а нова дія не скидає чужу зупинку."""
     log = pyqtSignal(str)
     progress = pyqtSignal(int, int, str)
     result = pyqtSignal(object)
@@ -1345,14 +1346,45 @@ class Worker(QThread):
     def __init__(self, job):
         super().__init__()
         self.job = job
+        self.cancel = E.CancelToken()
+
+    def stop(self) -> None:
+        self.cancel.set()
+
+    @property
+    def cancelled(self) -> bool:
+        return self.cancel.is_set()
 
     def run(self):
+        E.bind_cancel(self.cancel)
         try:
             res = self.job(self.log.emit, self.progress.emit)
         except Exception as e:  # помилка не повинна валити інтерфейс
             self.log.emit(tr("e.err", err=f"{type(e).__name__}: {e}"))
             res = {"error": str(e)}
+        finally:
+            E.bind_cancel(None)
         self.result.emit(res)
+
+
+def outcome(res, cancelled: bool = False):
+    """Підсумок фонової дії -> (стан, кількість невдач). Стан: "error" — дія перервана помилкою, "stopped" —
+    зупинив користувач, "partial" — завершено, але частина операцій не вдалася, "ok" — усе вдалося.
+    Розуміє результати apply_tweaks / undo_ids (fail, partial), WinGet (fail) та {"ok": False}."""
+    r = res if isinstance(res, dict) else {}
+    if r.get("error"):
+        return "error", 0
+    if cancelled or r.get("cancelled"):
+        return "stopped", 0
+    bad = 0
+    for k in ("fail", "partial"):
+        try:
+            bad += int(r.get(k) or 0)
+        except (TypeError, ValueError):
+            bad += 1
+    if not bad and r.get("ok") is False:
+        bad = 1
+    return ("partial", bad) if bad else ("ok", 0)
 
 
 def fade_in_window(w: QWidget, ms: int = 200) -> None:
@@ -1441,11 +1473,13 @@ class RunDialog(QDialog):
         self.btn_reboot = button(tr("run.reboot"), "good", self._reboot)
         self.btn_reboot.hide()
         h.addWidget(self.btn_reboot)
+        self.btn_failed = button(tr("run.show_failed"), None, self._show_failed)
+        self.btn_failed.hide()
+        h.addWidget(self.btn_failed)
         h.addStretch()
         self.btn_main = button(tr("run.stop"), None, self._main_clicked)
         h.addWidget(self.btn_main)
         v.addLayout(h)
-        E.CANCEL.clear()
         self.worker = Worker(job)
         self.worker.log.connect(self._log)
         self.worker.progress.connect(self._progress)
@@ -1475,28 +1509,39 @@ class RunDialog(QDialog):
         self.res = res if isinstance(res, dict) else {}
         self.bar.setRange(0, 1)
         self.bar.setValue(1)
-        if self.res.get("error"):
+        stopped = self.worker.cancelled
+        self.outcome, bad = outcome(self.res, stopped)
+        reboot = " " + tr("run.need_reboot") if self.res.get("reboot") else ""
+        if self.outcome == "error":
             style_badge(self.state, tr("run.error"), "bad")
             self.step.setText(tr("run.error_text"))
-        elif E.CANCEL.is_set():
+        elif self.outcome == "stopped":
             style_badge(self.state, tr("run.stopped"), "warn")
             self.step.setText(tr("run.stopped_text"))
+        elif self.outcome == "partial":  # 6.15: не зелене «Готово», коли частина операцій не вдалася
+            style_badge(self.state, tr("run.partial", n=bad), "warn")
+            self.step.setText(tr("run.partial_text") + reboot)
         else:
             style_badge(self.state, tr("run.done"), "ok")
-            self.step.setText(tr("run.done_text") + (" " + tr("run.need_reboot") if self.res.get("reboot") else ""))
+            self.step.setText(tr("run.done_text") + reboot)
+        self.btn_failed.setVisible(self.outcome == "partial" and bool(self.res.get("failed_items")))
         self.btn_main.setText(tr("btn.close"))
         self.btn_main.setEnabled(True)
         self.btn_main.setObjectName("primary")
         self.btn_main.style().unpolish(self.btn_main)
         self.btn_main.style().polish(self.btn_main)
-        self.btn_reboot.setVisible(bool(self.res.get("reboot")) and not E.CANCEL.is_set())
+        self.btn_reboot.setVisible(bool(self.res.get("reboot")) and not stopped)
         self.btn_main.setFocus()
+
+    def _show_failed(self):
+        items = self.res.get("failed_items") or []
+        Ask.info(self, tr("run.failed_t"), "\n".join(f"• {x}" for x in items))
 
     def _main_clicked(self):
         if self.finished_ok:
             self.accept()
             return
-        E.CANCEL.set()
+        self.worker.stop()
         self.btn_main.setEnabled(False)
         self.btn_main.setText(tr("run.stopping"))
         self.step.setText(tr("run.stopping_text"))

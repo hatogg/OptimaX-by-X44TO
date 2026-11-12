@@ -403,7 +403,7 @@ def fake_ps(code):
     return 0, ""
 
 
-def fake_run(cmd, timeout=30, log=None, input_text=None, enc=None, ro=False):
+def fake_run(cmd, timeout=30, log=None, input_text=None, enc=None, ro=False, **_k):
     a = argv_split(cmd) if isinstance(cmd, str) else list(cmd)
     rc, out = run_argv(a)
     return rc, out

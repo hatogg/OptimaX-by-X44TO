@@ -697,7 +697,6 @@ class Main(QWidget):
     def run_quick(self, title: str, job, busy: QPushButton = None, on_done=None, ok_msg: str = None,
                   silent: bool = False):
         """Коротка дія у фоні; журнал — у спільний лог, підсумок — спливаючим повідомленням."""
-        E.CANCEL.clear()
         old = busy.text() if busy else None
         if busy:
             busy.setEnabled(False)
@@ -715,11 +714,19 @@ class Main(QWidget):
             if on_done:
                 on_done(res)
             if not silent:
-                failed = isinstance(res, dict) and bool(res.get("error") or res.get("fail") or res.get("ok") is False)
-                msg = tr("toast.failed", what=title) if failed else (ok_msg or tr("toast.done", what=title))
-                if E.DRY_RUN and not failed:
+                st, _n = UK.outcome(res, w.cancelled)
+                if st == "error" or (st == "partial" and isinstance(res, dict) and not res.get("partial")
+                                     and not res.get("ok")):
+                    msg, kind = tr("toast.failed", what=title), "bad"  # нічого не вдалося
+                elif st == "partial":
+                    msg, kind = tr("toast.partial", what=title), "warn"
+                elif st == "stopped":
+                    msg, kind = tr("toast.stopped", what=title), "warn"
+                else:
+                    msg, kind = ok_msg or tr("toast.done", what=title), "ok"
+                if E.DRY_RUN and kind == "ok":
                     msg += " " + tr("toast.preview")
-                self.toast(msg, "bad" if failed else "ok")
+                self.toast(msg, kind)
                 self.refresh_all()
 
         def reap():
@@ -1335,15 +1342,23 @@ class Main(QWidget):
         text = tr("upd.ask_d", v=info["version"], cur=E.VERSION) + ("\n\n" + info["notes"] if info.get("notes") else "")
         if not Ask.ask(self, tr("upd.ask_t", v=info["version"]), text, tr("upd.install")):
             return
-        dlg = RunDialog(self, tr("upd.title"), lambda log, prog: {"path": U.download(info, log, prog)})
+        dlg = RunDialog(self, tr("upd.title"), lambda log, prog: U.download_job(info, log, prog))
         dlg.exec()
         path = dlg.res.get("path")
+        kind = dlg.res.get("kind")
         if U.launch(path, info.get("kind", "setup")) and info.get("kind") == "setup":
             self.quit_app()  # інсталятор замінить файли й запустить нову версію
         elif not E.IS_WIN or E.DRY_RUN:
             self.toast(tr("toast.preview_only"), "warn")
+        elif kind == "cancelled" or dlg.worker.cancelled:
+            self.toast(tr("upd.cancelled"), "warn")  # 6.15: зупинка — не «файл не пройшов перевірку»
+        elif kind == "network" and not U.LAST_ERROR:
+            if Ask.ask(self, tr("upd.net_fail_t"), tr("upd.net_fail_d", why=dlg.res.get("error") or "?"),
+                       tr("fps.open_page")):
+                import webbrowser
+                webbrowser.open(info.get("page") or "")
         elif dlg.res.get("error") or U.LAST_ERROR:
-            # файл не пройшов перевірку (сума, підпис) або не завантажився — не запускаємо, пропонуємо сторінку релізу
+            # файл не пройшов перевірку (сума, підпис) — не запускаємо, пропонуємо сторінку релізу
             why = U.LAST_ERROR or dlg.res.get("error")
             if Ask.ask(self, tr("vf.fail_t"), tr("vf.fail_d", why=why), tr("fps.open_page")):
                 import webbrowser
@@ -1446,7 +1461,7 @@ class Main(QWidget):
             self.quitting = False
             e.ignore()
             return
-        E.CANCEL.set()
+        E.stop_all()  # закриття програми — скасувати всі дії, а не лише одну
         for w in running:
             w.wait(3000)
         if F.BOOSTER.active:

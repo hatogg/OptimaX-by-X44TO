@@ -275,6 +275,8 @@ def download(info: dict, log, progress=None, publisher=None) -> str:
                   f"Invoke-WebRequest -UseBasicParsing -UserAgent {_ps_quote(UA)} -Uri {_ps_quote(info['url'])} "
                   f"-OutFile {_ps_quote(dest + '.part')}")
         E.ps(script, 900, ro=True)
+        if E.CANCEL.is_set():  # «Зупинити» під час запасного завантаження — це зупинка, а не помилка мережі
+            raise RuntimeError(tr("e.stopped").strip()) from None
         if not os.path.exists(dest + ".part") or not os.path.getsize(dest + ".part"):
             raise
     if total and os.path.getsize(dest + ".part") != total:
@@ -296,6 +298,32 @@ def download(info: dict, log, progress=None, publisher=None) -> str:
 
 
 LAST_ERROR = ""
+
+
+def error_kind(e: BaseException) -> str:
+    """Чому не вдалося завантажити оновлення: "cancelled" — зупинив користувач, "verify" — файл не пройшов
+    перевірку суми чи підпису, "network" — не завантажився (мережа, сервер, обрив). Викликати в потоці завантаження:
+    скасування — це токен саме цієї дії."""
+    import verify as V
+    if E.CANCEL.is_set():
+        return "cancelled"
+    if isinstance(e, V.VerifyError):
+        return "verify"
+    return "network"
+
+
+def download_job(info: dict, log, progress=None) -> dict:
+    """Завантаження для вікна виконання: {"path"} або {"error", "kind"}; зупинка — {"cancelled": True}, без error,
+    щоб вікно показало «Зупинено», а не «Помилка»."""
+    try:
+        return {"path": download(info, log, progress)}
+    except Exception as e:  # noqa: BLE001
+        kind = error_kind(e)
+        if kind == "cancelled":
+            log(tr("e.stopped"))
+            return {"cancelled": True, "kind": kind}
+        log(tr("e.err", err=f"{type(e).__name__}: {e}"))
+        return {"error": str(e) or type(e).__name__, "kind": kind}
 
 
 def launch(path: str, kind: str) -> bool:

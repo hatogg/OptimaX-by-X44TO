@@ -71,7 +71,6 @@ class Busy:
         if self.worker is not None:
             self.main.toast(tr("busy.wait"), "warn")
             return False
-        E.CANCEL.clear()
         self.lbl.setText(text)
         self.bar.setRange(0, 0)
         self.box.show()
@@ -100,7 +99,8 @@ class Busy:
         cb(res)
 
     def stop(self):
-        E.CANCEL.set()
+        if self.worker is not None:
+            self.worker.stop()  # лише ця дія, а не всі фонові
         self.lbl.setText(tr("run.stopping_text"))
 
 

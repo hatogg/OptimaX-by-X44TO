@@ -45,7 +45,7 @@ def temp_journal():
 
 def runner(results: dict, calls: list):
     """Підмінний engine.run: код повернення за початком команди (без збігу — успіх)."""
-    def run(cmd, timeout=30, log=None, input_text=None, enc=None, ro=False):
+    def run(cmd, timeout=30, log=None, input_text=None, enc=None, ro=False, **_k):
         shown = cmd if isinstance(cmd, str) else " ".join(cmd)
         calls.append(shown)
         for prefix, rc in results.items():

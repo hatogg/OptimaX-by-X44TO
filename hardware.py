@@ -399,7 +399,7 @@ def _parallel(jobs: dict, timeout: int) -> dict:
     from concurrent.futures import ThreadPoolExecutor
     res = {}
     with ThreadPoolExecutor(max_workers=len(jobs)) as ex:
-        futs = {k: ex.submit(f) for k, f in jobs.items()}
+        futs = {k: ex.submit(E.inherit_cancel(f)) for k, f in jobs.items()}
         for k, fut in futs.items():
             try:
                 res[k] = fut.result(timeout=timeout + 15)
