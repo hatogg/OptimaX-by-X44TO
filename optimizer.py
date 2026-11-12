@@ -655,15 +655,21 @@ class Main(QWidget):
     # звернулися раніше, як і досі, будується в момент звернення.
     BUILD_DELAY_MS = 1500
     BUILD_GAP_MS = 40
+    BUILD_QUIET_S = 0.6  # після переходу між сторінками стільки не будуємо: побудова (до 0,3 с) рвала б анімацію
 
     def _build_pages(self):
         """По одній сторінці за раз: вікно з головною з'являється одразу, а не після створення всіх сторінок (6.9)."""
         key = self.pages.next_missing()
-        if key:
-            self.pages[key]
-            QTimer.singleShot(self.BUILD_GAP_MS, self._build_pages)
+        if not key:
+            return
+        if self.stack.animating or time.monotonic() - getattr(self, "_last_nav", 0.0) < self.BUILD_QUIET_S:
+            QTimer.singleShot(150, self._build_pages)  # іде перехід — сторінку збудуємо, коли він закінчиться
+            return
+        self.pages[key]
+        QTimer.singleShot(self.BUILD_GAP_MS, self._build_pages)
 
     def go(self, key: str):
+        self._last_nav = time.monotonic()
         idx = self.nav_keys.index(key)
         self.stack.setCurrentWidget(self.pages[key])
         btn = self.nav.button(idx)

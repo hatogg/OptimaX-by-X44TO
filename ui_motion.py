@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 
 from PyQt6.QtCore import (Qt, QTimer, QVariantAnimation, QEasingCurve, QRectF, QPointF, QPoint, QRect, QSize,
-                          pyqtSignal)
+                          pyqtSignal, QEventLoop)
 from PyQt6.QtGui import (QColor, QPainter, QPen, QPainterPath, QFont, QLinearGradient, QRadialGradient, QPixmap,
                          QConicalGradient)
 from PyQt6.QtWidgets import (QWidget, QFrame, QStackedWidget, QAbstractButton, QGraphicsOpacityEffect, QLabel,
@@ -87,9 +87,11 @@ class _Transition(QWidget):
     def __init__(self, parent):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        # 6.15: перехід зафарбовує все сам — Qt не перемальовує на кожному кадрі сторінку під ним (з живими графіками)
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
         self.old = self.new = None
         self.t = 1.0
-        self.anim = Anim(self, self._step, 280, OUT)
+        self.anim = Anim(self, self._step, 300, OUT)
         self.hide()
 
     def start(self, old: QPixmap, new: QPixmap) -> None:
@@ -139,6 +141,11 @@ class FadeStack(QStackedWidget):
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self._tr.setGeometry(self.rect())
+
+    @property
+    def animating(self) -> bool:
+        """Іде перехід між сторінками — важку роботу в потоці інтерфейсу краще відкласти (Main._build_pages)."""
+        return self._tr.anim.running
 
 
 # ───────────────────────── бічне меню ─────────────────────────
@@ -694,9 +701,14 @@ class Splash(QWidget):
         self.anim.to(1.0, 0.0, done=lambda: QTimer.singleShot(60, then))
 
     def finish(self, window: QWidget) -> None:
-        self.timer.stop()
         window.setWindowOpacity(0.0)
         window.show()
+        # 6.15: перший кадр головного вікна й черга подій після його створення (розкладка, перше малювання, таймери
+        # з конструктора) — ≈0,1 с на слабкому ПК. Обробляємо їх, поки вікно ще прозоре, а заставка на місці;
+        # інакше вони з'їдали перший кадр передачі, і вона помітно смикалась.
+        window.repaint()
+        QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
+        self.timer.stop()
         self._handed = False
 
         def step(v):
@@ -715,7 +727,7 @@ class Splash(QWidget):
         # 6.13.1: анімацію тримаємо в self. Як локальну змінну Python знищував її одразу після виходу з finish(),
         # її кроки більше не викликалися — головне вікно лишалося повністю прозорим, а заставка висіла зверху
         # («програма зависла на завантаженні»).
-        self._out = Anim(self, step, 360, OUT)
+        self._out = Anim(self, step, 420, INOUT)  # м'який початок і кінець — без різкого спалаху вікна
         self._out.to(1.0, 0.0, done=done)
         # запасний шлях: вікно з'явиться, навіть якщо анімація не дійшла до кінця (потік інтерфейсу одразу після
         # появи вікна буває зайнятий кілька секунд — тоді цей таймер спрацьовує раніше за анімацію)
