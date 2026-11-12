@@ -273,6 +273,49 @@ def test_fresh_install_is_not_a_problem_and_saves_report_errors():
     assert bad.save() is False and bad.take_save_error() is None  # про ту саму помилку — один раз
 
 
+# ───────────────────────── OX-021: видалення програми ─────────────────────────
+def _uninstall(entries: int, revert: bool = False):
+    import types
+    import lifecycle as LC
+    import rescue as RS
+    stubs = {"adblock": types.SimpleNamespace(Backend=lambda cfg: types.SimpleNamespace(uninstall=lambda log: None)),
+             "phonemon": types.SimpleNamespace(cleanup=lambda: None)}
+    old = {k: sys.modules.get(k) for k in stubs}
+    sys.modules.update(stubs)
+    wrote = []
+    try:
+        # деінсталятор працює з правами адміністратора (без них записи cmd не відкочуються — так і має бути)
+        with temp_journal() as j, patched(run=runner({}, []), is_admin=lambda: True), \
+                patched(RS, write_rescue=lambda *a: wrote.append(1)):
+            for i in range(entries):
+                j.put(f"t{i}", [{"t": "cmd", "c": f"undo {i}"}])
+            code = LC.run_cli(["x", "--uninstall"] + (["--revert-all"] if revert else []))
+    finally:
+        for k, v in old.items():
+            if v is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
+    return code, bool(wrote)
+
+
+def test_uninstall_tells_the_installer_about_changes_left():
+    import lifecycle as LC
+    assert _uninstall(0) == (0, False)
+    assert _uninstall(2) == (LC.PENDING_RC, True)  # Rescue оновлено: він лишиться єдиним способом відкату
+    assert _uninstall(2, revert=True) == (0, False)  # усе відкочено — інсталятор може видалити журнал
+
+
+def test_installer_keeps_journal_and_rescue_while_changes_are_left():
+    """Статична перевірка OptimaX.iss: код 3 від --uninstall береже state і rescue (компілює й ганяє CI)."""
+    from _util import ROOT as R
+    iss = open(os.path.join(R, "packaging", "OptimaX.iss"), encoding="utf-8-sig").read()
+    assert "PendingChanges := ResultCode <> 0" in iss
+    assert "DelTreeExcept(ExpandConstant('{commonappdata}\\OptimaX'), 'state', 'rescue')" in iss
+    for lang in ("uk", "ru", "en"):
+        assert f"{lang}.DeleteDataKeepAsk=" in iss
+
+
 # ───────────────────────── OX-009: підсумок дії ─────────────────────────
 def test_outcome_has_four_states():
     if not has_qt():

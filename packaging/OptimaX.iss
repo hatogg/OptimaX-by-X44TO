@@ -74,6 +74,9 @@ en.RevertAsk=Roll back every change OptimaX made (tweaks, services, DNS, etc.) t
 uk.DeleteDataAsk=Видалити також налаштування OptimaX, список ігор і журнал змін?
 ru.DeleteDataAsk=Удалить также настройки OptimaX, список игр и журнал изменений?
 en.DeleteDataAsk=Also delete OptimaX settings, the game list and the change journal?
+uk.DeleteDataKeepAsk=У системі лишилися зміни OptimaX, які не відкочено.%n%nВидалити налаштування OptimaX і список ігор?%n%nЖурнал змін і аварійний відкат залишаться в будь-якому разі: без них ці зміни вже не повернути. Файл OptimaX-Rescue.cmd на робочому столі повертає їх і без програми.
+ru.DeleteDataKeepAsk=В системе остались изменения OptimaX, которые не откачены.%n%nУдалить настройки OptimaX и список игр?%n%nЖурнал изменений и аварийный откат останутся в любом случае: без них эти изменения уже не вернуть. Файл OptimaX-Rescue.cmd на рабочем столе возвращает их и без программы.
+en.DeleteDataKeepAsk=Some OptimaX changes are still in the system and have not been rolled back.%n%nDelete OptimaX settings and the game list?%n%nThe change journal and the emergency rollback stay either way: without them these changes could no longer be undone. OptimaX-Rescue.cmd on the desktop rolls them back without the program.
 uk.StartingDns=Запуск фільтра реклами…
 ru.StartingDns=Запуск фильтра рекламы…
 en.StartingDns=Starting the ad blocker…
@@ -122,6 +125,7 @@ Filename: "{app}\{#MyAppExe}"; Parameters: "--restarted"; Flags: nowait; Check: 
 [Code]
 var
   DnsTaskFound: Boolean;
+  PendingChanges: Boolean;  { після --uninstall у журналі лишилися невідкочені зміни (OX-021) }
 
 function IsSilentUpdate: Boolean;
 begin
@@ -174,27 +178,81 @@ begin
   Result := DnsTaskFound;
 end;
 
+{ Параметр командного рядка деінсталятора (без урахування регістру), напр. /DELETEDATA=1 }
+function UninstParam(const Name: String): String;
+var
+  I: Integer;
+  P: String;
+begin
+  Result := '';
+  for I := 1 to ParamCount do
+  begin
+    P := ParamStr(I);
+    if CompareText(Copy(P, 1, Length(Name) + 1), Name + '=') = 0 then
+      Result := Copy(P, Length(Name) + 2, MaxInt);
+  end;
+end;
+
+{ Видалити вміст Dir, крім підпапок Keep1 і Keep2 }
+procedure DelTreeExcept(const Dir, Keep1, Keep2: String);
+var
+  FindRec: TFindRec;
+begin
+  if FindFirst(Dir + '\*', FindRec) then
+  try
+    repeat
+      if (FindRec.Name <> '.') and (FindRec.Name <> '..') and
+         (CompareText(FindRec.Name, Keep1) <> 0) and (CompareText(FindRec.Name, Keep2) <> 0) then
+      begin
+        if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
+          DelTree(Dir + '\' + FindRec.Name, True, True, True)
+        else
+          DeleteFile(Dir + '\' + FindRec.Name);
+      end;
+    until not FindNext(FindRec);
+  finally
+    FindClose(FindRec);
+  end;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   ResultCode: Integer;
   Args: String;
+  DeleteData: Boolean;
 begin
   if CurUninstallStep = usUninstall then
   begin
     Args := '--uninstall';
     if (not UninstallSilent) and (MsgBox(CustomMessage('RevertAsk'), mbConfirmation, MB_YESNO) = IDYES) then
       Args := Args + ' --revert-all';
-    { прибирає задачі планувальника, повертає режим гри та (за згодою) усі зміни }
-    Exec(ExpandConstant('{app}\{#MyAppExe}'), Args, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    { прибирає задачі планувальника, повертає режим гри та (за згодою) усі зміни.
+      6.15 (OX-021): код 3 — у журналі лишилися невідкочені зміни; не вдалося запустити чи інший код — теж
+      вважаємо, що лишилися: журнал краще зберегти зайвий раз, ніж стерти єдиний спосіб повернути зміни }
+    if Exec(ExpandConstant('{app}\{#MyAppExe}'), Args, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+      PendingChanges := ResultCode <> 0
+    else
+      PendingChanges := True;
+    { ярлик аварійного відкату в «Пуску» зникне разом із програмою — запускач лишаємо на робочому столі }
+    if PendingChanges and (not UninstallSilent) then
+      FileCopy(ExpandConstant('{app}\OptimaX-Rescue.cmd'), ExpandConstant('{userdesktop}\OptimaX-Rescue.cmd'), False);
   end;
   if CurUninstallStep = usPostUninstall then
   begin
-    if (not UninstallSilent) and
-       (MsgBox(CustomMessage('DeleteDataAsk'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES) then
+    if UninstallSilent then
+      DeleteData := UninstParam('/DELETEDATA') = '1'  { для перевірки в CI; без параметра дані лишаються, як і раніше }
+    else if PendingChanges then
+      DeleteData := MsgBox(CustomMessage('DeleteDataKeepAsk'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES
+    else
+      DeleteData := MsgBox(CustomMessage('DeleteDataAsk'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
+    if DeleteData then
     begin
       DelTree(ExpandConstant('{userappdata}\OptimaX'), True, True, True);
-      { списки й статистика фільтра реклами }
-      DelTree(ExpandConstant('{commonappdata}\OptimaX'), True, True, True);
+      { списки й статистика фільтра реклами; журнал (state) і аварійний відкат (rescue) — лише якщо все відкочено }
+      if PendingChanges then
+        DelTreeExcept(ExpandConstant('{commonappdata}\OptimaX'), 'state', 'rescue')
+      else
+        DelTree(ExpandConstant('{commonappdata}\OptimaX'), True, True, True);
     end;
   end;
 end;

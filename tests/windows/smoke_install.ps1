@@ -1,6 +1,7 @@
 # OptimaX - installer smoke test for CI (GitHub Actions, Windows runner, administrator).
 # Silent install -> files, Start menu shortcuts, uninstall entry -> installed OptimaX.exe --selftest --selftest-ui
-# -> rescue launcher (unattended) -> silent uninstall -> everything removed.
+# -> rescue launcher (unattended) -> silent uninstall -> everything removed, except the journal and the
+# emergency rollback while a change is not rolled back (OX-021).
 #   pwsh tests/windows/smoke_install.ps1 -Setup Output\OptimaX-Setup-6.3.exe -Out smoke
 # Keep this file ASCII-only: Windows PowerShell 5.1 misreads UTF-8 without a BOM.
 param(
@@ -66,14 +67,33 @@ Check "installed OptimaX.exe --selftest-ui" $ok $detail
 $p = Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "`"$app\OptimaX-Rescue.cmd`"", "/all" -Wait -PassThru -NoNewWindow
 Check "rescue launcher /all" ($p.ExitCode -eq 0) "($($p.ExitCode))"
 
-# 4. silent uninstall (the uninstaller copies itself to %TEMP% and returns early, so wait for the files)
-$p = Start-Process -FilePath (Join-Path $app "unins000.exe") -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait -PassThru
+# 4. OX-021: a change that was NOT rolled back is still in the journal, and the user asks to delete the data.
+#    Settings and other data go; the journal (state) and the emergency rollback (rescue) must stay.
+#    /DELETEDATA=1 is what answering "Yes, delete the data" does in an interactive uninstall.
+$pd = Join-Path $env:ProgramData "OptimaX"
+$journal = Join-Path $pd "state\back.json"
+New-Item -ItemType Directory -Force (Split-Path $journal), (Join-Path $pd "ci-junk"), (Join-Path $env:APPDATA "OptimaX") | Out-Null
+$pending = @{ applied = @{ ci_pending = @{ ts = 1; title = "CI pending change";
+            undo = @(@{ t = "reg"; p = "HKCU\Software\OptimaX-CI"; n = "x"; old = $null }) } } }
+$utf8 = New-Object System.Text.UTF8Encoding($false)  # no BOM: OptimaX reads these files as plain UTF-8
+[IO.File]::WriteAllText($journal, ($pending | ConvertTo-Json -Depth 6), $utf8)
+[IO.File]::WriteAllText((Join-Path $env:APPDATA "OptimaX\settings.json"), '{"theme": "light"}', $utf8)
+
+# 5. silent uninstall (the uninstaller copies itself to %TEMP% and returns early, so wait for the files)
+$p = Start-Process -FilePath (Join-Path $app "unins000.exe") -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DELETEDATA=1" -Wait -PassThru
 Check "uninstaller started" ($p.ExitCode -eq 0) "($($p.ExitCode))"
 Check "program files removed" (Wait-Gone (Join-Path $app "OptimaX.exe") 120)
 Check "uninstall entry removed" (Wait-Gone $uninstKey 30)
 Check "Start menu shortcuts removed" ((Wait-Gone (Join-Path $menu "OptimaX.lnk") 30) -and (-not (Test-Path $rescueLnk)))
 $tasks = @(Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskName -like "OptimaX*" } | ForEach-Object { $_.TaskName })
 Check "no OptimaX scheduled tasks left" ($tasks.Count -eq 0) ($tasks -join ", ")
+$settingsGone = Wait-Gone (Join-Path $env:APPDATA "OptimaX") 60
+Check "OX-021: settings deleted on request" $settingsGone
+Check "OX-021: other data deleted on request" (Wait-Gone (Join-Path $pd "ci-junk") 30)
+Check "OX-021: journal with a pending change kept" (Test-Path $journal)
+$rs = Join-Path $pd "rescue\OptimaX-Rescue.cmd"
+$rsOk = (Test-Path $rs) -and ((Get-Content $rs -Raw) -match "OptimaX-CI")
+Check "OX-021: emergency rollback kept and covers the change" $rsOk $rs
 
 # summary
 $bad = @($results | Where-Object { -not $_.ok })

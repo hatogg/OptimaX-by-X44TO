@@ -125,8 +125,19 @@ def uninstall_cleanup(revert: bool, log) -> dict:
     s = F.CFG["schedule"] or {}
     s["enabled"] = False
     F.CFG["schedule"] = s
+    # 6.15: зміни, яких не відкотили, — інсталятор тоді не видалить журнал і аварійний відкат (OX-021)
+    res["left"] = E.JOURNAL.count()
+    if res["left"]:
+        try:  # аварійний відкат має відповідати журналу, бо лишиться єдиним способом повернути зміни
+            import rescue as RS
+            RS.write_rescue()
+        except Exception as e:  # noqa: BLE001
+            log(f"rescue: {e}")
     log(tr("lc.cleanup_done", n=res.get("undone", 0)))
     return res
+
+
+PENDING_RC = 3  # код виходу --uninstall: у журналі лишилися невідкочені зміни (OptimaX.iss це перевіряє)
 
 
 def run_cli(argv) -> int:
@@ -137,8 +148,8 @@ def run_cli(argv) -> int:
         lines.append(str(s))
     code = None
     if "--uninstall" in argv:
-        uninstall_cleanup("--revert-all" in argv, log)
-        code = 0
+        res = uninstall_cleanup("--revert-all" in argv, log)
+        code = PENDING_RC if res.get("left") else 0
     elif "--set-autostart" in argv or "--no-autostart" in argv:
         code = 0 if F.set_autostart("--set-autostart" in argv, log) else 1
     if code is not None:
