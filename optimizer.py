@@ -810,6 +810,10 @@ class Main(QWidget):
 
     def _background_tick(self):
         self._ticks += 1
+        err = F.CFG.take_save_error()  # 6.15: налаштування не записуються (диск повний, немає доступу)
+        if err:
+            LOG.write(f"  settings.json: {err}")
+            self.toast(tr("cfg.save_fail"), "bad")
         names = None
         if self._ticks % 3 == 0:  # бібліотека: сесії ігор, режим гри від запуску, FPS
             names = F.running_game_names()
@@ -1182,6 +1186,8 @@ class Main(QWidget):
             self.toast(tr("rec.tweak_done", title=E.entry_title(res["tweak"])), "warn")
         if E.JOURNAL.problem == "restored":
             self.toast(tr("rec.restored"), "warn")
+        elif F.CFG.problem:  # 6.15: settings.json був пошкоджений — не мовчимо про це
+            self.toast(tr(f"cfg.{F.CFG.problem}"), "warn")
         self.interrupted = res if res.get("ids") else None
         self.guard_refresh()
         if res.get("tweak"):

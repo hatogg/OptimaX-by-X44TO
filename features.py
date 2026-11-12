@@ -80,19 +80,60 @@ DEFAULTS = {
 
 
 class Config:
+    """settings.json. 6.15: запис — через .tmp із fsync, попередня версія лишається в .bak; пошкоджений файл
+    (обірваний запис, вимкнення живлення) не скидає мовчки всі налаштування — беремо .tmp або .bak, а сам файл
+    відкладаємо поруч. problem: None | "restored" (відновлено з копії) | "lost" (копії немає, типові значення)."""
+
     def __init__(self, path: str = CONFIG_PATH):
         self.path = path
+        self.bak = path + ".bak"
         self.data = json.loads(json.dumps(DEFAULTS))
+        self.problem = None
+        self.save_error = None
+        self._error_seen = None
+        saved = self._load()
+        for k, v in (saved or {}).items():
+            if isinstance(v, dict) and isinstance(self.data.get(k), dict):
+                self.data[k].update(v)
+            else:
+                self.data[k] = v
+
+    @staticmethod
+    def _read(p: str) -> dict:
+        with open(p, encoding="utf-8") as f:
+            d = json.load(f)
+        if not isinstance(d, dict):
+            raise ValueError("not an OptimaX settings file")
+        return d
+
+    def _load(self):
+        if not os.path.exists(self.path):
+            # першого запуску немає й копій; аварія між кроками запису — новіша версія в .tmp, інакше .bak
+            for p in (self.path + ".tmp", self.bak):
+                try:
+                    d = self._read(p)
+                except Exception:
+                    continue
+                self.problem = "restored"
+                return d
+            return None
         try:
-            with open(path, encoding="utf-8") as f:
-                saved = json.load(f)
-            for k, v in saved.items():
-                if isinstance(v, dict) and isinstance(self.data.get(k), dict):
-                    self.data[k].update(v)
-                else:
-                    self.data[k] = v
+            return self._read(self.path)
         except Exception:
             pass
+        try:  # пошкоджений файл не перезаписуємо типовими значеннями — відкладаємо, щоб його можна було дослідити
+            os.replace(self.path, f"{self.path}.corrupt-{int(time.time())}")
+        except OSError:
+            pass
+        for p in (self.path + ".tmp", self.bak):
+            try:
+                d = self._read(p)
+            except Exception:
+                continue
+            self.problem = "restored"
+            return d
+        self.problem = "lost"
+        return None
 
     def __getitem__(self, k):
         return self.data.get(k)
@@ -101,15 +142,36 @@ class Config:
         self.data[k] = v
         self.save()
 
-    def save(self) -> None:
+    def save(self) -> bool:
         try:
             os.makedirs(os.path.dirname(self.path), exist_ok=True)
             tmp = self.path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(self.data, f, ensure_ascii=False, indent=1)
+                f.flush()
+                os.fsync(f.fileno())
+            if os.path.exists(self.path):
+                try:  # попередня версія — у .bak (лише цілий файл: зіпсований не витісняє добру копію)
+                    self._read(self.path)
+                    os.replace(self.path, self.bak)
+                except (OSError, ValueError):
+                    pass
             os.replace(tmp, self.path)
-        except Exception:
-            pass
+            self.save_error = None
+            return True
+        except Exception as e:  # noqa: BLE001 — налаштування не повинні валити програму, але й мовчати не мають
+            self.save_error = f"{type(e).__name__}: {e}"
+            return False
+
+    def take_save_error(self):
+        """Нова помилка запису, про яку ще не казали користувачу (None — немає)."""
+        err = self.save_error
+        if err and err != self._error_seen:
+            self._error_seen = err
+            return err
+        if not err:
+            self._error_seen = None
+        return None
 
 
 CFG = Config()

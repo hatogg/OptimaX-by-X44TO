@@ -219,6 +219,60 @@ def test_old_optimax_point_is_not_a_new_one():
     assert restore_point(f"WARNING: x\n7|{name}", f"8|{name}") is True  # попередження перед відповіддю
 
 
+# ───────────────────────── OX-023: settings.json ─────────────────────────
+def _cfg_dir():
+    import json
+    d = tempfile.mkdtemp(prefix="oxcfg_")
+    return d, os.path.join(d, "settings.json"), json
+
+
+def test_damaged_settings_come_back_from_the_backup():
+    import features as F
+    d, p, json = _cfg_dir()
+    c = F.Config(p)
+    c["theme"] = "light"
+    c["hotkeys"] = False  # друге збереження: перше («light») — у .bak
+    with open(p, "w", encoding="utf-8") as f:
+        f.write('{"theme": "li')  # обірваний запис
+    c2 = F.Config(p)
+    assert c2.problem == "restored" and c2["theme"] == "light", (c2.problem, c2["theme"])
+    assert any(n.startswith("settings.json.corrupt-") for n in os.listdir(d)), os.listdir(d)
+
+
+def test_damaged_settings_without_backup_are_reported_not_silently_reset():
+    import features as F
+    d, p, json = _cfg_dir()
+    with open(p, "w", encoding="utf-8") as f:
+        f.write("\x00\x00\x00")
+    c = F.Config(p)
+    assert c.problem == "lost" and c["theme"] == F.DEFAULTS["theme"]
+    kept = [n for n in os.listdir(d) if n.startswith("settings.json.corrupt-")]
+    assert kept, os.listdir(d)  # зіпсований файл не перезаписано типовими значеннями
+
+
+def test_crash_between_write_steps_uses_the_newer_tmp():
+    import features as F
+    d, p, json = _cfg_dir()
+    with open(p + ".bak", "w", encoding="utf-8") as f:
+        json.dump({"theme": "dark"}, f)
+    with open(p + ".tmp", "w", encoding="utf-8") as f:
+        json.dump({"theme": "light"}, f)
+    c = F.Config(p)  # основного файлу немає: його вже перенесли в .bak, а .tmp ще не став основним
+    assert c.problem == "restored" and c["theme"] == "light"
+
+
+def test_fresh_install_is_not_a_problem_and_saves_report_errors():
+    import features as F
+    d, p, json = _cfg_dir()
+    c = F.Config(p)
+    assert c.problem is None and c.save() is True and c.take_save_error() is None
+    blocker = os.path.join(d, "file")
+    open(blocker, "w").close()
+    bad = F.Config(os.path.join(blocker, "settings.json"))  # «папка» — це файл: запис неможливий
+    assert bad.save() is False and bad.take_save_error()
+    assert bad.save() is False and bad.take_save_error() is None  # про ту саму помилку — один раз
+
+
 # ───────────────────────── OX-009: підсумок дії ─────────────────────────
 def test_outcome_has_four_states():
     if not has_qt():

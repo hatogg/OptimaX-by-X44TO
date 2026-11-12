@@ -364,6 +364,19 @@ STRINGS = {
     "run.failed_t": ("Що не вдалося", "Что не удалось", "What failed"),
     "toast.partial": ("{what}: завершено з помилками", "{what}: завершено с ошибками", "{what}: finished with errors"),
     "toast.stopped": ("{what}: зупинено", "{what}: остановлено", "{what}: stopped"),
+    # 6.15: settings.json
+    "cfg.restored": ("Файл налаштувань був пошкоджений — відновлено з резервної копії.",
+                     "Файл настроек был повреждён — восстановлен из резервной копии.",
+                     "The settings file was damaged and has been restored from a backup."),
+    "cfg.lost": ("Файл налаштувань був пошкоджений, а копії немає — налаштування скинуто до типових. Пошкоджений файл "
+                 "збережено поруч (settings.json.corrupt-…).",
+                 "Файл настроек был повреждён, а копии нет — настройки сброшены к стандартным. Повреждённый файл "
+                 "сохранён рядом (settings.json.corrupt-…).",
+                 "The settings file was damaged and there was no backup, so settings were reset to defaults. The damaged "
+                 "file was kept next to it (settings.json.corrupt-…)."),
+    "cfg.save_fail": ("Не вдається зберегти налаштування — подробиці в журналі програми.",
+                      "Не удаётся сохранить настройки — подробности в журнале программы.",
+                      "Settings cannot be saved; details are in the program log."),
     "run.need_reboot": ("Для частини змін потрібне перезавантаження.", "Для части изменений нужна перезагрузка.",
                         "Some changes need a restart."),
     "run.stop": ("Зупинити", "Остановить", "Stop"),
