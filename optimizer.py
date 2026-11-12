@@ -147,6 +147,11 @@ class Pages(dict):
     def next_missing(self):
         return next((k for k in self._specs if k not in self), None)
 
+    def built(self, key):
+        """Сторінка, якщо її вже збудовано, інакше None (не будує). Для оновлень стану: нова сторінка й так читає
+        поточний стан під час побудови."""
+        return dict.get(self, key)
+
 
 class Main(QWidget):
     hotkey_pressed = pyqtSignal(str)  # з потоку гарячих клавіш у головний потік
@@ -215,7 +220,7 @@ class Main(QWidget):
             QApplication.styleHints().colorSchemeChanged.connect(self._system_scheme_changed)
         except Exception:
             pass
-        QTimer.singleShot(0, self._build_pages)
+        QTimer.singleShot(self.BUILD_DELAY_MS, self._build_pages)
         # FPS-оверлей в іграх (overlay_ui) і запис фонових процесів під час ігор (procmon)
         from overlay_ui import OverlayController
         self.overlay = OverlayController(self)
@@ -363,8 +368,8 @@ class Main(QWidget):
         F.CFG["simple_ui"] = bool(on)
         self.refresh_nav()
         self.pages["home"].set_simple(on)
-        st = self.pages["settings"]
-        if hasattr(st, "sw_simple"):
+        st = self.pages.built("settings")  # ще не збудована — сама прочитає налаштування (не будуємо заради цього)
+        if st is not None and hasattr(st, "sw_simple"):
             st.sw_simple.set_quiet(bool(on))
 
     def show_whats_new(self):
@@ -627,18 +632,36 @@ class Main(QWidget):
         self.go("memory")
         QTimer.singleShot(UK.dur(320) + 30, self.pages["memory"].start_clean)
 
+    # Що сторінка має отримати від головного вікна, коли залізо вже визначене (_hw_ready). 6.15: сторінку, якої ще
+    # немає, заради цього не будуємо — вона отримає те саме під час побудови (_make_page).
+    HW_SYNC = (("optimize", lambda p, w: p.set_hw(w.hw)), ("laptop", lambda p, w: p.set_hw(w.hw)),
+               ("games", lambda p, w: p.set_hw(w.hw)), ("hwcenter", lambda p, w: p.set_hw(w.hw)),
+               ("bench", lambda p, w: p.sync_mesa()), ("cleanup", lambda p, w: p.sync()),
+               ("network", lambda p, w: p.sync()))
+
     def _make_page(self, key: str, cls):
         page = cls(self)
         self.stack.addWidget(styled(page, "page"))
+        if key == "settings":
+            page.set_hk_state(getattr(self, "hk_busy", []))
+        if self.hw is not None:
+            for k, sync in self.HW_SYNC:
+                if k == key:
+                    sync(page, self)
         return page
 
+    # 6.15: фонова побудова сторінок починається, коли вікно вже з'явилося й відповідає, і йде з паузами:
+    # раніше вона збігалася з появою вікна, і інтерфейс кілька секунд майже не реагував. Сторінка, до якої
+    # звернулися раніше, як і досі, будується в момент звернення.
+    BUILD_DELAY_MS = 1500
+    BUILD_GAP_MS = 40
+
     def _build_pages(self):
-        """По одній сторінці за прохід циклу подій: вікно з головною з'являється одразу, а не після створення всіх
-        сімнадцяти сторінок (6.9). Сторінка, до якої звернулися раніше, створюється в момент звернення."""
+        """По одній сторінці за раз: вікно з головною з'являється одразу, а не після створення всіх сторінок (6.9)."""
         key = self.pages.next_missing()
         if key:
             self.pages[key]
-            QTimer.singleShot(0, self._build_pages)
+            QTimer.singleShot(self.BUILD_GAP_MS, self._build_pages)
 
     def go(self, key: str):
         idx = self.nav_keys.index(key)
@@ -764,14 +787,10 @@ class Main(QWidget):
         self.hw, self.analysis, self.checks = res["hw"], res["an"], res["checks"]
         self.pages["home"].set_analysis(self.hw, self.analysis, self.checks)
         self.pages["home"].set_gpu_temp(res.get("gpu_t"))
-        self.pages["optimize"].set_hw(self.hw)
-        self.pages["laptop"].set_hw(self.hw)
+        for key, sync in self.HW_SYNC:  # лише вже збудовані; решта отримає залізо під час побудови
+            if key in self.pages:
+                sync(self.pages[key], self)
         self.refresh_nav()  # «Ноутбук» ховається на настільному ПК
-        self.pages["games"].set_hw(self.hw)
-        self.pages["hwcenter"].set_hw(self.hw)
-        self.pages["bench"].sync_mesa()
-        self.pages["cleanup"].sync()
-        self.pages["network"].sync()
         self._guard_tick()
         self.safety_check(prompt=self.crash_prompt)
         QTimer.singleShot(6000, self.crash_scan)
@@ -799,11 +818,11 @@ class Main(QWidget):
         self.run_quick("metrics", job, silent=True, on_done=done)
 
     def refresh_all(self):
-        self.pages["optimize"].refresh()
-        self.pages["backup"].reload()
-        self.pages["laptop"].sync()
-        self.pages["cleanup"].sync()
-        self.pages["network"].sync()
+        # лише збудовані сторінки: нова сторінка й так читає поточний стан під час побудови
+        for key, method in (("optimize", "refresh"), ("backup", "reload"), ("laptop", "sync"), ("cleanup", "sync"),
+                            ("network", "sync")):
+            if key in self.pages:
+                getattr(self.pages[key], method)()
         self.update_booster_ui()
         self.guard_refresh()
         self.tray_ab.setVisible(AB.Backend(F.CFG).mode == "filter")
@@ -853,7 +872,8 @@ class Main(QWidget):
                 E.purge_standby()
                 self.purges += 1
                 LOG.write(tr("mc.purged", mb=info["standby_mb"]))
-            self.pages["games"].set_cleaner_status(info, self.purges)
+            if self.pages.built("games"):
+                self.pages["games"].set_cleaner_status(info, self.purges)
         games = F.CFG["games"] or []
         # ядра для ігор
         if self.hw and any(g.get("cores") for g in games):
@@ -950,7 +970,8 @@ class Main(QWidget):
 
     def update_booster_ui(self):
         on = F.BOOSTER.active
-        self.pages["games"].update_state()
+        if self.pages.built("games"):
+            self.pages["games"].update_state()
         self.pages["home"].update_booster()
         self.tray_boost.setText(tr("g.btn_off") if on else tr("g.btn_on"))
         self.boost_dot.setVisible(on)
@@ -1153,7 +1174,8 @@ class Main(QWidget):
         self.upd_side.setVisible(bool(self.update_info))
         if self.update_info:
             self.upd_side.setText(tr("upd.side", v=self.update_info["version"]))
-        self.pages["backup"].reload_guard()
+        if self.pages.built("backup"):
+            self.pages["backup"].reload_guard()
 
     # ── аварійний відкат ──
     def safety_check(self, prompt: bool = False, manual: bool = False, btn=None):
@@ -1170,7 +1192,8 @@ class Main(QWidget):
                 self.refresh_all()
             self.crash = res.get("crash")
             self.guard_refresh()
-            self.pages["backup"].sync_rescue()
+            if self.pages.built("backup"):
+                self.pages["backup"].sync_rescue()
             if self.crash and prompt:
                 self.show_window()
                 QTimer.singleShot(400, self.ask_crash)
@@ -1304,7 +1327,8 @@ class Main(QWidget):
             c["last_try"] = now
             if isinstance(info, dict) and info.get("error") and not info.get("version"):
                 F.CFG["updates"] = c  # невдала спроба: last_check не чіпаємо, повторимо за пів години
-                self.pages["settings"].sync_updates(failed=True)
+                if self.pages.built("settings"):
+                    self.pages["settings"].sync_updates(failed=True)
                 if not auto:
                     self.toast(tr("upd.fail"), "bad")
                 elif startup:
@@ -1314,7 +1338,8 @@ class Main(QWidget):
             c["latest"] = info if isinstance(info, dict) and info.get("version") else None
             F.CFG["updates"] = c
             self.update_info = c["latest"]
-            self.pages["settings"].sync_updates()
+            if self.pages.built("settings"):
+                self.pages["settings"].sync_updates()
             self.guard_refresh()
             if not auto:
                 self.toast(tr("upd.found", v=self.update_info["version"]) if self.update_info else tr("upd.none"),
@@ -1386,7 +1411,8 @@ class Main(QWidget):
         else:
             self.hk.stop()
             self.hk_busy = []
-        self.pages["settings"].set_hk_state(self.hk_busy)
+        if self.pages.built("settings"):  # ще не збудована — отримає стан під час побудови (_make_page)
+            self.pages["settings"].set_hk_state(self.hk_busy)
         if not quiet:
             self.toast(tr("hk.on") if on else tr("hk.off"))
 

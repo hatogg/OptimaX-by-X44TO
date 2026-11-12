@@ -671,7 +671,8 @@ class Splash(QWidget):
         self.logo = logo_pixmap(84)
         self.t = 0.0      # поява
         self.spin = 0.0   # бігуча смужка
-        self.anim = Anim(self, self._intro, 700, OUT)
+        # 6.15: 350 мс замість 700 — головне вікно почне будуватися лише після вступу, тож довший вступ = довше чекати
+        self.anim = Anim(self, self._intro, 350, OUT)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
         scr = QApplication.primaryScreen()

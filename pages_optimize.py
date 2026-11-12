@@ -744,14 +744,30 @@ class OptimizePage(QWidget):
         self.stack = QStackedWidget()
         self.modes = ModesView(self)
         self.wizard = WizardView(self)
-        self.expert = ExpertView(self)
+        # 6.15: експертне меню (≈130 рядків, найважча частина вікна) будується при першому зверненні, а не під час
+        # запуску: на слабкому ноутбуці це ≈1 с, коли інтерфейс не відповідає. До того на його місці — порожня заглушка.
+        self._expert = None
+        self._expert_slot = QWidget()
         self.review = ReviewView(self)
-        for w in (self.modes, self.wizard, self.expert, self.review):
+        for w in (self.modes, self.wizard, self._expert_slot, self.review):
             self.stack.addWidget(w)
         outer.addWidget(self.stack, 1)
         self.search.textChanged.connect(self._search)
         self.mode = 0
         self.set_mode(0)
+
+    @property
+    def expert(self) -> "ExpertView":
+        if self._expert is None:
+            ex = ExpertView(self)
+            i = self.stack.indexOf(self._expert_slot)
+            self.stack.insertWidget(i, ex)
+            self.stack.removeWidget(self._expert_slot)
+            self._expert_slot.deleteLater()
+            self._expert = ex
+            if self.main.hw:
+                ex.set_hw(self.main.hw)
+        return self._expert
 
     # вкладки: 0 — режими, 1 — майстер, 2 — експерт
     def _search(self, text: str):
@@ -763,7 +779,7 @@ class OptimizePage(QWidget):
     def set_mode(self, i: int):
         self.mode = i
         self.seg.select(i)
-        self.stack.setCurrentWidget((self.modes, self.wizard, self.expert)[i])
+        self.stack.setCurrentWidget(self.expert if i == 2 else (self.modes, self.wizard)[i])
         self.search.setVisible(i == 2)
         if i == 0:
             self.modes.refresh()
@@ -791,14 +807,16 @@ class OptimizePage(QWidget):
             self.expert.apply_profile(key)
 
     def set_hw(self, hw: dict):
-        self.expert.set_hw(hw)
+        if self._expert is not None:  # ще не збудоване — отримає залізо під час побудови
+            self._expert.set_hw(hw)
         if self.mode == 0 and self.stack.currentWidget() is self.modes:
             self.modes.refresh(hw)
         if self.mode == 1 and self.stack.currentWidget() is self.wizard:
             self.wizard.start(hw)
 
     def refresh(self):
-        self.expert.refresh_applied()
+        if self._expert is not None:  # ще не збудоване — стан застосованих прочитає під час побудови
+            self._expert.refresh_applied()
         if self.stack.currentWidget() is self.modes:
             self.modes.refresh()
 
