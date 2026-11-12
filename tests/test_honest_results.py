@@ -193,6 +193,32 @@ def test_undo_or_default_reports_what_really_happened():
         assert r["undone"] == 0 and r["partial"] == 1, r
 
 
+# ───────────────────────── OX-020: точка відновлення ─────────────────────────
+def restore_point(before: str, after: str):
+    """before / after — що PowerShell каже про найновішу точку до і після Checkpoint-Computer."""
+    answers = [before, after]
+
+    def ps(code, *a, **k):
+        if code == E.LAST_RP_PS:
+            return 0, answers.pop(0)
+        return 0, ""
+    noop = lambda *a, **k: None  # noqa: E731
+    with patched(DRY_RUN=False, ps=ps, reg_get=noop, reg_set=noop, reg_del_value=noop):
+        return E.create_restore_point(lambda *_: None)["ok"]
+
+
+def test_old_optimax_point_is_not_a_new_one():
+    name = E.RESTORE_POINT_NAME
+    assert restore_point(f"7|{name}", f"7|{name}") is False  # захист вимкнено — лишилася стара точка OptimaX
+    assert restore_point(f"7|{name}", f"8|{name}") is True
+    assert restore_point("0|", f"1|{name}") is True  # перша точка на цьому ПК
+    assert restore_point("7|Windows Update", f"8|Windows Update") is False  # нова, але не наша
+    assert restore_point("WARNING: oops", f"8|{name}") is False  # до спроби не прочиталося — довести нічим
+    assert restore_point("ERR", f"8|{name}") is False  # «Access denied» — не те саме, що «точок немає»
+    assert restore_point("0|", "ERR") is False
+    assert restore_point(f"WARNING: x\n7|{name}", f"8|{name}") is True  # попередження перед відповіддю
+
+
 # ───────────────────────── OX-009: підсумок дії ─────────────────────────
 def test_outcome_has_four_states():
     if not has_qt():

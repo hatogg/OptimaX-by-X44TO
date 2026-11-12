@@ -3088,21 +3088,44 @@ def integrity_check(log: Callable, progress: Optional[Callable], done: int, tota
 RESTORE_POINT_NAME = f"{APP_NAME} Restore Point"
 
 
+# Помилка читання (немає прав, зламаний WMI) — окремий рядок «ERR», а не «точок немає»: інакше старий стан не
+# відрізнити від порожнього. Відповідь — окремим рядком: PowerShell може дописати CLIXML у той самий потік.
+LAST_RP_PS = ("try { $p = Get-ComputerRestorePoint -ErrorAction Stop | Sort-Object SequenceNumber | Select-Object -Last 1; "
+              "if ($p) { [Console]::Out.WriteLine([string]$p.SequenceNumber + '|' + $p.Description) } "
+              "else { [Console]::Out.WriteLine('0|') } } catch { [Console]::Out.WriteLine('ERR') }")
+
+
+def last_restore_point():
+    """-> (номер, опис) найновішої точки відновлення; (0, "") — точок немає; None — не вдалося прочитати."""
+    rc, out = ps(LAST_RP_PS, 40, ro=True)
+    line = next((s.strip() for s in reversed((out or "").splitlines()) if re.match(r"\s*\d+\|", s)), None)
+    if line is None:
+        return None
+    seq, _, desc = line.partition("|")
+    return int(seq), desc
+
+
 def create_restore_point(log: Callable) -> dict:
     log(tr("e.rp"))
     key = r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore"
     name = "SystemRestorePointCreationFrequency"
     old = reg_get(key, name)
     ok = False
+    # 6.15: точка створена лише тоді, коли з'явилася НОВА — з більшим номером, ніж найновіша до спроби. Раніше
+    # успіхом вважалося «в описі останньої точки є OptimaX», і стара точка OptimaX давала хибне «створено».
+    before = None if DRY_RUN else last_restore_point()
     try:
         if not DRY_RUN:  # без цього Windows пропускає точку, якщо за 24 години вже була інша
             reg_set(key, name, 0, "dword")
         rc, out = ps('Enable-ComputerRestore -Drive ($env:SystemDrive + "\\"); '
                      f"Checkpoint-Computer -Description '{RESTORE_POINT_NAME}' "
                      "-RestorePointType MODIFY_SETTINGS", 120, log)
-        _, last = ps("(Get-ComputerRestorePoint | Sort-Object CreationTime | Select-Object -Last 1).Description",
-                     40, ro=True)
-        ok = DRY_RUN or RESTORE_POINT_NAME in last
+        if DRY_RUN:
+            ok = True
+        else:
+            after = last_restore_point()
+            # before = None — PowerShell не відповів (без точок відповідь «0|»), і довести, що точка нова, нічим
+            ok = bool(before is not None and after and after[1].strip() == RESTORE_POINT_NAME and after[0] > before[0])
         if not ok and out:
             log(f"  ⚠ {first_line(out)}")
     finally:
