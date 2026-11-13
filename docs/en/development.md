@@ -110,11 +110,14 @@ OptimaX/
 ├── overlay.py          ← FPS overlay: PresentMon stream, game detection, session report
 ├── overlay_ui.py       ← FPS overlay window and its controller (Qt)
 ├── perfdiag.py         ← what limits performance, undervolting advice
+├── latencytest.py      ← latency test: program stalls per core, DPC / ISR from the kernel event log (ETW) by driver
+├── gputune.py          ← GPU fans & undervolt: NVML (NVIDIA), ADLX (AMD), fan watchdog, auto-tune
 ├── freezecatch.py      ← Why does it freeze?: the freeze catcher (separate --freeze-watch process), black box, verdict, WPR
 ├── inspection.py       ← pre-purchase PC check
 ├── hwreport.py         ← Hardware Center reports: HTML, JSON, PDF, comparison
 ├── pages_hwcenter.py   ← Hardware Center page
 ├── pages_hwc2.py       ← Hardware Center: background processes, pre-purchase check, reports, overlay
+├── pages_gputune.py    ← Hardware Center: the Fans & undervolt section
 ├── benchtools.py       ← FurMark 2, Superposition, Cinebench, OCCT, CrystalDiskMark, 3DMark
 ├── adblock.py          ← DNS filter: server, lists, cache, DoH, statistics, service, system DNS
 ├── guard.py            ← settings guard, trial mode, scheduled maintenance

@@ -620,9 +620,12 @@ STRINGS = {
 
     # ── ноутбук ──
     "hwc.lap.title": ("Діагностика ноутбука", "Диагностика ноутбука", "Laptop diagnostics"),
-    "hwc.lap.sub": ("Батарея, живлення, гібридна графіка, тротлінг процесора. Напругу й BIOS OptimaX не змінює.",
-                    "Батарея, питание, гибридная графика, троттлинг процессора. Напряжение и BIOS OptimaX не меняет.",
-                    "Battery, power, hybrid graphics and CPU throttling. OptimaX never changes voltages or the BIOS."),
+    "hwc.lap.sub": ("Батарея, живлення, гібридна графіка, тротлінг процесора. Напругу процесора й BIOS OptimaX не "
+                    "змінює.",
+                    "Батарея, питание, гибридная графика, троттлинг процессора. Напряжение процессора и BIOS OptimaX "
+                    "не меняет.",
+                    "Battery, power, hybrid graphics and CPU throttling. OptimaX never changes the CPU voltage or the "
+                    "BIOS."),
     "hwc.lap.battery": ("Перевірити батарею", "Проверить батарею", "Check the battery"),
     "hwc.lap.page": ("Сторінка «Ноутбук»", "Страница «Ноутбук»", "Laptop page"),
     "hwc.lap.is": ("Ноутбук", "Ноутбук", "Laptop"),

@@ -37,6 +37,12 @@ if __name__ == "__main__":
     if "--freeze-watch" in sys.argv:  # «Чому зависає?»: ловець фризів — окремий процес без Qt і без GIL інтерфейсу
         import freezecatch
         sys.exit(freezecatch.watch_main(sys.argv))
+    if "--gpu-watchdog" in sys.argv:  # кулери відеокарти: повернути вентилятори драйверу, якщо OptimaX зникла
+        import gputune
+        sys.exit(gputune.watchdog_main(sys.argv))
+    if "--gpu-reset" in sys.argv:  # запис журналу й OptimaX-Rescue.cmd: заводські налаштування відеокарти
+        import gputune
+        sys.exit(gputune.reset_main(sys.argv))
     if any(a == "--selftest" or a.startswith("--selftest=") for a in sys.argv):
         import selftest  # самоперевірка збірки (CI): тимчасові налаштування й режим перегляду — до імпорту engine
         selftest.prepare(sys.argv)
@@ -49,6 +55,7 @@ from PyQt6.QtWidgets import (QApplication, QWidget, QFrame, QPushButton, QButton
 import engine as E
 import features as F
 import guard as G
+import gputune as GT
 import hardware as H
 import hotkeys as HK
 import lifecycle as L
@@ -247,6 +254,11 @@ class Main(QWidget):
         # минулого разу OptimaX закрилася аварійно посеред змін: повертаємо «напівзастосоване» й питаємо про пакет
         self.run_quick(tr("rec.title"), lambda log, p: RS.recover_on_start(log), silent=True,
                        on_done=self._recovered)
+        # кулери й андервольт відеокарти: збій після зміни частоти чи напруги — заводські значення й без
+        # автозастосування; інакше — перевірений профіль, якщо його просили застосовувати під час запуску
+        gst = F.CFG["gpu_tune"] or {}
+        if gst.get("pending") or (gst.get("on_start") and gst.get("profile")):
+            self.run_quick("gpu", lambda log, p: GT.startup(F.CFG, log), silent=True, on_done=self._gpu_started)
         # задачі з правами адміністратора, які старіші версії створили для портативного exe, — прибрати (6.7)
         self.run_quick("tasks", lambda log, p: F.audit_tasks(log), silent=True)
         broken = len(E.legacy_to_repair())
@@ -856,6 +868,14 @@ class Main(QWidget):
         if err:
             LOG.write(f"  settings.json: {err}")
             self.toast(tr("cfg.save_fail"), "bad")
+        try:  # відеокарта: зміну частоти/напруги пережили без збою; запис журналу відкотили — карта вже заводська
+            GT.confirm_stable(F.CFG)
+            if GT.sync_with_journal(F.CFG):
+                GT.SESSION.stop_fans()
+                if self.pages.built("hwcenter"):
+                    self.pages["hwcenter"].gpu_tune_sync()
+        except Exception as e:
+            LOG.write(f"  gpu: {type(e).__name__}: {e}")
         names = None
         if self._ticks % 3 == 0:  # бібліотека: сесії ігор, режим гри від запуску, FPS
             names = F.running_game_names()
@@ -1239,6 +1259,17 @@ class Main(QWidget):
         if res.get("tweak"):
             self.refresh_all()
 
+    def _gpu_started(self, res):
+        if not isinstance(res, dict):
+            return
+        if res.get("crashed"):
+            self.toast(tr("gt.crashed_toast"), "warn")
+        elif res.get("applied"):
+            GT.startup_fans(F.CFG)
+            self.toast(tr("gt.applied_toast"))
+        if self.pages.built("hwcenter"):
+            self.pages["hwcenter"].gpu_tune_sync()
+
     def _interrupted_ids(self) -> list:
         return [i for i in (self.interrupted or {}).get("ids") or [] if E.JOURNAL.has(i)]
 
@@ -1533,6 +1564,10 @@ class Main(QWidget):
             pass
         try:
             FZ.CATCHER.stop(remember=False)  # ловець зупиняється разом із програмою, а ввімкненим лишається
+        except Exception:
+            pass
+        try:
+            GT.SESSION.close()  # крива вентиляторів NVIDIA працює лише з OptimaX — вентилятори знову драйверу
         except Exception:
             pass
         self.tray.hide()

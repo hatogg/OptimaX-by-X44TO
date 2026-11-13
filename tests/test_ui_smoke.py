@@ -44,10 +44,15 @@ def check_66(st: dict) -> None:
 
 
 def check_hwc(st: dict) -> None:
-    """Hardware Center: 18 розділів (з перевіркою збірки й затримками), тести на демо-залізі пройдені, звіт і перевірка
-    перед покупкою."""
+    """Hardware Center: 19 розділів (з перевіркою збірки, затримками й кулерами), тести на демо-залізі пройдені, звіт і
+    перевірка перед покупкою, кулери й андервольт демо-карти."""
     h = st["hwc"]
-    assert h["built"] == 18, h
+    assert h["built"] == 19, h
+    g = h["gputune"]
+    assert g["name"] and g["caps"] == 5 and g["fans"], g
+    nv = g["vendor"] == "nvidia"  # демо-карта AMD андервольтиться напругою, зсуву частоти в неї немає
+    assert g["offset"] == (60 if nv else None) and g["reset"] == [0 if nv else None, False, False], g
+    assert "°C" in g["live"], g
     assert h["build"][0] >= 3 and h["build"][2] >= 1, ("the build check moved from the Hardware page", h["build"])
     for t in ("cpu_multi", "ram", "vram", "storage_health", "disk_bench", "latency"):
         assert h[t] in ("pass", "warn"), (t, h)

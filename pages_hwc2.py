@@ -214,6 +214,7 @@ def fill_undervolt(page):
     bh = hbox(spacing=8)
     bh.addWidget(button(tr("uv.verify_cpu"), None, lambda: page.show_section("cpu")))
     bh.addWidget(button(tr("uv.verify_gpu"), None, lambda: page.main.go("bench")))
+    bh.addWidget(button(tr("uv.gpu_tune"), "primary", lambda: page.show_section("gputune")))
     bh.addStretch()
     page.uv_box.addLayout(bh)
     page.uv_box.addWidget(label(tr("uv.never"), "muted", wrap=True))

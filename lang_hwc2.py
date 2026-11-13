@@ -356,9 +356,12 @@ STRINGS = {
 
     # ── андервольтинг ──
     "uv.title": ("Андервольтинг: чи є сенс", "Андервольтинг: есть ли смысл", "Undervolting: is it worth it"),
-    "uv.sub": ("Порада за результатами тестів. OptimaX сама напругу не змінює й не обходить блокувань BIOS.",
-               "Совет по результатам тестов. OptimaX сама напряжение не меняет и не обходит блокировок BIOS.",
-               "Advice from the test results. OptimaX never changes voltages itself or bypasses BIOS locks."),
+    "uv.sub": ("Порада за результатами тестів. Напругу процесора OptimaX не змінює й не обходить блокувань BIOS; "
+               "відеокарту — лише за вашою командою, у розділі «Кулери й андервольт».",
+               "Совет по результатам тестов. Напряжение процессора OptimaX не меняет и не обходит блокировок BIOS; "
+               "видеокарту — только по вашей команде, в разделе «Кулеры и андервольт».",
+               "Advice from the test results. OptimaX never changes the CPU voltage or bypasses BIOS locks; the GPU "
+               "only on your command, in the Fans & undervolt section."),
     "uv.state.locked_likely": ("Керування напругою, найімовірніше, заблоковане (ноутбучні Intel з 10-го покоління: "
                                "Plundervolt, «Undervolt Protection»).",
                                "Управление напряжением, скорее всего, заблокировано (ноутбучные Intel с 10-го поколения: "
@@ -430,13 +433,21 @@ STRINGS = {
     "uv.g.ok": ("Відеокарта в нормі під навантаженням.", "Видеокарта в норме под нагрузкой.", "The GPU is fine under load."),
     "uv.g.no_test": ("Відеокарту ще не перевіряли стрес-тестом.", "Видеокарту ещё не проверяли стресс-тестом.",
                      "The GPU hasn't been stress-tested yet."),
-    "uv.g.curve": ("Відеокарта: MSI Afterburner, крива частота-напруга (Ctrl+F).", "Видеокарта: MSI Afterburner, кривая "
-                   "частота-напряжение (Ctrl+F).", "GPU: MSI Afterburner, the voltage-frequency curve (Ctrl+F)."),
+    "uv.g.curve": ("Відеокарта NVIDIA / AMD: розділ «Кулери й андервольт» — автопідбір зі стрес-тестом на кожному кроці; "
+                   "або MSI Afterburner, крива частота-напруга (Ctrl+F).",
+                   "Видеокарта NVIDIA / AMD: раздел «Кулеры и андервольт» — автоподбор со стресс-тестом на каждом "
+                   "шаге; или MSI Afterburner, кривая частота-напряжение (Ctrl+F).",
+                   "NVIDIA / AMD graphics: the Fans & undervolt section — automatic tuning with a stress test at every "
+                   "step; or MSI Afterburner, the voltage-frequency curve (Ctrl+F)."),
     "uv.verify_cpu": ("Перевірити процесор", "Проверить процессор", "Test the CPU"),
     "uv.verify_gpu": ("Перевірити відеокарту", "Проверить видеокарту", "Test the GPU"),
-    "uv.never": ("OptimaX не змінює напругу автоматично й не обходить апаратних блокувань.",
-                 "OptimaX не меняет напряжение автоматически и не обходит аппаратных блокировок.",
-                 "OptimaX never changes voltages automatically or bypasses hardware locks."),
+    "uv.gpu_tune": ("Кулери й андервольт відеокарти", "Кулеры и андервольт видеокарты", "GPU fans & undervolt"),
+    "uv.never": ("Напругу процесора OptimaX не змінює й не обходить апаратних блокувань. Відеокарту — лише за вашою "
+                 "командою, через офіційні бібліотеки NVIDIA / AMD, з поверненням заводських значень.",
+                 "Напряжение процессора OptimaX не меняет и не обходит аппаратных блокировок. Видеокарту — только по "
+                 "вашей команде, через официальные библиотеки NVIDIA / AMD, с возвратом заводских значений.",
+                 "OptimaX never changes the CPU voltage or bypasses hardware locks. The GPU only on your command, "
+                 "through the official NVIDIA / AMD libraries, with the factory values restorable."),
 
     # ── перевірка перед покупкою ──
     "insp.title": ("Перевірка ПК перед покупкою", "Проверка ПК перед покупкой", "Pre-purchase PC check"),

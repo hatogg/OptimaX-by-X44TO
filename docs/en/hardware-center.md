@@ -32,6 +32,8 @@ Hardware Center is a page in the Device group that brings hardware diagnostics, 
 | **Laptop** | Battery (design vs full capacity, wear, cycles), power source, hybrid graphics, throttling from the latest CPU test |
 | **Peripherals** | Keyboard, mouse (buttons and wheel), speakers (left and right channel), camera, microphone, network adapters |
 | **Stress testing** | CPU only, GPU only, CPU + GPU, RAM, VRAM, storage — with sensors, charts and an emergency stop |
+| **Latency** | A 1–5 minute system latency test: the longest program stalls on every core, the longest DPCs and interrupts (ISRs) and the drivers behind them, with advice by device type |
+| **Fans & undervolt** | NVIDIA and AMD graphics cards: a fan curve or fixed speed, power limit, undervolt (NVIDIA — clock limit and offset, AMD — voltage), stability check and auto-tune |
 | **Background processes** | Who loaded the system during a game, whether their peaks matched FPS drops and what you can do; What limits performance and undervolting advice |
 | **Windows diagnostics** | Blue screens, sudden shutdowns, TDR, WHEA, devices with driver errors; dump analysis via cdb.exe; SFC and DISM after confirmation |
 | **Pre-purchase check** | A 14-step wizard with a comparison against the advertised configuration |
@@ -59,6 +61,8 @@ Each result shows its findings in plain words, values and charts. “Demo, not r
 - **SMART / NVMe.** NVMe — the Health Information log (critical warnings, spare blocks, wear, data written, hours, power cycles, unsafe shutdowns, Media and Data Integrity Errors). SATA — SMART attributes and thresholds (reallocated, pending, uncorrectable sectors, CRC, hours, temperature, data written). USB disks — Windows reliability counters.
 - **Emergency stop.** During stress tests the sensors are read every second; the CPU at 95 °C (sensor program or a moving thermal zone) or the GPU at 92 °C for three seconds in a row stops every test and the result is FAIL.
 - **Stopping and timeouts.** Each test is a separate process: stopping asks it to exit (and clean up), and after 8–10 seconds it is terminated. A crash under load doesn't close the program; it is shown as a crash.
+- **Latency.** Two separate processes. One is a highest-priority thread that keeps reading the time counter and records every gap when it wasn't running (the CPU was taken by interrupts, drivers, the BIOS or real-time processes); every second it moves to the next core, so all cores are covered. The other (administrator rights needed) is a kernel event log session of its own (ETW) with DPC and interrupt events: the duration of each and the routine address, mapped to a driver name through the list of kernel modules. The session only reads and is stopped at the end. The verdict uses the worst value, like LatencyMon: 1 ms or more is a warning, 4 ms or more is bad. The Windows high-resolution timer can't be the yardstick: it wakes up 0.3–1 ms late by itself, which is noise, not a driver problem. OptimaX installs no driver.
+- **Fans & undervolt.** Only through the official libraries installed with the graphics driver: NVML (NVIDIA) and ADLX (AMD). OptimaX installs no kernel driver (WinRing0, PawnIO), so motherboard fans and the CPU voltage stay advice: Windows Defender flags WinRing0 as vulnerable, and the FACEIT anti-cheat blocks PawnIO. NVIDIA undervolt — the max clock is capped at the factory one and the voltage-frequency curve is shifted up: the same clock at a lower voltage. NVIDIA exposes the curve itself only through undocumented functions, which OptimaX doesn't use. AMD undervolt — the voltage (RDNA 2 and newer). **Auto-tune** raises the offset in 30 MHz steps (AMD lowers the voltage in 10 mV steps), with a 90-second GPU stress test comparing a check frame bit for bit at every step. At the first error it backs off two steps and runs a 5-minute final check; if anything goes wrong — factory values.
 
 ## FPS overlay
 
@@ -84,7 +88,8 @@ HTML (with charts), JSON and PDF (made with Qt, no new dependencies). A report h
 ## Safety
 
 - No destructive disk tests, no formatting, no writes outside its own temporary file.
-- No BIOS, voltage or undervolting changes — only advice with the reasons and how to check stability.
+- No BIOS or CPU voltage changes — only advice with the reasons and how to check stability.
+- The graphics card changes only after Apply. Before the first change OptimaX remembers the factory values; Reset to factory, rollback in the journal and OptimaX-Rescue.cmd (the `OptimaX.exe --gpu-reset` step) restore exactly them. From 85 °C the fans run at 100 %, and the curve never goes below 30 %. The NVIDIA fan curve runs while OptimaX runs: if the program closes or crashes, a separate watchdog process gives the fans back to the driver. If the program or the system crashes after a clock or voltage change, OptimaX restores the factory values on the next start and doesn't apply the profile automatically. Only a profile that passed the stability check can be applied at start.
 - No automatic process termination: background processes are only shown, with options for you.
 - SFC, DISM and chkdsk run only after confirmation (chkdsk without switches is read-only).
 - The Windows Graphics setting for the GPU test is set only with consent and through the rollback journal.
@@ -99,6 +104,8 @@ HTML (with charts), JSON and PDF (made with Qt, no new dependencies). A report h
 - Per-process network data needs ETW — Background processes shows it for the whole system.
 - The color gamut is an estimate from the EDID coordinates, not a colorimeter measurement.
 - Real-hardware runs (P106-100, Intel HD, Optimus laptops, AMD Hybrid) still need the matching PCs; CI checks everything on demo hardware, Mesa OpenGL and Windows Server without a GPU.
+- **Fans & undervolt** are checked in CI only on a demo card: the real NVML and ADLX need NVIDIA and AMD cards. What a given card allows is shown in the section (✓ or the reason why not); on NVIDIA laptops the manufacturer often locks the fans and power. Several NVIDIA fans are driven at one speed.
+- The kernel event log session of the latency test needs administrator rights; without them the test shows only program stalls and says plainly that DPCs and interrupts weren't measured.
 
 ## What OptimaX already had and what was added
 
@@ -117,7 +124,9 @@ HTML (with charts), JSON and PDF (made with Qt, no new dependencies). A report h
 | Combined stress test | None | Added |
 | Process monitoring | Partly (balancer, Why is it lagging?) | Added background recording during games and FPS-drop correlation |
 | Performance diagnosis | Yes (Why is it lagging?) | Extended: VRAM, integrated GPU, background, driver; confidence, risks |
-| Undervolting | None | Added advice (no system changes) |
+| Undervolting | None | CPU — advice (no system changes); GPU — undervolt and auto-tune through NVML / ADLX (6.15) |
+| Fans | None | NVIDIA and AMD graphics cards: curve, fixed speed, overheat protection (6.15) |
+| System latency test | None (only a WPR recording at the moment of a freeze) | Added: program stalls, DPC / ISR by driver (6.15) |
 | BSOD analysis | Yes (by error code) | Added cdb.exe when installed |
 | SFC / DISM | None | Added, with confirmation |
 | Pre-purchase check | None | Added |

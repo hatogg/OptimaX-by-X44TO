@@ -437,6 +437,26 @@ hc.show_section("latency")
 hc.start_latency()
 pump(lambda: not hc.lat_box.busy, 60)
 hwc["latency_drivers"] = hc.lat_drv_rows.count()
+# кулери й андервольт: демо-карта, крива вентиляторів, андервольт, заводські значення
+import gputune as GT  # noqa: E402
+import pages_gputune as PGT  # noqa: E402
+hc.show_section("gputune")
+pump(lambda: GT.SESSION.tuner is not None and hc.gt_badge.isVisible(), 30)
+gt = {"name": hc.gt_name.text(), "caps": hc.gt_caps.count(), "vendor": GT.SESSION.tuner.vendor}
+hc.gt_fan_mode.select(1, True)
+hc.gt_preset.select(2, True)
+PGT.apply_fans(hc)
+pump(timeout=0.3)
+gt["fans"] = GT.SESSION.fans_running() or (GT.SESSION.tuner.caps.get("fan") or {}).get("mode") == "native"
+hc.gt_off.setValue(60)
+hc.gt_cap_on.setChecked(True)
+PGT.apply_uv(hc)  # питання «нижча напруга може бути нестабільною» — діалог приймає auto_exec
+gt["offset"] = GT.SESSION.tuner.state.get("offset")
+PGT.reset(hc)
+gt["reset"] = [GT.SESSION.tuner.state.get("offset"), GT.state(F.CFG).get("active"), GT.SESSION.fans_running()]
+PGT._tick(hc)
+gt["live"] = hc.gt_live.text()
+hwc["gputune"] = gt
 last = F.CFG["hwc_last"] or {}
 for t in ("cpu_multi", "ram", "vram", "storage_health", "disk_bench", "latency"):
     hwc[t] = (last.get(t) or {}).get("status")

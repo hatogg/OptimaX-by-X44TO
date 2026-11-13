@@ -110,11 +110,14 @@ OptimaX/
 ├── overlay.py          ← FPS-оверлей: потік PresentMon, визначення гри, звіт сесії
 ├── overlay_ui.py       ← вікно FPS-оверлея і керування ним (Qt)
 ├── perfdiag.py         ← що обмежує продуктивність, поради щодо андервольтингу
+├── latencytest.py      ← тест затримки: зупинки програми по ядрах, DPC / ISR із журналу подій ядра (ETW) по драйверах
+├── gputune.py          ← кулери й андервольт відеокарти: NVML (NVIDIA), ADLX (AMD), сторож вентиляторів, автопідбір
 ├── freezecatch.py      ← «Чому зависає?»: ловець фризів (окремий процес --freeze-watch), чорна скринька, вердикт, WPR
 ├── inspection.py       ← перевірка ПК перед покупкою
 ├── hwreport.py         ← звіти Hardware Center: HTML, JSON, PDF, порівняння
 ├── pages_hwcenter.py   ← сторінка Hardware Center
 ├── pages_hwc2.py       ← Hardware Center: фонові процеси, перевірка перед покупкою, звіти, оверлей
+├── pages_gputune.py    ← Hardware Center: розділ «Кулери й андервольт»
 ├── benchtools.py       ← FurMark 2, Superposition, Cinebench, OCCT, CrystalDiskMark, 3DMark
 ├── adblock.py          ← DNS-фільтр: сервер, списки, кеш, DoH, статистика, служба, системні DNS
 ├── guard.py            ← сторож налаштувань, пробний режим, обслуговування за розкладом

@@ -27,7 +27,7 @@ from ui_kit import (T, label, button, card, vbox, hbox, badge, style_badge, dot,
                     section_card, Segmented, Ask, Spark, Worker, LOG, chip, FlowLayout)
 
 SECTIONS = ("overview", "info", "build", "cpu", "gpu", "vram", "ram", "storage", "display", "laptop", "peripherals",
-            "stress", "latency", "procs", "windiag", "inspect", "reports", "overlay")
+            "stress", "latency", "gputune", "procs", "windiag", "inspect", "reports", "overlay")
 STATUS_KIND = {HT.PASS: "ok", HT.WARN: "warn", HT.FAIL: "bad", HT.SKIPPED: "muted", HT.NA: "muted"}
 LEVEL_COLOR = {HT.FAIL: "bad", HT.WARN: "warn", "info": "sub"}
 
@@ -282,6 +282,9 @@ class HwCenterPage(QWidget):
     def show_section(self, key: str) -> None:
         for k, c in self.chips.items():
             c.setChecked(k == key)
+        gt = getattr(self, "gt_timer", None)
+        if gt is not None and key != "gputune" and not (getattr(self, "gt", None) or {}).get("run"):
+            gt.stop()  # живі показники відеокарти — лише поки розділ відкритий (перевірку й підбір таймер веде далі)
         if key not in self.built:
             body, v = page_body()
             getattr(self, f"_build_{key}")(v)
@@ -1207,6 +1210,20 @@ class HwCenterPage(QWidget):
             row.addWidget(label(tr("lat.drv_row", dpc=LT.fmt_us(d.get("dpc_max")), dn=d.get("dpc_n", 0),
                                    isr=LT.fmt_us(d.get("isr_max")), inn=d.get("isr_n", 0)), "muted"))
             self.lat_drv_rows.addLayout(row)
+
+    # ───────────────────────── Кулери й андервольт відеокарти ─────────────────────────
+    def _build_gputune(self, v):
+        import pages_gputune as PG
+        PG.build(self, v)
+
+    def _show_gputune(self):
+        import pages_gputune as PG
+        PG.show(self)
+
+    def gpu_tune_sync(self):
+        if "gputune" in self.built:
+            import pages_gputune as PG
+            PG.sync(self)
 
     def start_latency(self):
         import latencytest as LT
