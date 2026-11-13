@@ -193,9 +193,13 @@ DIAG_SINGLE = {
     "limit": r"\Processor Information(_Total)\% Performance Limit",
     "avail_mb": r"\Memory\Available MBytes",
     "pages_in": r"\Memory\Pages Input/sec",
+    "commit_pct": r"\Memory\% Committed Bytes In Use",  # 6.15: наскільки виділена пам'ять близька до ліміту
     "disk_idle": r"\PhysicalDisk(_Total)\% Idle Time",
 }
 DIAG_ARRAY = {
+    # 6.15: затримка читання й черга кожного фізичного диска — «повільний диск» за затримкою, а не за % зайнятості
+    "disk_rd": r"\PhysicalDisk(*)\Avg. Disk sec/Read",
+    "disk_qs": r"\PhysicalDisk(*)\Current Disk Queue Length",
     "cores": r"\Processor Information(*)\% Processor Utility",
     "gpu3d": r"\GPU Engine(*engtype_3D)\Utilization Percentage",
     "vram": r"\GPU Adapter Memory(*)\Dedicated Usage",
@@ -226,7 +230,12 @@ def _demo_sample(hw: dict, i: int) -> dict:
                        limit=100, vram_used=4.8, gpu_t=69, bg=("steamwebhelper.exe", 0.05)),
     }.get(dev, {})
     j = lambda v, k=0.08: max(0.0, v * (1 + rnd.uniform(-k, k)))  # noqa: E731
+    # 6.15: затримка читання диска (мс) і зайнятість виділеної пам'яті (%) — як на справжньому залізі цього демо
+    disk_ms, commit = {"gaming": (1.2, 42), "laptop": (3.5, 63), "old": (48.0, 96), "x3d": (0.4, 31),
+                       "xeon": (5.0, 52), "mining": (2.0, 58)}.get(dev, (2.0, 50))
     return dict(cpu=min(100.0, j(base["cpu"])), core_max=min(100.0, j(base["core_max"], 0.03)),
+                commit_pct=min(100.0, j(commit, 0.02)), disk_ms=j(disk_ms, 0.3), disk_q=j(1.0, 0.5),
+                disk_inst="0 C:",
                 gpu=min(100.0, j(base["gpu"], 0.05)), avail_mb=j(base["avail_mb"], 0.04),
                 pages_in=j(base["pages_in"], 0.4), disk=min(100.0, j(base["disk"], 0.2)), temp=j(base["temp"], 0.02),
                 passive=min(100.0, j(base["passive"], 0.02)), limit=min(100.0, j(base["limit"], 0.02)),
@@ -314,7 +323,8 @@ def lag_diagnosis(hw: dict, seconds: int, log, progress, gpu_temp=None, game: st
             fg = foreground_process()
             s = dict(cpu=min(100.0, d.get("cpu", 0.0)), core_max=min(100.0, max(cores) if cores else 0.0),
                      gpu=min(100.0, sum((d.get("gpu3d") or {}).values())), avail_mb=d.get("avail_mb", 0.0),
-                     pages_in=d.get("pages_in", 0.0), disk=max(0.0, 100 - d.get("disk_idle", 100.0)),
+                     pages_in=d.get("pages_in", 0.0), commit_pct=d.get("commit_pct"),
+                     disk=max(0.0, 100 - d.get("disk_idle", 100.0)), **_disk_worst(d),
                      temp=t, temp_src=t_src, passive=min(passive) if passive else None,
                      limit=d.get("limit"), vram_used=max((d.get("vram") or {0: 0}).values()) / 2**30,
                      gpu_t=gpu_temp() if gpu_temp and i % 3 == 0 else None, fg=fg, bg={})
@@ -394,6 +404,77 @@ def _avg(vals):
     return sum(vals) / len(vals) if vals else None
 
 
+# ───────────────────────── «бракує ОЗП» і «повільний диск»: пороги (6.15) ─────────────────────────
+# Раніше «бракує оперативної пам'яті» спрацьовувало від самого Pages Input/sec. Але цей лічильник росте й від
+# звичайного читання файлів гри (відображених у пам'ять), тож на ПК з 21 вільним ГБ з 32 програма радила докупити
+# пам'ять. Тепер — лише коли вільної пам'яті справді мало І Windows активно підкачує.
+RAM_LOW_FREE_PCT = 12        # вільно менше 12 % ОЗП…
+RAM_LOW_FREE_MB = 2048       # …або менше 2 ГБ — «мало вільної»
+RAM_NEVER_PCT = 25           # понад 25 % вільно — «бракує пам'яті» не кажемо ніколи
+RAM_CRITICAL_MB = 500        # менше — Windows уже напевно підкачує (навіть якщо лічильників підкачки немає)
+PAGING_PAGES_IN = 200        # Pages Input/sec, що разом із нестачею вільної пам'яті означає активну підкачку
+COMMIT_NEAR_LIMIT_PCT = 90   # % Committed Bytes In Use: виділена пам'ять близько до ліміту (ОЗП + файл підкачки)
+DISK_SLOW_READ_MS = 30       # Avg. Disk sec/Read: читання довше — диск не встигає за грою
+DISK_SLOW_QUEUE = 6          # Current Disk Queue Length: стільки запитів чекають — теж «не встигає»
+
+
+def ram_short(avail_mb, total_mb, pages_in=None, commit_pct=None) -> bool:
+    """Чи справді бракує оперативної пам'яті: мало вільної І Windows підкачує з диска (або виділена пам'ять майже
+    на межі). total_mb невідомий — судимо лише за абсолютними порогами."""
+    if avail_mb is None:
+        return False
+    if total_mb and 100.0 * avail_mb / total_mb > RAM_NEVER_PCT:
+        return False
+    if avail_mb < RAM_CRITICAL_MB:
+        return True
+    low = avail_mb < RAM_LOW_FREE_MB or bool(total_mb and 100.0 * avail_mb / total_mb < RAM_LOW_FREE_PCT)
+    paging = (pages_in or 0) >= PAGING_PAGES_IN or (commit_pct or 0) >= COMMIT_NEAR_LIMIT_PCT
+    return low and paging
+
+
+def has_disk_latency(samples) -> bool:
+    """Чи є в замірах затримка диска (у старих записах і без лічильників — немає: тоді судимо за % зайнятості)."""
+    return any(s.get("disk_ms") is not None for s in samples or [])
+
+
+def disk_slow(s: dict) -> bool:
+    """Секунда, коли диск не встигав: довге читання або велика черга. Без лічильника затримки — за % зайнятості."""
+    if s.get("disk_ms") is None and s.get("disk_q") is None:
+        return (s.get("disk") or 0) >= 90
+    return (s.get("disk_ms") or 0) >= DISK_SLOW_READ_MS or (s.get("disk_q") or 0) >= DISK_SLOW_QUEUE
+
+
+def _disk_worst(d: dict) -> dict:
+    """Збір PDH -> найповільніший фізичний диск цієї секунди: {disk_ms, disk_q, disk_inst} (екземпляр — «0 C:»)."""
+    rd = {k: v for k, v in (d.get("disk_rd") or {}).items() if k != "_Total"}
+    qs = {k: v for k, v in (d.get("disk_qs") or {}).items() if k != "_Total"}
+    if not rd and not qs:
+        return {}
+    inst = max(rd, key=lambda k: rd[k]) if rd else max(qs, key=lambda k: qs[k])
+    return dict(disk_ms=round((rd.get(inst) or 0.0) * 1000, 1) if rd else None, disk_q=qs.get(inst), disk_inst=inst)
+
+
+def disk_label(inst: str, hw: dict) -> tuple:
+    """Екземпляр PhysicalDisk («1 D: E:») -> (букви чи назва, тип: HDD / SSD / NVMe / «?»)."""
+    parts = (inst or "").split()
+    num = parts[0] if parts and parts[0].isdigit() else ""
+    letters = [p.rstrip(":") for p in parts[1:] if p.endswith(":")]
+    for dk in (hw or {}).get("disks") or []:
+        if (num and str(dk.get("id")) == num) or (letters and set(letters) & set(dk.get("letters") or [])):
+            where = ", ".join(f"{x}:" for x in (dk.get("letters") or letters)) or dk.get("name") or inst
+            return where, dk.get("media") or "?"
+    kind = "HDD" if (hw or {}).get("hdd") and len((hw or {}).get("disks") or []) <= 1 else "?"
+    return ", ".join(f"{x}:" for x in letters) or inst or "?", kind
+
+
+def disk_stutter_detail(samples: list, hw: dict) -> dict:
+    """Для картки «фризи від диска»: {what: «C: (HDD)», lat: найбільша затримка читання, мс («—», якщо невідома)}."""
+    lat = [s["disk_ms"] for s in samples if isinstance(s.get("disk_ms"), (int, float))]
+    inst = Counter(s.get("disk_inst") for s in samples if s.get("disk_inst")).most_common(1)
+    where, kind = disk_label(inst[0][0] if inst else "", hw)
+    return dict(what=f"{where} ({kind})" if kind != "?" else where, lat=round(max(lat)) if lat else "—")
+
+
 # ───────────────────────── що саме обмежує продуктивність ─────────────────────────
 LIMITS = ("thermal", "ram", "disk", "gpu", "cpu", "power", "none")
 
@@ -404,10 +485,9 @@ def classify(s: dict, total_mb: float) -> str:
     passive, temp, gpu_t = s.get("passive"), s.get("temp"), s.get("gpu_t")
     if (passive is not None and passive < 95) or (temp or 0) >= 90 or (gpu_t or 0) >= 87:
         return "thermal"
-    avail = s.get("avail_mb")
-    if (avail is not None and avail < 0.06 * total_mb) or (s.get("pages_in") or 0) > 400:
+    if ram_short(s.get("avail_mb"), total_mb, s.get("pages_in"), s.get("commit_pct")):
         return "ram"
-    if (s.get("disk") or 0) >= 90:
+    if (s.get("disk") or 0) >= 90 and disk_slow(s):  # зайнятий, але швидкий диск (NVMe) — не обмеження
         return "disk"
     if (s.get("gpu") or 0) >= 92:
         return "gpu"
@@ -445,7 +525,8 @@ def summarize(samples: list, hw: dict, game_exe: str, bg: dict, extra: dict = No
     if not samples:
         return {"findings": [], "stats": {}, "game": game_exe, "n": 0}
     av = {k: _avg([s.get(k) for s in samples]) for k in ("cpu", "core_max", "gpu", "avail_mb", "pages_in", "disk",
-                                                          "temp", "passive", "limit", "vram_used", "gpu_t")}
+                                                          "temp", "passive", "limit", "vram_used", "gpu_t",
+                                                          "commit_pct")}
     mx = {k: max([s.get(k) for s in samples if isinstance(s.get(k), (int, float))] or [0])
           for k in ("temp", "gpu_t", "disk", "vram_used")}
     import cpusensors as CS
@@ -468,14 +549,18 @@ def summarize(samples: list, hw: dict, game_exe: str, bg: dict, extra: dict = No
     if not hot_cpu and av["limit"] is not None and av["limit"] < 90:
         fix = ("tweak", "laptop_ac_max") if hw.get("laptop") else ("tweak", "ultimate_power")
         add("power_limit", "warn", fix, pct=round(av["limit"]))
-    if av["avail_mb"] is not None and (av["avail_mb"] < 0.08 * total_mb or (av["pages_in"] or 0) > 300):
+    # 6.15: лише коли вільної пам'яті справді мало І Windows підкачує (ram_short) — не від самого Pages Input/sec
+    short = ram_short(av["avail_mb"], total_mb, av["pages_in"], av["commit_pct"])
+    if short:
         add("ram", "bad", ("page", "games"), free=f"{av['avail_mb'] / 1024:.1f}", total=f"{total_mb / 1024:.0f}")
     if vram_total and av["vram_used"] and av["vram_used"] >= 0.93 * vram_total:
         add("vram", "warn", None, used=f"{av['vram_used']:.1f}", total=f"{vram_total:.0f}")
     hog = max(bg.items(), key=lambda kv: kv[1]) if bg else None
     if hog and hog[1] >= 0.10:
         add("bg_hog", "warn", ("booster", "balance"), name=hog[0], pct=round(hog[1] * 100))
-    if (av["disk"] or 0) >= 85:
+    # 6.15: «диск завантажений» — лише коли він ще й не встигає (затримка, черга); зайнятий, але швидкий — не причина
+    slow = [s for s in samples if disk_slow(s)]
+    if (av["disk"] or 0) >= 85 and len(slow) >= 0.3 * len(samples) and not short:
         add("disk", "bad" if hw.get("hdd") else "warn", ("page", "cleanup"), pct=round(av["disk"]))
     gpu, cpu, core = av["gpu"] or 0, av["cpu"] or 0, av["core_max"] or 0
     if gpu < 80 and (cpu >= 85 or core >= 95):
@@ -495,9 +580,11 @@ def summarize(samples: list, hw: dict, game_exe: str, bg: dict, extra: dict = No
             d3=f"{rd.get('mining_3d', 0):.0f}")
     # кадри: фризи та їхні причини
     fstats = FT.stats(extra.get("frametimes") or []) if extra.get("frametimes") else {}
-    causes = GD.spike_causes(GD.spike_times(extra.get("frametimes") or []), samples, extra.get("frames_offset", 0.0)) \
-        if fstats else {}
+    causes = GD.spike_causes(GD.spike_times(extra.get("frametimes") or []), samples, extra.get("frames_offset", 0.0),
+                             total_mb=total_mb) if fstats else {}
     for x in GD.stutter_findings(fstats, causes):
+        if x["key"] == "stutter_disk":  # 6.15: який диск і яка затримка — щоб було видно, що саме не встигає
+            x["kw"].update(disk_stutter_detail(slow or samples, hw))
         f.append(x)
     # відеопам'ять, лінія PCIe і драйвер карти NVIDIA
     nvs = extra.get("nvml") or []

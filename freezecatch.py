@@ -132,6 +132,7 @@ BOX_SINGLE = {
     "didle": r"\PhysicalDisk(_Total)\% Idle Time",
     "avail_mb": r"\Memory\Available MBytes",
     "pages_in": r"\Memory\Pages Input/sec",
+    "commit_pct": r"\Memory\% Committed Bytes In Use",  # 6.15: «бракує пам'яті» — лише разом із нестачею вільної
 }
 BOX_ARRAY = {"core_dpc": r"\Processor(*)\% DPC Time", "core_isr": r"\Processor(*)\% Interrupt Time"}
 
@@ -286,6 +287,27 @@ def tpm_info() -> dict:
 
 
 # ───────────────────────── вердикт ─────────────────────────
+_TOTAL_MB: list = []
+
+
+def total_ram_mb():
+    """Обсяг ОЗП цього ПК, МБ (None поза Windows або якщо не прочитався)."""
+    if not _TOTAL_MB:
+        mb = None
+        if E.IS_WIN:
+            try:
+                mb = E.mem_status().ullTotalPhys / 2**20 or None
+            except Exception:  # noqa: BLE001 — без обсягу судимо лише за абсолютними порогами
+                mb = None
+        _TOTAL_MB.append(mb)
+    return _TOTAL_MB[0]
+
+
+def _ram_short(dr: dict) -> bool:
+    import monitor as M
+    return M.ram_short(dr.get("avail_mb"), total_ram_mb(), dr.get("pages_in"), dr.get("commit_pct"))
+
+
 def _hot(dr: dict, dur: float) -> tuple:
     """-> (DPC+переривання на найгарячішому ядрі %, ядро, чи це шторм драйвера під час фризу)."""
     if not dr or dr.get("core_max") is None:
@@ -330,7 +352,9 @@ def classify(dur: float, dr: dict, events: list, tpm: dict = None, app: str = ""
     elif dr and busy is not None and busy >= 90 and (dr.get("dq") or 0) >= 4:
         cat = "io"
         ev.append(("disk", dict(busy=busy, q=round(dr.get("dq") or 0))))
-    elif dr and ((dr.get("avail_mb") is not None and dr["avail_mb"] < 400) or (dr.get("pages_in") or 0) > 3000):
+    # 6.15: «пам'ять» — лише коли вільної справді мало І Windows підкачує (monitor.ram_short). Раніше вистачало
+    # самого Pages Input/sec > 3000, а його піднімає й звичайне читання файлів гри
+    elif dr and _ram_short(dr):
         cat = "memory"
         ev.append(("mem", dict(mb=round(dr.get("avail_mb") or 0), pages=round(dr.get("pages_in") or 0))))
     elif dr and cpu is not None and cpu >= 97:
@@ -363,8 +387,8 @@ def is_sleep(events: list) -> bool:
 
 def record(start: float, dur: float, cat: str, ev: list, dr: dict, events: list, app: str = "", etl: str = "") -> dict:
     """Запис фризу для freezes.json."""
-    keep = ("dpc", "isr", "cpu", "dq", "didle", "avail_mb", "pages_in", "core_max", "core", "top", "top_share", "win",
-            "full")
+    keep = ("dpc", "isr", "cpu", "dq", "didle", "avail_mb", "pages_in", "commit_pct", "core_max", "core", "top",
+            "top_share", "win", "full")
     return dict(id=int((start + dur) * 1000), ts=int(start), end=int(start + dur), dur=round(dur, 2), cat=cat,
                 kind=KIND.get(cat, "unknown"), ev=[[k, p] for k, p in ev],
                 during={k: dr[k] for k in keep if dr and k in dr},

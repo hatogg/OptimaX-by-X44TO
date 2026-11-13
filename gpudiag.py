@@ -194,11 +194,13 @@ def spike_times(frametimes: list) -> list:
     return out
 
 
-def spike_causes(spikes: list, samples: list, offset: float = 0.0) -> dict:
+def spike_causes(spikes: list, samples: list, offset: float = 0.0, total_mb: float = None) -> dict:
     """Чому фризи: для кожного фризу — що відбувалося в ту саму секунду (±1 с). samples — секундні заміри «Чому
     лагає?»; offset — на скільки секунд запис кадрів почався пізніше за заміри. -> {причина: кількість}
-    причини: ram (підкачка), disk, vram (спільна пам'ять росте), cpu (ядро на 95%+), shader (на початку гри, без
-    навантаження — компіляція шейдерів), other."""
+    причини: ram (справді бракує пам'яті й іде підкачка), disk (диск не встигав: довге читання чи черга), vram
+    (спільна пам'ять росте), cpu (ядро на 95%+), shader (на початку гри, без навантаження — компіляція шейдерів),
+    other. 6.15: «ram» — не від самого Pages Input/sec (його піднімає й звичайне читання файлів гри)."""
+    import monitor as M
     out: dict = {}
     if not spikes:
         return out
@@ -207,9 +209,9 @@ def spike_causes(spikes: list, samples: list, offset: float = 0.0) -> dict:
         i = int(t + offset)
         near = [samples[j] for j in range(max(0, i - 1), min(n, i + 2))]
         cause = "other"
-        if any((s.get("pages_in") or 0) > 300 for s in near):
+        if any(M.ram_short(s.get("avail_mb"), total_mb, s.get("pages_in"), s.get("commit_pct")) for s in near):
             cause = "ram"
-        elif any((s.get("disk") or 0) >= 90 for s in near):
+        elif any(M.disk_slow(s) for s in near):
             cause = "disk"
         elif any((s.get("shared_d") or 0) >= 64 for s in near):
             cause = "vram"
@@ -230,8 +232,10 @@ def stutter_findings(fstats: dict, causes: dict) -> list:
         main = max(causes.items(), key=lambda kv: kv[1])[0] if causes else "other"
         fix = {"ram": ("page", "games"), "disk": ("page", "cleanup"), "vram": None, "cpu": ("booster", "balance"),
                "shader": ("hint", "shaders"), "other": None}[main]
-        out.append(_f(f"stutter_{main}", "bad" if per_min >= 10 else "warn", fix, n=fstats.get("stutters", 0),
-                      pm=per_min, low=fstats.get("low1", 0), avg=fstats.get("avg", 0)))
+        kw = dict(n=fstats.get("stutters", 0), pm=per_min, low=fstats.get("low1", 0), avg=fstats.get("avg", 0))
+        if main == "disk":
+            kw.update(what="—", lat="—")  # який диск і затримку дописує monitor.summarize
+        out.append(_f(f"stutter_{main}", "bad" if per_min >= 10 else "warn", fix, **kw))
     return out
 
 

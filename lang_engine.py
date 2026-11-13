@@ -79,6 +79,10 @@ STRINGS = {
     "e.summary_fail": (", з помилками {fail}", ", с ошибками {fail}", ", {fail} with errors"),
     # 6.15: третій результат оптимізації — «частково»
     "e.summary_partial": (", частково {n}", ", частично {n}", ", {n} partly"),
+    # 6.15: уже діє в системі (зроблено вручну чи іншою програмою) — нічого не змінюємо
+    "e.already": ("  ✓ вже застосовано — нічого не змінюю", "  ✓ уже применено — ничего не меняю",
+                  "  ✓ already applied, nothing to change"),
+    "e.summary_already": (", вже застосовано раніше {n}", ", уже было применено {n}", ", {n} already applied"),
     "e.done_partial": ("  ⚠ частково: не вдалося кроків — {n} (подробиці вище)",
                        "  ⚠ частично: не удалось шагов — {n} (подробности выше)",
                        "  ⚠ partly: {n} step(s) failed (details above)"),
@@ -86,6 +90,17 @@ STRINGS = {
                       "  ✗ not applied: no step succeeded"),
     "e.svc_fail": ("  ✗ службу {name} не змінено ({why})", "  ✗ служба {name} не изменена ({why})",
                    "  ✗ service {name} not changed ({why})"),
+    "e.reg_verify": ("  ✗ після запису значення не те: {path} \\ {name}", "  ✗ после записи значение не то: {path} \\ {name}",
+                     "  ✗ value is wrong after writing: {path} \\ {name}"),
+    "e.copilot_app": ("  ⚠ Copilot лишився: на цій збірці Windows це окрема програма (Microsoft.Copilot), і політика її "
+                      "не вимикає. Щоб прибрати його, видаліть програму: «Оптимізація» → «Вбудовані додатки» → «Видалити "
+                      "додаток Copilot».",
+                      "  ⚠ Copilot остался: на этой сборке Windows это отдельная программа (Microsoft.Copilot), и "
+                      "политика её не отключает. Чтобы убрать его, удалите программу: «Оптимизация» → «Встроенные "
+                      "приложения» → «Удалить приложение Copilot».",
+                      "  ⚠ Copilot is still there: on this Windows build it is a separate app (Microsoft.Copilot) that the "
+                      "policy does not turn off. To get rid of it, remove the app: Optimize → Built-in apps → Remove the "
+                      "Copilot app."),
     "e.summary_skip": (", пропущено як невідповідні вашому ПК: {n}", ", пропущено как неподходящие вашему ПК: {n}",
                        ", {n} skipped as unsuitable for this PC"),
     "e.summary_reboot": (". Для частини змін потрібне перезавантаження.", ". Для части изменений нужна перезагрузка.",

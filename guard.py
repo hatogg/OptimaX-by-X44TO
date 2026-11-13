@@ -81,7 +81,9 @@ def check_reverted() -> list:
         if not guarded(tid):
             continue
         regs = [op for op in t.ops if op[0] in ("reg", "kv") and not callable(op[3])]
-        if regs and not E.probe(t):
+        # 6.15: лише значення реєстру, які оновлення Windows могло скинути. Не E.probe: той бачить і те, чого
+        # повторне застосування не виправить (наприклад, нову програму Copilot) — сторож пропонував би це без кінця
+        if regs and any(E.op_state(op, E._CHEAP) is False for op in regs):
             out.append(tid)
         elif not _svc_ok(t):
             out.append(tid)

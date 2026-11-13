@@ -128,7 +128,7 @@ Copilot, Recall, Click to Do, AI у програмах, рекомендації
 
 | | Оптимізація | Що робить | Профілі | Відкат |
 | --- | --- | --- | --- | --- |
-| 🔴 | Вимкнути Copilot <sub>(Windows 11)</sub> | Кнопка й бокова панель Copilot зникають, клавіша Copilot його не відкриває. Сам додаток можна видалити в «Вбудованих додатках». | Full, Medium, Light, Laptop, Старий ПК, Xeon / X99 | так |
+| 🔴 | Вимкнути Copilot <sub>(Windows 11)</sub> | Кнопка й бокова панель Copilot зникають, клавіша Copilot його не відкриває. На нових збірках Windows 11 Copilot — окрема програма, яку ця політика не вимикає: OptimaX перевірить це й підкаже, а саму програму можна видалити в «Вбудованих додатках». | Full, Medium, Light, Laptop, Старий ПК, Xeon / X99 | так |
 | 🟡 | Вимкнути Recall <sub>(перезавантаження, Windows 11)</sub> | Windows не робить знімків екрана для «пам'яті» й прибирає компонент Recall. Стосується ПК Copilot+. | Full, Medium, Light, Laptop, Старий ПК, Xeon / X99 | так |
 | 🟡 | Вимкнути Click to Do <sub>(Windows 11)</sub> | AI-дії над вмістом екрана (Win + клік) більше не запускаються. | Full, Medium, Light, Laptop, Старий ПК, Xeon / X99 | так |
 | 🟡 | Без AI у Paint, Блокноті й Параметрах <sub>(Windows 11)</sub> | Прибирає Cocreator, генеративну заливку й Image Creator у Paint, AI-функції Блокнота та AI-агента в Параметрах. | Full, Medium, Light, Laptop, Старий ПК, Xeon / X99 | так |

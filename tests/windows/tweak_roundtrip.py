@@ -307,7 +307,7 @@ def roundtrip(t, hw) -> dict:
         r.update(status="fail", problems=["apply raised: " + traceback.format_exc()[-800:]])
         res = {"ok": 0, "skipped": 0}
     r["apply_s"] = round(time.time() - t0, 1)
-    if res.get("skipped"):
+    if res.get("skipped") or res.get("already"):  # 6.15: «вже застосовано» — нічого не змінено, перевіряти нічого
         r.update(status="skip", why="; ".join(ln.strip() for ln in log[-2:]))
         return r
     entry = json.loads(json.dumps(E.JOURNAL.get(t.id) or {"undo": []}))

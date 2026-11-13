@@ -2,6 +2,21 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [6.15] — ще не випущено
+
+### Виправлено
+
+- **«Чому лагає?» і «Чому зависає?» більше не радять докупити пам'ять, коли її вдосталь.** Картка «Бракує оперативної пам'яті» спрацьовувала від самого лічильника Pages Input/sec, а його піднімає й звичайне читання файлів гри — тож на ПК з 21 вільним ГБ з 32 програма бачила «нестачу». Тепер «бракує пам'яті» — лише коли вільно менше 12 % або 2 ГБ **і** Windows справді підкачує (Pages Input/sec або виділена пам'ять близько до ліміту); понад 25 % вільного — ніколи. Нова картка «Фризи від диска»: якщо пам'яті вистачає, а фризи збігаються з повільним читанням диска (затримка понад 30 мс або велика черга), видно, який диск (HDD/SSD/NVMe) і яка затримка, з порадою перенести гру на SSD або запустити тест ще раз. Пам'яті вистачає і диск швидкий — жодної з цих карток. Пороги — константами в `monitor.py`.
+- **Твіки бачать справжній стан системи, а не лише власний журнал.** Якщо Interrupt Moderation і Flow Control (а так само енергозбереження адаптерів, роумінг Wi-Fi, параметри живлення, задачі, служби, видалені програми) вже налаштовані вручну, OptimaX показує «вже застосовано» і під час застосування нічого не змінює («✓ вже застосовано — нічого не змінюю»). Дороге читання (PowerShell, powercfg) іде у фоні, не гальмуючи вікно.
+- **«Вимкнути Copilot» чесно перевіряє результат.** Значення й гілки реєстру перевірено (`TurnOffWindowsCopilot = 1` для користувача й для всього ПК, кнопка на панелі прихована), застосування й відкат не переплутані — це закріплено тестами. Кожен запис у реєстр тепер перечитується одразу після запису. На нових збірках Windows 11 Copilot — окрема програма, якої політика не стосується: якщо вона встановлена, OptimaX каже «частково» й підказує, як її видалити, а не пише «готово».
+
+<details>
+<summary>English</summary>
+
+**Fixed:** "Why does it lag?" and "Why does it freeze?" no longer tell you to buy more RAM when there is plenty — the card used to fire on Pages Input/sec alone, which also rises when a game simply reads its files. "Not enough RAM" now needs less than 12 % or 2 GB free **and** real paging (Pages Input/sec, or committed memory near the limit), and never shows above 25 % free. A new "stutter from the disk" card names the disk (HDD/SSD/NVMe) and its read latency when stutters line up with slow reads, and suggests moving the game to an SSD or running the test again; with enough RAM and a fast disk neither card appears. Tweaks now read the real system state rather than only OptimaX's own journal: network adapter settings (Interrupt Moderation, Flow Control, power saving, Wi-Fi roaming), power settings, tasks, services and removed apps that are already set show "already applied" and are left untouched. "Turn off Copilot" verifies its result: the policy values and keys are checked by tests, apply and undo are not swapped, every registry write is read back, and if the new Copilot app (which the policy does not cover) is installed, the result is "partly" with a pointer to removing the app instead of "done".
+
+</details>
+
 ## [6.13.1] — 2026-11-11
 
 Виправлення 6.13: програма зависала на заставці під час запуску.

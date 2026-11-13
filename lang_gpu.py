@@ -408,14 +408,21 @@ STRINGS = {
                              "low — {low} FPS при средних {avg}.",
                              "Most stutters ({n}) coincide with paging from disk. Close background apps; 1% low is {low} "
                              "FPS at {avg} average."),
-    "diag.f.stutter_disk.t": ("Фризи: {pm} на хвилину — диск", "Фризы: {pm} в минуту — диск",
-                              "Stutter: {pm} per minute — disk"),
-    "diag.f.stutter_disk.d": ("Фризи ({n}) збігаються з повним завантаженням диска: гра довантажує дані. Гра на SSD "
-                              "допоможе; 1% low — {low} FPS при середніх {avg}.",
-                              "Фризы ({n}) совпадают с полной загрузкой диска: игра подгружает данные. Игра на SSD "
-                              "поможет; 1% low — {low} FPS при средних {avg}.",
-                              "Stutters ({n}) coincide with the disk at 100%: the game streams data. An SSD helps; 1% "
-                              "low is {low} FPS at {avg} average."),
+    "diag.f.stutter_disk.t": ("Фризи від диска: {pm} на хвилину", "Фризы от диска: {pm} в минуту",
+                              "Stutter from the disk: {pm} per minute"),
+    # 6.15: пам'яті вистачає, а фризи збігаються з повільним читанням диска — який диск і яка затримка
+    "diag.f.stutter_disk.d": ("Фризи ({n}) збігаються в часі з повільним читанням диска {what}: до {lat} мс на запит, "
+                              "оперативної пам'яті при цьому вистачало. Гра довантажує дані з диска. Перенесіть гру "
+                              "на SSD — або запустіть тест ще раз: файли гри вже будуть у кеші, і якщо фризів "
+                              "поменшає, справа саме в диску. 1% low — {low} FPS при середніх {avg}.",
+                              "Фризы ({n}) совпадают по времени с медленным чтением диска {what}: до {lat} мс на "
+                              "запрос, оперативной памяти при этом хватало. Игра подгружает данные с диска. Перенесите "
+                              "игру на SSD — или запустите тест ещё раз: файлы игры уже будут в кэше, и если фризов "
+                              "станет меньше, дело именно в диске. 1% low — {low} FPS при средних {avg}.",
+                              "The stutters ({n}) line up with slow reads from disk {what}: up to {lat} ms per request, "
+                              "while there was enough RAM. The game is streaming data from disk. Move the game to an "
+                              "SSD, or run the test again: the game files will be cached by then, and if the stutter "
+                              "drops, the disk is the cause. 1% low is {low} FPS at {avg} average."),
     "diag.f.stutter_vram.t": ("Фризи: {pm} на хвилину — відеопам'ять", "Фризы: {pm} в минуту — видеопамять",
                               "Stutter: {pm} per minute — VRAM"),
     "diag.f.stutter_vram.d": ("Фризи ({n}) збігаються з переїздом ресурсів у спільну пам'ять. Знизьте якість текстур; "

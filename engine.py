@@ -915,6 +915,7 @@ class Ctx:
         self.appx_batch = None  # усі Metro-пакети цього пакета змін — видаляються одним PowerShell (_appx_remove)
         self.appx_done: dict = {}
         self.failed: list = []  # кроки поточної оптимізації, що не вдалися (команда, служба, живлення…)
+        self.live = None  # LiveState: справжній стан системи — «вже застосовано, нічого не змінюю» (apply_tweaks)
 
     def begin(self, track: bool = False) -> None:
         """track — кожен запис відкату одразу потрапляє в попередній запис журналу (Journal.begin/note)."""
@@ -1029,6 +1030,15 @@ def cmd_doc(text: str):
     return deco
 
 
+def reg_matches(cur, value) -> bool:
+    """Прочитане з реєстру (тип, значення) — те саме, що записували?"""
+    if cur is None:
+        return False
+    if isinstance(value, (bytes, bytearray)):
+        return isinstance(cur[1], (bytes, bytearray)) and bytes(cur[1]) == bytes(value)
+    return str(cur[1]).lower() == str(value).lower()
+
+
 def exec_op(op, ctx: Ctx) -> None:
     k, log = op[0], ctx.log
     if k == "reg":
@@ -1042,6 +1052,9 @@ def exec_op(op, ctx: Ctx) -> None:
             log(f"  [dry-run] reg {path} \\ {name} = {value}")
         else:
             reg_set(path, name, value, rt)
+            if not reg_matches(reg_get(path, name), value):  # 6.15: перевіряємо справжній результат запису
+                log(tr("e.reg_verify", path=path, name=name))
+                ctx.fail(f"reg {name}")
     elif k == "regdel":
         _, path, name = op
         old = reg_get(path, name)
@@ -1064,6 +1077,10 @@ def exec_op(op, ctx: Ctx) -> None:
             log(f"  [dry-run] reg {path} \\ {name} += {key}={value}")
         else:
             reg_set(path, name, kv_set(cur, key, value), "sz")
+            now = reg_get(path, name)
+            if now is None or str(kv_get(now[1], key) or "").lower() != str(value).lower():
+                log(tr("e.reg_verify", path=path, name=name))
+                ctx.fail(f"reg {name}")
     elif k == "svc":
         _, name, start = op
         old = svc_get_start(name)
@@ -1914,6 +1931,109 @@ def f_eth_latency(ctx: Ctx) -> None:
                "$(if (-not $p.ValidRegistryValues -or $p.ValidRegistryValues -contains '0') { '0' })")
 
 
+# ── 6.15: справжній стан адаптерів (а не лише журнал OptimaX) ──
+# Якщо Interrupt Moderation чи Flow Control уже вимкнули вручну, «застосовано» має бути видно й без OptimaX.
+NIC_STATE_PS = (
+    "$r=@(); foreach ($a in Get-NetAdapter -Physical -ErrorAction SilentlyContinue) {"
+    " $pm = Get-NetAdapterPowerManagement -Name $a.Name -ErrorAction SilentlyContinue;"
+    " $p = @(Get-NetAdapterAdvancedProperty -Name $a.Name -AllProperties -ErrorAction SilentlyContinue | ForEach-Object {"
+    "  @{k=[string]$_.RegistryKeyword; v=($_.RegistryValue -join ','); d=[string]$_.DisplayName;"
+    "    valid=@($_.ValidRegistryValues | ForEach-Object { [string]$_ })} });"
+    " $r += @{n=$a.Name; m=[int]$a.NdisPhysicalMedium; desc=[string]$a.InterfaceDescription;"
+    "  pm=$(if ($pm) { [string]$pm.AllowComputerToTurnOffDevice } else { '' }); p=$p} };"
+    " ConvertTo-Json -InputObject @($r) -Compress -Depth 4")
+_WIFI_RE = re.compile(r"Wi-?Fi|Wireless|WLAN|802\.11|Killer.*AX|Centrino", re.I)  # як WIFI_FILTER
+_NOT_ETH_RE = re.compile(r"Wi-?Fi|Wireless|WLAN|802\.11", re.I)  # як ETH_FILTER
+
+
+def nic_snapshot() -> Optional[list]:
+    """Фізичні адаптери з їхніми додатковими властивостями й керуванням живленням (лише читання). None — не вдалося."""
+    if not IS_WIN:
+        return None
+    rc, out = ps(NIC_STATE_PS, 60, ro=True)
+    data = parse_json_out(out)
+    if data is None:
+        return None
+    return [a for a in as_list(data) if isinstance(a, dict)]
+
+
+def _is_eth(a: dict) -> bool:
+    return int(a.get("m") or -1) == 14 and not _NOT_ETH_RE.search(str(a.get("desc") or ""))
+
+
+def _is_wifi(a: dict) -> bool:
+    return int(a.get("m") or -1) == 9 or bool(_WIFI_RE.search(str(a.get("desc") or "")))
+
+
+def _props(a: dict) -> list:
+    return [p for p in as_list(a.get("p")) if isinstance(p, dict)]
+
+
+def eth_latency_state(nics) -> Optional[object]:
+    """*InterruptModeration і *FlowControl на Ethernet уже 0? True / False / "na" (немає таких властивостей) / None."""
+    if nics is None:
+        return None
+    seen = False
+    for a in nics:
+        if not _is_eth(a):
+            continue
+        for p in _props(a):
+            if p.get("k") not in ("*InterruptModeration", "*FlowControl"):
+                continue
+            valid = [str(x) for x in as_list(p.get("valid"))]
+            if valid and "0" not in valid:
+                continue  # цей адаптер не вміє 0 — твік його й не чіпає
+            seen = True
+            if str(p.get("v")) != "0":
+                return False
+    return True if seen else "na"
+
+
+def wifi_gaming_state(nics) -> Optional[object]:
+    """Roaming Aggressiveness на Wi-Fi уже найнижча? True / False / "na" / None."""
+    if nics is None:
+        return None
+    seen = False
+    for a in nics:
+        if not _is_wifi(a):
+            continue
+        for p in _props(a):
+            if not (re.search("roam", str(p.get("k") or ""), re.I)
+                    and re.search("Aggress|Sensitiv|Roam", str(p.get("d") or ""), re.I)):
+                continue
+            nums = [int(x) for x in as_list(p.get("valid")) if re.fullmatch(r"\d+", str(x))]
+            if not nums:
+                continue
+            seen = True
+            if str(p.get("v")) != str(min(nums)):
+                return False
+    return True if seen else "na"
+
+
+def nic_power_state(nics) -> Optional[object]:
+    """Адаптерам заборонено засинати, а енергозбереження (EEE тощо) вимкнене? True / False / "na" / None."""
+    if nics is None:
+        return None
+    seen = False
+    for a in nics:
+        pm = str(a.get("pm") or "")
+        if pm and pm != "Unsupported":
+            seen = True
+            if pm != "Disabled":
+                return False
+        for p in _props(a):
+            if p.get("k") in NIC_KEYWORDS:
+                seen = True
+                if str(p.get("v")) != "0":
+                    return False
+    return True if seen else "na"
+
+
+f_nic_power.check = lambda live: nic_power_state(live.nic())
+f_wifi_gaming.check = lambda live: wifi_gaming_state(live.nic())
+f_eth_latency.check = lambda live: eth_latency_state(live.nic())
+
+
 @cmd_doc("Get-MMAgent: 32+ ГБ → Disable-MMAgent -MemoryCompression; до 12 ГБ → Enable-MMAgent -MemoryCompression")
 def f_memory_compression(ctx: Ctx) -> None:
     ram = float(ctx.hw.get("ram_gb") or 0)
@@ -2170,7 +2290,27 @@ def f_appx(pkgs):
             else:
                 ctx.log(f"  · {pkg}")
     _f.appx = list(pkgs)
+    _f.check = lambda live: live.appx_absent(pkgs)  # 6.15: уже видалено (вручну чи раніше) — «вже застосовано»
     return _f
+
+
+COPILOT_APP = "Microsoft.Copilot"
+
+
+@cmd_doc("Get-AppxPackage Microsoft.Copilot — перевірка: нову програму Copilot політика не вимикає")
+def f_copilot_app(ctx: Ctx) -> None:
+    """6.15 (скарга тестерів «Copilot не вимкнувся»): на нових збірках Windows 11 Copilot — окрема програма з Microsoft
+    Store, і політика TurnOffWindowsCopilot її не вимикає. Нічого не змінюємо — лише чесно кажемо, що Copilot лишився,
+    і підказуємо, як його прибрати («Видалити додаток Copilot» у «Вбудованих додатках»)."""
+    if DRY_RUN or not IS_WIN:
+        return
+    live = ctx.live or LiveState(slow=True)
+    if live.appx_absent([COPILOT_APP]) is False:
+        ctx.log(tr("e.copilot_app"))
+        ctx.fail("copilot app")
+
+
+f_copilot_app.check = lambda live: live.appx_absent([COPILOT_APP])
 
 
 # ───────────────────────── каталог оптимізацій ─────────────────────────
@@ -2446,8 +2586,11 @@ WAI = POL + r"\WindowsAI"
 PAINT = r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Paint"
 EDGE = r"HKLM\SOFTWARE\Policies\Microsoft\Edge"
 CDM = r"HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"
+# Політика «вимкнути Copilot» (1 = вимкнено) для користувача й для всього ПК, кнопка на панелі завдань (0 = прихована).
+# 6.15: f_copilot_app нічого не змінює — перевіряє, чи не лишилася нова програма Copilot, якої політика не стосується.
 tw("ai_copilot", "ai", [R(HPOL + r"\WindowsCopilot", "TurnOffWindowsCopilot", 1),
-                        R(POL + r"\WindowsCopilot", "TurnOffWindowsCopilot", 1), R(ADV, "ShowCopilotButton", 0)],
+                        R(POL + r"\WindowsCopilot", "TurnOffWindowsCopilot", 1), R(ADV, "ShowCopilotButton", 0),
+                        F(f_copilot_app)],
    p="FMLTOX", win11=True, impact="habits")
 tw("ai_recall", "ai", [R(WAI, "AllowRecallEnablement", 0), R(WAI, "DisableAIDataAnalysis", 1),
                        R(HPOL + r"\WindowsAI", "DisableAIDataAnalysis", 1),
@@ -2731,19 +2874,173 @@ def current_color(tid: str, default=(0, 120, 215)):
         return default
 
 
-def probe(t: Tweak) -> bool:
-    """Чи застосовано твік: за значеннями реєстру або за журналом відкату."""
-    regs = [op for op in t.ops if op[0] in ("reg", "kv") and not callable(op[3])][:3]
-    if not regs or not winreg:
-        return JOURNAL.has(t.id)
-    for op in regs:
+# ───────────────────────── справжній стан твіків (6.15) ─────────────────────────
+# Раніше «застосовано» визначалося за реєстром лише для твіків із записами реєстру, а для решти (мережа, живлення,
+# служби, задачі, програми) — лише за журналом OptimaX: зроблене вручну програма не бачила й «застосовувала» знову.
+# Тепер стан кожної операції читається з системи. Дешеве (реєстр, служби) — завжди; дороге (PowerShell, powercfg) —
+# у фоні (refresh_live_state) і під час застосування.
+_UNSET = object()
+
+
+class LiveState:
+    """Справжній стан системи для твіків. slow=False — лише те, що вже прочитано (для потоку інтерфейсу)."""
+
+    def __init__(self, slow: bool = True):
+        self.slow = slow
+        self.ts = time.time()
+        self._nic = _UNSET
+        self._tasks = _UNSET
+        self._apps = _UNSET
+        self._scheme = None
+        self._pw: dict = {}
+
+    def nic(self):
+        if self._nic is _UNSET:
+            if not self.slow:
+                return None
+            self._nic = nic_snapshot()
+        return self._nic
+
+    def tasks(self):
+        if self._tasks is _UNSET:
+            if not self.slow:
+                return None
+            got = all_tasks() if IS_WIN else {}
+            self._tasks = {k.lower(): v for k, v in got.items()} if got else None
+        return self._tasks
+
+    def pw(self, sub: str, setting: str, mode: str):
+        key = (sub, setting, mode)
+        if key not in self._pw:
+            if not self.slow or not IS_WIN:
+                return None
+            if self._scheme is None:
+                self._scheme = active_scheme()
+            self._pw[key] = pw_get(self._scheme, sub, setting, mode)
+        return self._pw[key]
+
+    def apps(self):
+        """Назви встановлених Appx-пакетів (у нижньому регістрі) або None."""
+        if self._apps is _UNSET:
+            if not self.slow or not IS_WIN:
+                return None
+            rc, out = ps("Get-AppxPackage -ErrorAction SilentlyContinue | ForEach-Object { $_.Name }", 120, ro=True)
+            names = [ln.strip().lower() for ln in (out or "").splitlines() if ln.strip() and " " not in ln.strip()]
+            self._apps = set(names) if rc == 0 and names else None
+        return self._apps
+
+    def appx_absent(self, pkgs):
+        apps = self.apps()
+        if apps is None:
+            return None
+        return not any(p.lower() in name for p in pkgs for name in apps)  # як -like '*пакет*' у APPX_SCRIPT
+
+    def prefetch(self) -> "LiveState":
+        """Прочитати все дороге одразу (у фоновому потоці). ts — момент початку читання (з запасом у секунду:
+        журнал пише цілі секунди), щоб зміни, зроблені під час читання, вважалися новішими за знімок."""
+        start = int(time.time()) - 1
+        if IS_WIN:
+            self.nic()
+            self.tasks()
+            self.apps()
+            for t in TWEAKS:
+                for op in t.ops:
+                    if op[0] == "pw":
+                        self.pw(op[1], op[2], op[4])
+        self.ts = start
+        return self
+
+
+LIVE: Optional[LiveState] = None  # останній фоновий знімок (refresh_live_state); None — застарів або ще не читався
+_LIVE_GEN = [0]
+
+
+def refresh_live_state() -> dict:
+    """Фоном: справжній стан мережевих адаптерів, живлення, задач і програм — для «вже застосовано».
+    Якщо під час читання щось застосували чи відкотили (invalidate_live), знімок застарів ще до кінця — не беремо."""
+    global LIVE
+    gen = _LIVE_GEN[0]
+    st = LiveState(slow=True).prefetch()
+    st.slow = False  # далі лише читається з потоку інтерфейсу
+    if gen == _LIVE_GEN[0]:
+        LIVE = st
+    return {"ok": True, "fresh": LIVE is st}
+
+
+def invalidate_live() -> None:
+    """Після застосування чи відкату знімок застарів: доки не прочитано новий — дороге невідоме (див. probe)."""
+    global LIVE
+    _LIVE_GEN[0] += 1
+    LIVE = None
+
+
+def op_state(op, live: LiveState):
+    """Стан однієї операції: True — уже як після твіка, False — ні, None — невідомо, "na" — нічого змінювати."""
+    k = op[0]
+    if k in ("reg", "kv"):
+        if callable(op[3]) or not winreg:
+            return None
         cur = reg_get(op[1], op[2])
-        if op[0] == "kv":  # параметр у спільному рядку: решта рядка може бути будь-якою
-            if cur is None or str(kv_get(cur[1], op[3]) or "").lower() != str(op[4]).lower():
-                return False
-        elif cur is None or str(cur[1]).lower() != str(op[3]).lower():
-            return False
-    return True
+        if k == "kv":  # параметр у спільному рядку: решта рядка може бути будь-якою
+            return cur is not None and str(kv_get(cur[1], op[3]) or "").lower() == str(op[4]).lower()
+        return cur is not None and str(cur[1]).lower() == str(op[3]).lower()
+    if k == "regdel":
+        return None if not winreg else reg_get(op[1], op[2]) is None
+    if k == "svc":
+        if not IS_WIN:
+            return None
+        cur = svc_get_start(op[1])
+        if cur is None:
+            return "na"  # такої служби немає
+        return cur == op[2] or (op[2] == "auto" and cur == "delayed-auto")
+    if k == "task":
+        tasks = live.tasks()
+        if tasks is None:
+            return None
+        present = [tasks[n.lower()] for n in op[1] if n.lower() in tasks]
+        return "na" if not present else not any(present)
+    if k == "pw":
+        cur = live.pw(op[1], op[2], op[4])
+        if cur is None:
+            return None
+        try:
+            return cur == int(op[3])
+        except (TypeError, ValueError):
+            return None
+    if k == "fn":
+        check = getattr(op[1], "check", None)
+        if check is None:
+            return None
+        try:
+            return check(live)
+        except Exception:  # noqa: BLE001 — перевірка стану не має ламати показ чи застосування
+            return None
+    if k == "live":
+        return "na"  # оновлення інтерфейсу Windows — не стан
+    return None  # cmd, dyn, file — стан не читається
+
+
+def tweak_state(t: Tweak, live: LiveState, strict: bool = False):
+    """True — твік уже діє, False — ні, None — невідомо.
+    strict (перед застосуванням): True лише коли прочитано стан кожної операції, що щось змінює."""
+    states = [op_state(op, live) for op in t.ops]
+    if any(s is False for s in states):
+        return False
+    known = any(s is True for s in states)
+    if strict:
+        return True if known and not any(s is None for s in states) else None
+    return True if known else None
+
+
+_CHEAP = LiveState(slow=False)  # без кешу: лише реєстр і служби
+
+
+def probe(t: Tweak) -> bool:
+    """Чи застосовано твік — за справжнім станом системи; якщо його не прочитати — за журналом відкату.
+    Знімок дорогих станів, старший за запис журналу, не використовуємо: тоді він ще не бачив цієї зміни."""
+    live = LIVE if LIVE is not None and LIVE.ts >= (JOURNAL.get(t.id) or {}).get("ts", 0) else _CHEAP
+    st = tweak_state(t, live)
+    return JOURNAL.has(t.id) if st is None else bool(st)
 
 
 WIN10_RELEASES = {17134: "1803", 17763: "1809", 18362: "1903", 19041: "2004"}
@@ -3019,7 +3316,7 @@ def run_action(a: Action, log: Callable, hw: dict = None):
 # ───────────────────────── запуск, відкат, перевірка цілісності ─────────────────────────
 def run_tweak(t: Tweak, ctx: Ctx):
     """-> True — застосовано, "partial" — частина кроків не вдалася (ctx.failed), False — помилка або не вдався
-    жоден крок, None — пропущено (не підходить цьому залізу чи Windows)."""
+    жоден крок, None — пропущено (не підходить цьому залізу чи Windows), "already" — уже діє, нічого не змінено."""
     if t.win11 and win_build() < 22000:
         ctx.log(tr("e.win11_only"))
         return None
@@ -3033,6 +3330,10 @@ def run_tweak(t: Tweak, ctx: Ctx):
     if not DRY_RUN and needs_admin(t) and not is_admin():
         ctx.log(tr("e.need_admin"))
         return None
+    # 6.15: усе, що змінює твік, уже так у системі (зроблено вручну чи іншою програмою) — нічого не чіпаємо
+    if ctx.live is not None and not t.custom and tweak_state(t, ctx.live, strict=True) is True:
+        ctx.log(tr("e.already"))
+        return "already"
     title = t._title or None
     track = t.reversible
     if track:  # JournalError тут — ще нічого не змінено; пакет зупиниться
@@ -3145,6 +3446,8 @@ BEFORE_APPLY: list = []
 def apply_tweaks(items, log: Callable, progress: Optional[Callable] = None, sfc: bool = False,
                  header: bool = True, hw: dict = None, restore_point: bool = False, by: str = "") -> dict:
     ctx = Ctx(log, hw=hw)
+    if IS_WIN and not DRY_RUN:
+        ctx.live = LiveState(slow=True)  # 6.15: справжній стан — щоб не «застосовувати» те, що вже так
     retired = [t for t in items if t.retired]  # 6.9: прибрані зміни не застосовуємо, звідки б не прийшов запит
     items = [t for t in items if not t.retired]
     keep, dropped = resolve_conflicts([t.id for t in items])
@@ -3153,7 +3456,7 @@ def apply_tweaks(items, log: Callable, progress: Optional[Callable] = None, sfc:
         ctx.deferred = set()  # Провідник перезапускаємо один раз наприкінці, а не після кожного твіка
     ctx.appx_batch = [p for t in items for op in t.ops if op[0] == "fn" for p in getattr(op[1], "appx", ())]
     total = len(items) + (2 if sfc else 0) + (1 if restore_point else 0)
-    ok = fail = skipped = partial = 0
+    ok = fail = skipped = partial = already = 0
     failed_items: list = []
     reboot = False
     step = 0
@@ -3203,6 +3506,9 @@ def apply_tweaks(items, log: Callable, progress: Optional[Callable] = None, sfc:
         if res is None:
             skipped += 1
             continue
+        if res == "already":
+            already += 1
+            continue
         if res == "partial":
             partial += 1
             failed_items.append(t.id)
@@ -3228,6 +3534,8 @@ def apply_tweaks(items, log: Callable, progress: Optional[Callable] = None, sfc:
         msg = tr("e.summary", ok=ok)
         if partial:
             msg += tr("e.summary_partial", n=partial)
+        if already:
+            msg += tr("e.summary_already", n=already)
         if fail:
             msg += tr("e.summary_fail", fail=fail)
         if skipped or dropped or retired:
@@ -3235,8 +3543,9 @@ def apply_tweaks(items, log: Callable, progress: Optional[Callable] = None, sfc:
         msg += tr("e.summary_reboot") if reboot else "."
         log(" " + msg)
         log("═" * 58)
+    invalidate_live()  # знімок стану для «застосовано» застарів — інтерфейс прочитає новий
     res = {"ok": ok, "fail": fail, "skipped": skipped + len(retired), "reboot": reboot, "conflicts": dropped,
-           "partial": partial, "failed_items": [entry_title(i) for i in failed_items]}
+           "partial": partial, "failed_items": [entry_title(i) for i in failed_items], "already": already}
     if CANCEL.is_set():
         res["cancelled"] = True
     if error:
@@ -3299,6 +3608,7 @@ def undo_ids(ids, log: Callable, progress: Optional[Callable] = None, by: str = 
     if progress:
         progress(len(ids), len(ids), tr("e.finished"))
     log(tr("e.undone_total", n=n))
+    invalidate_live()
     return {"undone": n, "partial": partial, "reboot": reboot}
 
 
@@ -3340,6 +3650,7 @@ def recover_interrupted(log: Callable = lambda *_: None) -> dict:
 
 def undo_or_default(t: Tweak, log: Callable) -> dict:
     log(f"\n[↩] {t.title}")
+    invalidate_live()
     res = undo_one(t.id, log)
     if res == "partial":
         log(tr("e.undo_partial", n=len((JOURNAL.get(t.id) or {}).get("undo", []))))

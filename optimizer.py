@@ -797,6 +797,7 @@ class Main(QWidget):
             if key in self.pages:
                 sync(self.pages[key], self)
         self.refresh_nav()  # «Ноутбук» ховається на настільному ПК
+        self.refresh_live()
         self._guard_tick()
         self.safety_check(prompt=self.crash_prompt)
         QTimer.singleShot(6000, self.crash_scan)
@@ -807,6 +808,21 @@ class Main(QWidget):
             self.collect_metrics(snapshot=True, quiet=True)
         else:
             self.collect_metrics(quiet=True)
+
+    def refresh_live(self):
+        """6.15: фоном прочитати справжній стан (мережеві адаптери, живлення, задачі, програми) і показати
+        «вже застосовано» й там, де зміну зробили вручну. Лише якщо знімок застарів і ще не читається."""
+        if E.LIVE is not None or getattr(self, "_live_busy", False):
+            return
+        self._live_busy = True
+
+        def done(_r):
+            self._live_busy = False
+            for key, method in (("optimize", "refresh"), ("laptop", "sync"), ("cleanup", "sync")):
+                page = self.pages.built(key)
+                if page is not None:
+                    getattr(page, method)()
+        self.run_quick("live", lambda log, p: E.refresh_live_state(), silent=True, on_done=done)
 
     def collect_metrics(self, snapshot: bool = False, quiet: bool = False):
         def job(log, p):
@@ -829,6 +845,7 @@ class Main(QWidget):
                             ("network", "sync")):
             if key in self.pages:
                 getattr(self.pages[key], method)()
+        self.refresh_live()
         self.update_booster_ui()
         self.guard_refresh()
         self.tray_ab.setVisible(AB.Backend(F.CFG).mode == "filter")

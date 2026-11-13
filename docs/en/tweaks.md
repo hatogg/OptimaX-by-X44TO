@@ -128,7 +128,7 @@ Copilot, Recall, Click to Do, AI in apps, Start recommendations, tips, Bing in s
 
 | | Optimization | What it does | Profiles | Rollback |
 | --- | --- | --- | --- | --- |
-| 🔴 | Turn off Copilot <sub>(Windows 11)</sub> | The Copilot button and pane go away and the Copilot key no longer opens it. The app itself can be removed under Built-in apps. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
+| 🔴 | Turn off Copilot <sub>(Windows 11)</sub> | The Copilot button and pane go away and the Copilot key no longer opens it. On recent Windows 11 builds Copilot is a separate app this policy does not turn off: OptimaX checks for it and tells you; the app itself can be removed under Built-in apps. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
 | 🟡 | Turn off Recall <sub>(restart, Windows 11)</sub> | Windows stops taking screen snapshots for its "memory" and removes the Recall component. Applies to Copilot+ PCs. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
 | 🟡 | Turn off Click to Do <sub>(Windows 11)</sub> | AI actions on screen content (Win + click) no longer start. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |
 | 🟡 | No AI in Paint, Notepad and Settings <sub>(Windows 11)</sub> | Removes Cocreator, Generative fill and Image Creator in Paint, Notepad's AI features and the Settings AI agent. | Full, Medium, Light, Laptop, Old PC, Xeon / X99 | yes |

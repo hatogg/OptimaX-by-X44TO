@@ -667,11 +667,11 @@ TEXTS = {
     # ── Windows 11: AI і реклама ──
     "ai_copilot": (
         "Вимкнути Copilot",
-        "Кнопка й бокова панель Copilot зникають, клавіша Copilot його не відкриває. Сам додаток можна видалити в «Вбудованих додатках».",
+        "Кнопка й бокова панель Copilot зникають, клавіша Copilot його не відкриває. На нових збірках Windows 11 Copilot — окрема програма, яку ця політика не вимикає: OptimaX перевірить це й підкаже, а саму програму можна видалити в «Вбудованих додатках».",
         "Отключить Copilot",
-        "Кнопка и боковая панель Copilot исчезают, клавиша Copilot его не открывает. Само приложение можно удалить во «Встроенных приложениях».",
+        "Кнопка и боковая панель Copilot исчезают, клавиша Copilot его не открывает. На новых сборках Windows 11 Copilot — отдельная программа, которую эта политика не отключает: OptimaX проверит это и подскажет, а саму программу можно удалить во «Встроенных приложениях».",
         "Turn off Copilot",
-        "The Copilot button and pane go away and the Copilot key no longer opens it. The app itself can be removed under Built-in apps."),
+        "The Copilot button and pane go away and the Copilot key no longer opens it. On recent Windows 11 builds Copilot is a separate app this policy does not turn off: OptimaX checks for it and tells you; the app itself can be removed under Built-in apps."),
     "ai_recall": (
         "Вимкнути Recall",
         "Windows не робить знімків екрана для «пам'яті» й прибирає компонент Recall. Стосується ПК Copilot+.",
