@@ -122,10 +122,15 @@ def median(vals):
 
 # ───────────────────────── процес тесту ─────────────────────────
 def child_main(argv) -> int:
-    """Точка входу: OptimaX.exe --hw-test=cpu|ram|disk --out=<json> …"""
+    """Точка входу: OptimaX.exe --hw-test=cpu|ram|disk|latency_stall|latency_etw --out=<json> …"""
     a = _args(argv)
     kind, out = a.get("hw-test", ""), a.get("out") or os.path.join(tempfile.gettempdir(), "optimax-hwtest.json")
     fn = {"cpu": cpu_child, "ram": ram_child, "disk": disk_child}.get(kind)
+    if kind in ("latency_stall", "latency_etw"):  # тест затримки системи — latencytest.py
+        import latencytest as LT
+
+        def fn(args, path):
+            LT.child(kind, args, path)
     if not fn:
         _write(out, dict(state="error", error=f"unknown test {kind}"))
         return 2
@@ -1064,6 +1069,9 @@ class DemoProc:
                       pattern=ram_patterns()[min(5, int(k * 6))][0], log=[])
             st.update(state="done", speed=4800) if done else st.update(state="running")
             return st
+        if self.kind.startswith("latency"):
+            import latencytest as LT
+            return LT.demo_state(self.kind, el, self.duration, done)
         if self.args.get("mode") == "scan":
             st = dict(kind="disk", mode="scan", reads=int(el * 40), read_errors=0, slow=0, t=round(el, 1))
             st.update(state="done", lat_ms=0.12 if E.DEMO != "old" else 14.5, lat_max_ms=3.1) if done else \

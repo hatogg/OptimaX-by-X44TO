@@ -433,8 +433,12 @@ hc.load_storage()
 pump(lambda: bool((F.CFG["hwc_last"] or {}).get("storage_health")), 30)
 hc.start_disk()
 pump(lambda: not hc.db_box.busy, 60)
+hc.show_section("latency")
+hc.start_latency()
+pump(lambda: not hc.lat_box.busy, 60)
+hwc["latency_drivers"] = hc.lat_drv_rows.count()
 last = F.CFG["hwc_last"] or {}
-for t in ("cpu_multi", "ram", "vram", "storage_health", "disk_bench"):
+for t in ("cpu_multi", "ram", "vram", "storage_health", "disk_bench", "latency"):
     hwc[t] = (last.get(t) or {}).get("status")
 hc.show_section("inspect")
 hc.claim_edits["ram"].setText(str(round((w.hw or {}).get("ram_gb") or 0)))

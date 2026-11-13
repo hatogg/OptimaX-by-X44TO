@@ -44,12 +44,14 @@ def check_66(st: dict) -> None:
 
 
 def check_hwc(st: dict) -> None:
-    """Hardware Center: 17 розділів (з перевіркою збірки), тести на демо-залізі пройдені, звіт і перевірка перед покупкою."""
+    """Hardware Center: 18 розділів (з перевіркою збірки й затримками), тести на демо-залізі пройдені, звіт і перевірка
+    перед покупкою."""
     h = st["hwc"]
-    assert h["built"] == 17, h
+    assert h["built"] == 18, h
     assert h["build"][0] >= 3 and h["build"][2] >= 1, ("the build check moved from the Hardware page", h["build"])
-    for t in ("cpu_multi", "ram", "vram", "storage_health", "disk_bench"):
+    for t in ("cpu_multi", "ram", "vram", "storage_health", "disk_bench", "latency"):
         assert h[t] in ("pass", "warn"), (t, h)
+    assert h["latency_drivers"] >= 2, h
     assert h["report"][1] >= 5 and h["report"][2] > 3000 and h["report"][3] > 1000, h["report"]
     assert h["tiles"] >= 9 and h["inspect"], h
     assert isinstance(h["pdf"], int) and h["pdf"] > 1500, h["pdf"]

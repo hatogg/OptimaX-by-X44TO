@@ -2,8 +2,8 @@
 OptimaX — сторінка Hardware Center: діагностика й тестування заліза в одному місці.
 
 Розділи (будуються, коли їх уперше відкрити): огляд, відомості про залізо, процесор, відеокарта, відеопам'ять,
-оперативна пам'ять, диски, монітор, ноутбук, периферія, стрес-тести, фонові процеси, діагностика Windows, перевірка
-перед покупкою, звіти, FPS-оверлей.
+оперативна пам'ять, диски, монітор, ноутбук, периферія, стрес-тести, затримки системи, фонові процеси, діагностика
+Windows, перевірка перед покупкою, звіти, FPS-оверлей.
 
 Логіка тестів — у hwtests.py, vramtest.py, storagehealth.py, hwinfo.py (і в наявних gpubench, gpuselect, crashlog,
 hardware). Тут — лише інтерфейс: запуск і зупинка, прогрес, датчики під час тесту, аварійна зупинка, результат
@@ -27,7 +27,7 @@ from ui_kit import (T, label, button, card, vbox, hbox, badge, style_badge, dot,
                     section_card, Segmented, Ask, Spark, Worker, LOG, chip, FlowLayout)
 
 SECTIONS = ("overview", "info", "build", "cpu", "gpu", "vram", "ram", "storage", "display", "laptop", "peripherals",
-            "stress", "procs", "windiag", "inspect", "reports", "overlay")
+            "stress", "latency", "procs", "windiag", "inspect", "reports", "overlay")
 STATUS_KIND = {HT.PASS: "ok", HT.WARN: "warn", HT.FAIL: "bad", HT.SKIPPED: "muted", HT.NA: "muted"}
 LEVEL_COLOR = {HT.FAIL: "bad", HT.WARN: "warn", "info": "sub"}
 
@@ -353,7 +353,7 @@ class HwCenterPage(QWidget):
                 ("vram", ("vram",)), ("ram", ("ram",)), ("storage", ("storage_health", "disk_bench", "disk_scan")),
                 ("display", ("display_pixels",)), ("laptop", ("battery",)),
                 ("peripherals", ("periph_keyboard", "periph_mouse", "periph_speakers", "periph_camera", "periph_mic")),
-                ("stress", ("stress_combined",)), ("windiag", ("windiag",)))
+                ("stress", ("stress_combined",)), ("latency", ("latency",)), ("windiag", ("windiag",)))
 
     def _build_overview(self, v):
         c, cv = self.section(v, tr("hwc.ov.title"), tr("hwc.ov.sub"))
@@ -1165,6 +1165,65 @@ class HwCenterPage(QWidget):
         return HT.result("stress_combined", st, tr(f"hwc.sum.stress.{st}"), rows=rows, findings=f, mode=mode,
                          series=dict(temp=HT.temp_series(samples), gpu_temp=[s.get("gpu_temp") for s in samples],
                                      mhz=[s.get("mhz") for s in samples]))
+
+    # ───────────────────────── Затримки ─────────────────────────
+    def _build_latency(self, v):
+        import latencytest as LT
+        c, cv = self.section(v, tr("lat.title"), tr("lat.sub"))
+        r = hbox(margins=(14, 4, 14, 4), spacing=10)
+        r.addWidget(label(tr("lat.dur"), "desc"))
+        self.lat_dur = Segmented([tr("u.min_n", n=s // 60) for s in LT.SECONDS_CHOICES])
+        self.lat_dur_i = 0
+        self.lat_dur.select(0)
+        self.lat_dur.changed.connect(lambda i: setattr(self, "lat_dur_i", i))
+        r.addWidget(self.lat_dur)
+        r.addStretch()
+        self.lat_btn = button(tr("hwc.start"), "primary", self.start_latency)
+        r.addWidget(self.lat_btn)
+        cv.addLayout(r)
+        cv.addWidget(self._note(tr("lat.note")))
+        if E.IS_WIN and not E.is_admin():
+            cv.addWidget(self._note(tr("lat.no_admin")))
+        prog, view = self.test_area(cv, ("latency",), charts=(("lat", "µs", "acc"), ("dpc", "µs", "warn")))
+        self.lat_box = self.make_box(prog, view, self.lat_btn)
+        self.lat_drv = QWidget()
+        dv = vbox(self.lat_drv, (14, 4, 14, 8), 4)
+        dv.addWidget(label(tr("lat.drivers"), "h3"))
+        self.lat_drv_rows = vbox(spacing=4)
+        dv.addLayout(self.lat_drv_rows)
+        cv.addWidget(self.lat_drv)
+        self._latency_drivers(self.last("latency"))
+
+    def _latency_drivers(self, res: dict) -> None:
+        """Найгірші драйвери останнього тесту: назва, вид пристрою, найдовші DPC / ISR і їхня кількість."""
+        import latencytest as LT
+        clear_layout(self.lat_drv_rows)
+        drivers = [d for d in (res or {}).get("drivers") or [] if d.get("dpc_n") or d.get("isr_n")]
+        self.lat_drv.setVisible(bool(drivers))
+        for d in drivers:
+            row = hbox(spacing=10)
+            row.addWidget(label(f"{d['name']} · {tr('lat.kind.' + d.get('kind', 'other'))}", "rowTitle"))
+            row.addStretch()
+            row.addWidget(label(tr("lat.drv_row", dpc=LT.fmt_us(d.get("dpc_max")), dn=d.get("dpc_n", 0),
+                                   isr=LT.fmt_us(d.get("isr_max")), inn=d.get("isr_n", 0)), "muted"))
+            self.lat_drv_rows.addLayout(row)
+
+    def start_latency(self):
+        import latencytest as LT
+        if self.lat_box.busy:
+            return
+        seconds = LT.SECONDS_CHOICES[self.lat_dur_i]
+        admin = not E.IS_WIN or E.is_admin()
+        runs = {"stall": HT.start("latency_stall", dict(seconds=seconds))}
+        if admin:
+            runs["etw"] = HT.start("latency_etw", dict(seconds=seconds))
+        LOG.write(f"[►] {tr('hwc.t.latency')}: {tr('u.min_n', n=seconds // 60)}")
+
+        def finish(states, samples, danger):
+            res = LT.latency_result(states, admin)
+            self._latency_drivers(res)
+            return res
+        self.lat_box.start(runs, finish, lambda states, s: LT.describe(states, seconds), sensors=False)
 
     # ───────────────────────── Діагностика Windows ─────────────────────────
     def _build_windiag(self, v):
