@@ -2,7 +2,7 @@
 ; Збирається через build_installer.bat; версію та шлях до файлів програми підставляє скрипт збірки.
 
 #ifndef MyAppVersion
-  #define MyAppVersion "6.13.1"
+  #define MyAppVersion "6.14"
 #endif
 #ifndef AppBuildDir
   #define AppBuildDir "..\dist\OptimaX"
@@ -227,7 +227,7 @@ begin
     if (not UninstallSilent) and (MsgBox(CustomMessage('RevertAsk'), mbConfirmation, MB_YESNO) = IDYES) then
       Args := Args + ' --revert-all';
     { прибирає задачі планувальника, повертає режим гри та (за згодою) усі зміни.
-      6.15 (OX-021): код 3 — у журналі лишилися невідкочені зміни; не вдалося запустити чи інший код — теж
+      6.14 (OX-021): код 3 — у журналі лишилися невідкочені зміни; не вдалося запустити чи інший код — теж
       вважаємо, що лишилися: журнал краще зберегти зайвий раз, ніж стерти єдиний спосіб повернути зміни }
     if Exec(ExpandConstant('{app}\{#MyAppExe}'), Args, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
       PendingChanges := ResultCode <> 0

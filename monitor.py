@@ -193,11 +193,11 @@ DIAG_SINGLE = {
     "limit": r"\Processor Information(_Total)\% Performance Limit",
     "avail_mb": r"\Memory\Available MBytes",
     "pages_in": r"\Memory\Pages Input/sec",
-    "commit_pct": r"\Memory\% Committed Bytes In Use",  # 6.15: наскільки виділена пам'ять близька до ліміту
+    "commit_pct": r"\Memory\% Committed Bytes In Use",  # 6.14: наскільки виділена пам'ять близька до ліміту
     "disk_idle": r"\PhysicalDisk(_Total)\% Idle Time",
 }
 DIAG_ARRAY = {
-    # 6.15: затримка читання й черга кожного фізичного диска — «повільний диск» за затримкою, а не за % зайнятості
+    # 6.14: затримка читання й черга кожного фізичного диска — «повільний диск» за затримкою, а не за % зайнятості
     "disk_rd": r"\PhysicalDisk(*)\Avg. Disk sec/Read",
     "disk_qs": r"\PhysicalDisk(*)\Current Disk Queue Length",
     "cores": r"\Processor Information(*)\% Processor Utility",
@@ -230,7 +230,7 @@ def _demo_sample(hw: dict, i: int) -> dict:
                        limit=100, vram_used=4.8, gpu_t=69, bg=("steamwebhelper.exe", 0.05)),
     }.get(dev, {})
     j = lambda v, k=0.08: max(0.0, v * (1 + rnd.uniform(-k, k)))  # noqa: E731
-    # 6.15: затримка читання диска (мс) і зайнятість виділеної пам'яті (%) — як на справжньому залізі цього демо
+    # 6.14: затримка читання диска (мс) і зайнятість виділеної пам'яті (%) — як на справжньому залізі цього демо
     disk_ms, commit = {"gaming": (1.2, 42), "laptop": (3.5, 63), "old": (48.0, 96), "x3d": (0.4, 31),
                        "xeon": (5.0, 52), "mining": (2.0, 58)}.get(dev, (2.0, 50))
     return dict(cpu=min(100.0, j(base["cpu"])), core_max=min(100.0, j(base["core_max"], 0.03)),
@@ -404,7 +404,7 @@ def _avg(vals):
     return sum(vals) / len(vals) if vals else None
 
 
-# ───────────────────────── «бракує ОЗП» і «повільний диск»: пороги (6.15) ─────────────────────────
+# ───────────────────────── «бракує ОЗП» і «повільний диск»: пороги (6.14) ─────────────────────────
 # Раніше «бракує оперативної пам'яті» спрацьовувало від самого Pages Input/sec. Але цей лічильник росте й від
 # звичайного читання файлів гри (відображених у пам'ять), тож на ПК з 21 вільним ГБ з 32 програма радила докупити
 # пам'ять. Тепер — лише коли вільної пам'яті справді мало І Windows активно підкачує.
@@ -549,7 +549,7 @@ def summarize(samples: list, hw: dict, game_exe: str, bg: dict, extra: dict = No
     if not hot_cpu and av["limit"] is not None and av["limit"] < 90:
         fix = ("tweak", "laptop_ac_max") if hw.get("laptop") else ("tweak", "ultimate_power")
         add("power_limit", "warn", fix, pct=round(av["limit"]))
-    # 6.15: лише коли вільної пам'яті справді мало І Windows підкачує (ram_short) — не від самого Pages Input/sec
+    # 6.14: лише коли вільної пам'яті справді мало І Windows підкачує (ram_short) — не від самого Pages Input/sec
     short = ram_short(av["avail_mb"], total_mb, av["pages_in"], av["commit_pct"])
     if short:
         add("ram", "bad", ("page", "games"), free=f"{av['avail_mb'] / 1024:.1f}", total=f"{total_mb / 1024:.0f}")
@@ -558,7 +558,7 @@ def summarize(samples: list, hw: dict, game_exe: str, bg: dict, extra: dict = No
     hog = max(bg.items(), key=lambda kv: kv[1]) if bg else None
     if hog and hog[1] >= 0.10:
         add("bg_hog", "warn", ("booster", "balance"), name=hog[0], pct=round(hog[1] * 100))
-    # 6.15: «диск завантажений» — лише коли він ще й не встигає (затримка, черга); зайнятий, але швидкий — не причина
+    # 6.14: «диск завантажений» — лише коли він ще й не встигає (затримка, черга); зайнятий, але швидкий — не причина
     slow = [s for s in samples if disk_slow(s)]
     if (av["disk"] or 0) >= 85 and len(slow) >= 0.3 * len(samples) and not short:
         add("disk", "bad" if hw.get("hdd") else "warn", ("page", "cleanup"), pct=round(av["disk"]))
@@ -583,7 +583,7 @@ def summarize(samples: list, hw: dict, game_exe: str, bg: dict, extra: dict = No
     causes = GD.spike_causes(GD.spike_times(extra.get("frametimes") or []), samples, extra.get("frames_offset", 0.0),
                              total_mb=total_mb) if fstats else {}
     for x in GD.stutter_findings(fstats, causes):
-        if x["key"] == "stutter_disk":  # 6.15: який диск і яка затримка — щоб було видно, що саме не встигає
+        if x["key"] == "stutter_disk":  # 6.14: який диск і яка затримка — щоб було видно, що саме не встигає
             x["kw"].update(disk_stutter_detail(slow or samples, hw))
         f.append(x)
     # відеопам'ять, лінія PCIe і драйвер карти NVIDIA

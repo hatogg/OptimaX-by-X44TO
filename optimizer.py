@@ -632,7 +632,7 @@ class Main(QWidget):
         self.go("memory")
         QTimer.singleShot(UK.dur(320) + 30, self.pages["memory"].start_clean)
 
-    # Що сторінка має отримати від головного вікна, коли залізо вже визначене (_hw_ready). 6.15: сторінку, якої ще
+    # Що сторінка має отримати від головного вікна, коли залізо вже визначене (_hw_ready). 6.14: сторінку, якої ще
     # немає, заради цього не будуємо — вона отримає те саме під час побудови (_make_page).
     HW_SYNC = (("optimize", lambda p, w: p.set_hw(w.hw)), ("laptop", lambda p, w: p.set_hw(w.hw)),
                ("games", lambda p, w: p.set_hw(w.hw)), ("hwcenter", lambda p, w: p.set_hw(w.hw)),
@@ -650,7 +650,7 @@ class Main(QWidget):
                     sync(page, self)
         return page
 
-    # 6.15: фонова побудова сторінок починається, коли вікно вже з'явилося й відповідає, і йде з паузами:
+    # 6.14: фонова побудова сторінок починається, коли вікно вже з'явилося й відповідає, і йде з паузами:
     # раніше вона збігалася з появою вікна, і інтерфейс кілька секунд майже не реагував. Сторінка, до якої
     # звернулися раніше, як і досі, будується в момент звернення.
     BUILD_DELAY_MS = 1500
@@ -810,7 +810,7 @@ class Main(QWidget):
             self.collect_metrics(quiet=True)
 
     def refresh_live(self):
-        """6.15: фоном прочитати справжній стан (мережеві адаптери, живлення, задачі, програми) і показати
+        """6.14: фоном прочитати справжній стан (мережеві адаптери, живлення, задачі, програми) і показати
         «вже застосовано» й там, де зміну зробили вручну. Лише якщо знімок застарів і ще не читається."""
         if E.LIVE is not None or getattr(self, "_live_busy", False):
             return
@@ -852,7 +852,7 @@ class Main(QWidget):
 
     def _background_tick(self):
         self._ticks += 1
-        err = F.CFG.take_save_error()  # 6.15: налаштування не записуються (диск повний, немає доступу)
+        err = F.CFG.take_save_error()  # 6.14: налаштування не записуються (диск повний, немає доступу)
         if err:
             LOG.write(f"  settings.json: {err}")
             self.toast(tr("cfg.save_fail"), "bad")
@@ -1232,7 +1232,7 @@ class Main(QWidget):
             self.toast(tr("rec.tweak_done", title=E.entry_title(res["tweak"])), "warn")
         if E.JOURNAL.problem == "restored":
             self.toast(tr("rec.restored"), "warn")
-        elif F.CFG.problem:  # 6.15: settings.json був пошкоджений — не мовчимо про це
+        elif F.CFG.problem:  # 6.14: settings.json був пошкоджений — не мовчимо про це
             self.toast(tr(f"cfg.{F.CFG.problem}"), "warn")
         self.interrupted = res if res.get("ids") else None
         self.guard_refresh()
@@ -1405,7 +1405,7 @@ class Main(QWidget):
         elif not E.IS_WIN or E.DRY_RUN:
             self.toast(tr("toast.preview_only"), "warn")
         elif kind == "cancelled" or dlg.worker.cancelled:
-            self.toast(tr("upd.cancelled"), "warn")  # 6.15: зупинка — не «файл не пройшов перевірку»
+            self.toast(tr("upd.cancelled"), "warn")  # 6.14: зупинка — не «файл не пройшов перевірку»
         elif kind == "network" and not U.LAST_ERROR:
             if Ask.ask(self, tr("upd.net_fail_t"), tr("upd.net_fail_d", why=dlg.res.get("error") or "?"),
                        tr("fps.open_page")):

@@ -132,7 +132,7 @@ BOX_SINGLE = {
     "didle": r"\PhysicalDisk(_Total)\% Idle Time",
     "avail_mb": r"\Memory\Available MBytes",
     "pages_in": r"\Memory\Pages Input/sec",
-    "commit_pct": r"\Memory\% Committed Bytes In Use",  # 6.15: «бракує пам'яті» — лише разом із нестачею вільної
+    "commit_pct": r"\Memory\% Committed Bytes In Use",  # 6.14: «бракує пам'яті» — лише разом із нестачею вільної
 }
 BOX_ARRAY = {"core_dpc": r"\Processor(*)\% DPC Time", "core_isr": r"\Processor(*)\% Interrupt Time"}
 
@@ -352,7 +352,7 @@ def classify(dur: float, dr: dict, events: list, tpm: dict = None, app: str = ""
     elif dr and busy is not None and busy >= 90 and (dr.get("dq") or 0) >= 4:
         cat = "io"
         ev.append(("disk", dict(busy=busy, q=round(dr.get("dq") or 0))))
-    # 6.15: «пам'ять» — лише коли вільної справді мало І Windows підкачує (monitor.ram_short). Раніше вистачало
+    # 6.14: «пам'ять» — лише коли вільної справді мало І Windows підкачує (monitor.ram_short). Раніше вистачало
     # самого Pages Input/sec > 3000, а його піднімає й звичайне читання файлів гри
     elif dr and _ram_short(dr):
         cat = "memory"

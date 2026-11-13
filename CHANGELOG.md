@@ -2,10 +2,24 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
-## [6.15] — ще не випущено
+## [6.14] — 2026-11-13
+
+Чесні результати: OptimaX каже «частково», коли щось не вдалося, бачить, що вже налаштовано вручну, і не радить докупити пам'ять, коли її вдосталь. «Зупинити» зупиняє саме те, що треба. Запуск — удвічі-втричі швидший, переходи — плавні.
+
+### Змінено
+
+- **Швидший запуск.** На ноутбуці з i5-7300U вікно повністю готове за ≈1,8 с замість ≈5 с, а найдовша пауза, коли вікно не відповідає, — ≈0,3 с замість 2,8 с. Експертне меню (≈130 рядків) будується, коли його відкривають; решта сторінок — у фоні вже після появи вікна, з паузами; результат аналізу заліза більше не змушує будувати сім сторінок поспіль.
+- **Плавні переходи.** Перехід від заставки до вікна і між сторінками — ≈60 кадрів/с без ривків (було 6–28 кадрів/с, поки добудовувалися сторінки). Фонова побудова сторінок чекає, поки йде анімація; перехід більше не перемальовує сторінку під собою з живими графіками.
 
 ### Виправлено
 
+- **«Готово» лише тоді, коли все справді вдалося.** Оптимізація, у якої не вдався крок (захищена служба, вимкнення Defender, заблоковане «Захистом від підробки», команда, параметр живлення), тепер «частково», а не «✓ готово»; служба перевіряється після зміни. Вікно виконання показує жовте «Завершено з помилками: N» з кнопкою «Показати, що не вдалося»; сповіщення розрізняють «готово», «частково», «зупинено» й «не вдалося».
+- **«Зупинити» зупиняє саме цю дію.** Раніше прапорець був один на всю програму: нова фонова дія могла скинути щойно натиснуту зупинку, а зупинка у вікні переривала чужі дії. Тепер у кожної дії свій, і він зупиняє також перевірки й PowerShell.
+- **Зупинене чи обірване оновлення** більше не показується як «файл не пройшов перевірку»: для зупинки, мережі й справжньої помилки перевірки — різні тексти.
+- **Точка відновлення «створена»** лише тоді, коли справді з'явилася нова: раніше стара точка OptimaX давала хибне «створено».
+- **Видалення програми не стирає журнал змін**, поки в системі лишаються невідкочені зміни: налаштування видаляються, а журнал і аварійний відкат лишаються, і `OptimaX-Rescue.cmd` кладеться на робочий стіл.
+- **Пошкоджений `settings.json`** (вимкнення світла під час запису) більше не скидає мовчки всі налаштування: є резервна копія, а про проблему чи помилку запису OptimaX повідомляє.
+- Вимкнення перемикача твіка повідомляє, що справді сталося, а не завжди «відкочено 1».
 - **«Чому лагає?» і «Чому зависає?» більше не радять докупити пам'ять, коли її вдосталь.** Картка «Бракує оперативної пам'яті» спрацьовувала від самого лічильника Pages Input/sec, а його піднімає й звичайне читання файлів гри — тож на ПК з 21 вільним ГБ з 32 програма бачила «нестачу». Тепер «бракує пам'яті» — лише коли вільно менше 12 % або 2 ГБ **і** Windows справді підкачує (Pages Input/sec або виділена пам'ять близько до ліміту); понад 25 % вільного — ніколи. Нова картка «Фризи від диска»: якщо пам'яті вистачає, а фризи збігаються з повільним читанням диска (затримка понад 30 мс або велика черга), видно, який диск (HDD/SSD/NVMe) і яка затримка, з порадою перенести гру на SSD або запустити тест ще раз. Пам'яті вистачає і диск швидкий — жодної з цих карток. Пороги — константами в `monitor.py`.
 - **Твіки бачать справжній стан системи, а не лише власний журнал.** Якщо Interrupt Moderation і Flow Control (а так само енергозбереження адаптерів, роумінг Wi-Fi, параметри живлення, задачі, служби, видалені програми) вже налаштовані вручну, OptimaX показує «вже застосовано» і під час застосування нічого не змінює («✓ вже застосовано — нічого не змінюю»). Дороге читання (PowerShell, powercfg) іде у фоні, не гальмуючи вікно.
 - **«Вимкнути Copilot» чесно перевіряє результат.** Значення й гілки реєстру перевірено (`TurnOffWindowsCopilot = 1` для користувача й для всього ПК, кнопка на панелі прихована), застосування й відкат не переплутані — це закріплено тестами. Кожен запис у реєстр тепер перечитується одразу після запису. На нових збірках Windows 11 Copilot — окрема програма, якої політика не стосується: якщо вона встановлена, OptimaX каже «частково» й підказує, як її видалити, а не пише «готово».
@@ -13,7 +27,11 @@
 <details>
 <summary>English</summary>
 
-**Fixed:** "Why does it lag?" and "Why does it freeze?" no longer tell you to buy more RAM when there is plenty — the card used to fire on Pages Input/sec alone, which also rises when a game simply reads its files. "Not enough RAM" now needs less than 12 % or 2 GB free **and** real paging (Pages Input/sec, or committed memory near the limit), and never shows above 25 % free. A new "stutter from the disk" card names the disk (HDD/SSD/NVMe) and its read latency when stutters line up with slow reads, and suggests moving the game to an SSD or running the test again; with enough RAM and a fast disk neither card appears. Tweaks now read the real system state rather than only OptimaX's own journal: network adapter settings (Interrupt Moderation, Flow Control, power saving, Wi-Fi roaming), power settings, tasks, services and removed apps that are already set show "already applied" and are left untouched. "Turn off Copilot" verifies its result: the policy values and keys are checked by tests, apply and undo are not swapped, every registry write is read back, and if the new Copilot app (which the policy does not cover) is installed, the result is "partly" with a pointer to removing the app instead of "done".
+**Changed:** faster start — on an i5-7300U laptop the window is fully ready in about 1.8 s instead of about 5 s, and the longest "not responding" pause is about 0.3 s instead of 2.8 s (the expert menu is built when opened, other pages in the background after the window appears). Smooth transitions — the splash hand-over and page changes run at about 60 fps without hitches.
+
+**Fixed:** "Done" only when everything really worked — a tweak with a failed step is now "partly", and the run window shows "Finished with errors: N" with a list of what failed. Stop stops only the action you stop, including checks and PowerShell. A stopped or broken update download is no longer reported as a failed file check. A restore point counts as created only if a new one really appeared. Uninstalling keeps the change journal and emergency rollback while changes are still in place (and puts `OptimaX-Rescue.cmd` on the desktop). A damaged `settings.json` no longer silently resets all settings. Switching a tweak off reports what really happened.
+
+"Why does it lag?" and "Why does it freeze?" no longer tell you to buy more RAM when there is plenty — the card used to fire on Pages Input/sec alone, which also rises when a game simply reads its files. "Not enough RAM" now needs less than 12 % or 2 GB free **and** real paging (Pages Input/sec, or committed memory near the limit), and never shows above 25 % free. A new "stutter from the disk" card names the disk (HDD/SSD/NVMe) and its read latency when stutters line up with slow reads, and suggests moving the game to an SSD or running the test again; with enough RAM and a fast disk neither card appears. Tweaks now read the real system state rather than only OptimaX's own journal: network adapter settings (Interrupt Moderation, Flow Control, power saving, Wi-Fi roaming), power settings, tasks, services and removed apps that are already set show "already applied" and are left untouched. "Turn off Copilot" verifies its result: the policy values and keys are checked by tests, apply and undo are not swapped, every registry write is read back, and if the new Copilot app (which the policy does not cover) is installed, the result is "partly" with a pointer to removing the app instead of "done".
 
 </details>
 

@@ -87,7 +87,7 @@ class _Transition(QWidget):
     def __init__(self, parent):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        # 6.15: перехід зафарбовує все сам — Qt не перемальовує на кожному кадрі сторінку під ним (з живими графіками)
+        # 6.14: перехід зафарбовує все сам — Qt не перемальовує на кожному кадрі сторінку під ним (з живими графіками)
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
         self.old = self.new = None
         self.t = 1.0
@@ -678,7 +678,7 @@ class Splash(QWidget):
         self.logo = logo_pixmap(84)
         self.t = 0.0      # поява
         self.spin = 0.0   # бігуча смужка
-        # 6.15: 350 мс замість 700 — головне вікно почне будуватися лише після вступу, тож довший вступ = довше чекати
+        # 6.14: 350 мс замість 700 — головне вікно почне будуватися лише після вступу, тож довший вступ = довше чекати
         self.anim = Anim(self, self._intro, 350, OUT)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
@@ -703,7 +703,7 @@ class Splash(QWidget):
     def finish(self, window: QWidget) -> None:
         window.setWindowOpacity(0.0)
         window.show()
-        # 6.15: перший кадр головного вікна й черга подій після його створення (розкладка, перше малювання, таймери
+        # 6.14: перший кадр головного вікна й черга подій після його створення (розкладка, перше малювання, таймери
         # з конструктора) — ≈0,1 с на слабкому ПК. Обробляємо їх, поки вікно ще прозоре, а заставка на місці;
         # інакше вони з'їдали перший кадр передачі, і вона помітно смикалась.
         window.repaint()

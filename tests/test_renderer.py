@@ -148,7 +148,7 @@ def test_stutter_causes_line_up_with_system_samples():
     sp = GD.spike_times(ft)
     assert len(sp) == 3 and 2.9 < sp[0] < 3.2
     samples = [dict(pages_in=0, disk=10, core_max=50, avail_mb=12000) for _ in range(25)]
-    samples[9].update(pages_in=900, avail_mb=900)  # 6.15: «ram» — мало вільної пам'яті І підкачка
+    samples[9].update(pages_in=900, avail_mb=900)  # 6.14: «ram» — мало вільної пам'яті І підкачка
     samples[15]["disk"] = 99
     causes = GD.spike_causes(sp, samples, total_mb=16384)
     assert causes == {"shader": 1, "ram": 1, "disk": 1}, causes

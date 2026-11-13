@@ -31,7 +31,7 @@ from i18n import tr, tweak_text
 APP_NAME = "OptimaX"
 AUTHOR = "X44TO"
 APP_TITLE = f"{APP_NAME} by {AUTHOR}"
-VERSION = "6.13.1"
+VERSION = "6.14"
 IS_WIN = sys.platform == "win32"
 DRY_RUN = (not IS_WIN) or ("--dry-run" in sys.argv)
 DEMO = os.environ.get("OPTIMAX_DEMO", "gaming")  # демо-залізо поза Windows: gaming/laptop/old/x3d/xeon
@@ -1052,7 +1052,7 @@ def exec_op(op, ctx: Ctx) -> None:
             log(f"  [dry-run] reg {path} \\ {name} = {value}")
         else:
             reg_set(path, name, value, rt)
-            if not reg_matches(reg_get(path, name), value):  # 6.15: перевіряємо справжній результат запису
+            if not reg_matches(reg_get(path, name), value):  # 6.14: перевіряємо справжній результат запису
                 log(tr("e.reg_verify", path=path, name=name))
                 ctx.fail(f"reg {name}")
     elif k == "regdel":
@@ -1093,7 +1093,7 @@ def exec_op(op, ctx: Ctx) -> None:
         if start == "disabled":
             run(f"sc stop {name}", 12, log)
         rc, out = run(f"sc config {name} start= {start}", 12, log)
-        # 6.15: «[DISABLED] ім'я» лише тоді, коли режим справді змінився (захищену службу Windows не дає змінити)
+        # 6.14: «[DISABLED] ім'я» лише тоді, коли режим справді змінився (захищену службу Windows не дає змінити)
         now = start if DRY_RUN else svc_get_start(name)
         if rc != 0 or now != start:
             log(tr("e.svc_fail", name=name, why=first_line(out, 60) or tr("e.code", rc=rc)))
@@ -1931,7 +1931,7 @@ def f_eth_latency(ctx: Ctx) -> None:
                "$(if (-not $p.ValidRegistryValues -or $p.ValidRegistryValues -contains '0') { '0' })")
 
 
-# ── 6.15: справжній стан адаптерів (а не лише журнал OptimaX) ──
+# ── 6.14: справжній стан адаптерів (а не лише журнал OptimaX) ──
 # Якщо Interrupt Moderation чи Flow Control уже вимкнули вручну, «застосовано» має бути видно й без OptimaX.
 NIC_STATE_PS = (
     "$r=@(); foreach ($a in Get-NetAdapter -Physical -ErrorAction SilentlyContinue) {"
@@ -2290,7 +2290,7 @@ def f_appx(pkgs):
             else:
                 ctx.log(f"  · {pkg}")
     _f.appx = list(pkgs)
-    _f.check = lambda live: live.appx_absent(pkgs)  # 6.15: уже видалено (вручну чи раніше) — «вже застосовано»
+    _f.check = lambda live: live.appx_absent(pkgs)  # 6.14: уже видалено (вручну чи раніше) — «вже застосовано»
     return _f
 
 
@@ -2299,7 +2299,7 @@ COPILOT_APP = "Microsoft.Copilot"
 
 @cmd_doc("Get-AppxPackage Microsoft.Copilot — перевірка: нову програму Copilot політика не вимикає")
 def f_copilot_app(ctx: Ctx) -> None:
-    """6.15 (скарга тестерів «Copilot не вимкнувся»): на нових збірках Windows 11 Copilot — окрема програма з Microsoft
+    """6.14 (скарга тестерів «Copilot не вимкнувся»): на нових збірках Windows 11 Copilot — окрема програма з Microsoft
     Store, і політика TurnOffWindowsCopilot її не вимикає. Нічого не змінюємо — лише чесно кажемо, що Copilot лишився,
     і підказуємо, як його прибрати («Видалити додаток Copilot» у «Вбудованих додатках»)."""
     if DRY_RUN or not IS_WIN:
@@ -2587,7 +2587,7 @@ PAINT = r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Paint"
 EDGE = r"HKLM\SOFTWARE\Policies\Microsoft\Edge"
 CDM = r"HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"
 # Політика «вимкнути Copilot» (1 = вимкнено) для користувача й для всього ПК, кнопка на панелі завдань (0 = прихована).
-# 6.15: f_copilot_app нічого не змінює — перевіряє, чи не лишилася нова програма Copilot, якої політика не стосується.
+# 6.14: f_copilot_app нічого не змінює — перевіряє, чи не лишилася нова програма Copilot, якої політика не стосується.
 tw("ai_copilot", "ai", [R(HPOL + r"\WindowsCopilot", "TurnOffWindowsCopilot", 1),
                         R(POL + r"\WindowsCopilot", "TurnOffWindowsCopilot", 1), R(ADV, "ShowCopilotButton", 0),
                         F(f_copilot_app)],
@@ -2874,7 +2874,7 @@ def current_color(tid: str, default=(0, 120, 215)):
         return default
 
 
-# ───────────────────────── справжній стан твіків (6.15) ─────────────────────────
+# ───────────────────────── справжній стан твіків (6.14) ─────────────────────────
 # Раніше «застосовано» визначалося за реєстром лише для твіків із записами реєстру, а для решти (мережа, живлення,
 # служби, задачі, програми) — лише за журналом OptimaX: зроблене вручну програма не бачила й «застосовувала» знову.
 # Тепер стан кожної операції читається з системи. Дешеве (реєстр, служби) — завжди; дороге (PowerShell, powercfg) —
@@ -3330,7 +3330,7 @@ def run_tweak(t: Tweak, ctx: Ctx):
     if not DRY_RUN and needs_admin(t) and not is_admin():
         ctx.log(tr("e.need_admin"))
         return None
-    # 6.15: усе, що змінює твік, уже так у системі (зроблено вручну чи іншою програмою) — нічого не чіпаємо
+    # 6.14: усе, що змінює твік, уже так у системі (зроблено вручну чи іншою програмою) — нічого не чіпаємо
     if ctx.live is not None and not t.custom and tweak_state(t, ctx.live, strict=True) is True:
         ctx.log(tr("e.already"))
         return "already"
@@ -3363,7 +3363,7 @@ def run_tweak(t: Tweak, ctx: Ctx):
                 raise
             ctx.journal.abort()
         return False
-    if ctx.failed:  # 6.15: не «✓ готово», якщо щось не вдалося
+    if ctx.failed:  # 6.14: не «✓ готово», якщо щось не вдалося
         return "partial" if ctx.undo or len(ctx.failed) < len(t.ops) else False
     return True
 
@@ -3412,7 +3412,7 @@ def create_restore_point(log: Callable) -> dict:
     name = "SystemRestorePointCreationFrequency"
     old = reg_get(key, name)
     ok = False
-    # 6.15: точка створена лише тоді, коли з'явилася НОВА — з більшим номером, ніж найновіша до спроби. Раніше
+    # 6.14: точка створена лише тоді, коли з'явилася НОВА — з більшим номером, ніж найновіша до спроби. Раніше
     # успіхом вважалося «в описі останньої точки є OptimaX», і стара точка OptimaX давала хибне «створено».
     before = None if DRY_RUN else last_restore_point()
     try:
@@ -3447,7 +3447,7 @@ def apply_tweaks(items, log: Callable, progress: Optional[Callable] = None, sfc:
                  header: bool = True, hw: dict = None, restore_point: bool = False, by: str = "") -> dict:
     ctx = Ctx(log, hw=hw)
     if IS_WIN and not DRY_RUN:
-        ctx.live = LiveState(slow=True)  # 6.15: справжній стан — щоб не «застосовувати» те, що вже так
+        ctx.live = LiveState(slow=True)  # 6.14: справжній стан — щоб не «застосовувати» те, що вже так
     retired = [t for t in items if t.retired]  # 6.9: прибрані зміни не застосовуємо, звідки б не прийшов запит
     items = [t for t in items if not t.retired]
     keep, dropped = resolve_conflicts([t.id for t in items])
@@ -3663,7 +3663,7 @@ def undo_or_default(t: Tweak, log: Callable) -> dict:
         ctx.begin()
         for op in t.off:
             exec_op(op, ctx)
-        if ctx.failed:  # 6.15: справжній результат, а не завжди «відкочено 1»
+        if ctx.failed:  # 6.14: справжній результат, а не завжди «відкочено 1»
             log(tr("e.undo_partial", n=len(ctx.failed)))
             return {"undone": 0, "partial": 1, "defaults": True}
         log(tr("e.defaults"))

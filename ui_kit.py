@@ -1518,7 +1518,7 @@ class RunDialog(QDialog):
         elif self.outcome == "stopped":
             style_badge(self.state, tr("run.stopped"), "warn")
             self.step.setText(tr("run.stopped_text"))
-        elif self.outcome == "partial":  # 6.15: не зелене «Готово», коли частина операцій не вдалася
+        elif self.outcome == "partial":  # 6.14: не зелене «Готово», коли частина операцій не вдалася
             style_badge(self.state, tr("run.partial", n=bad), "warn")
             self.step.setText(tr("run.partial_text") + reboot)
         else:
