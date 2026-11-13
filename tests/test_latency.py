@@ -93,6 +93,18 @@ def test_exec_stats_per_routine_per_second_and_bad_values():
     assert sum(s.hist["dpc"]) == 3 and s.hist["dpc"][LT.bucket(2500)] == 1
 
 
+def test_bursts_join_back_to_back_and_nested_events_per_core():
+    s = LT.ExecStats(10_000_000)  # 0.1 мкс на тік
+    t = 5_000_000_000
+    s.add(True, t + 3_000, t + 2_000, 0xB000, 0)       # ISR 100 мкс усередині DPC (записується першим)
+    s.add(False, t + 8_000, t, 0xA000, 0)              # DPC 800 мкс
+    s.add(False, t + 14_000, t + 8_100, 0xA000, 0)     # одразу за ним (через 10 мкс) — 590 мкс
+    s.add(False, t + 50_000, t + 45_000, 0xA000, 0)    # окремо, через 3.1 мс
+    s.add(False, t + 9_000, t + 1_000, 0xC000, 1)      # інше ядро — своя серія
+    assert round(s.burst_max) == 1400 and round(s.core_burst[0]) == 1400 and round(s.core_burst[1]) == 800
+    assert round(s.max["dpc"]) == 800                  # найдовший окремий DPC — менший за серію
+
+
 def test_stall_stats_per_second_and_core():
     s = LT.StallStats(4)
     for us, core in ((15.0, 0), (1500.0, 0), (40.0, 1)):
@@ -139,6 +151,10 @@ def test_result_pass_warn_fail():
     assert "lat.f.lost" in [f[1] for f in bad["findings"]]
     other = LT.latency_result({"stall": _timer(3000, over=2), "etw": _etw([_drv("ndis.sys", 300)])})
     assert "lat.adv.stall_other" in [f[1] for f in other["findings"]]  # драйвери короткі — винне щось інше
+    chain = LT.latency_result({"stall": _timer(3000, over=2), "etw": dict(_etw([_drv("ACPI.sys", 1800)]),
+                                                                           burst_max=2600.0)})
+    assert "lat.adv.stall_other" not in [f[1] for f in chain["findings"]]  # зупинку пояснює серія DPC поспіль
+    assert dict(chain["rows"])["lat.r.burst"]
     for r in (ok, warn, bad, other):
         for f in r["findings"]:
             assert HT.finding_str(f)  # кожен висновок перекладено й підстановки збігаються

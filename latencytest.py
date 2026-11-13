@@ -35,6 +35,7 @@ STALL_MIN_US = 10               # коротші проміжки — звича
 STALL_WARN_US = 1000            # програма стояла від 1 мс — помітно для звуку й уводу
 STALL_BAD_US = 4000             # від 4 мс — тріск звуку й мікрофризи майже напевно
 EXEC_NOTE_US = 500              # DPC / ISR: від 0.5 мс — згадуємо драйвер
+BURST_GAP_US = 20               # DPC / ISR, між якими менше 20 мкс, — одна безперервна серія на ядрі
 EXEC_WARN_US = 1000
 EXEC_BAD_US = 4000
 BUCKETS_US = (10, 25, 50, 100, 250, 500, 1000, 2000, 4000, 8000)  # межі гістограми; останній кошик — «більше»
@@ -199,6 +200,12 @@ class ExecStats:
         self.sec_cpu = {}
         self.series_max = []               # найдовший DPC/ISR за секунду, мкс
         self.series_pct = []               # найбільший % часу ядра в DPC/ISR за секунду
+        # безперервна робота DPC/ISR на одному ядрі (кілька поспіль, переривання всередині DPC) — саме стільки стоїть
+        # програма на цьому ядрі; порівнюється із зупинками з іншого виміру
+        self.gap = BURST_GAP_US / self.k
+        self.bursts = {}                   # ядро -> [початок, кінець] поточної серії, у тіках
+        self.burst_max = 0.0
+        self.core_burst = {}
 
     def add(self, isr: bool, ts: int, initial: int, routine: int, cpu: int) -> None:
         us = (ts - initial) * self.k
@@ -226,6 +233,20 @@ class ExecStats:
         if us > self.sec_max:
             self.sec_max = us
         self.sec_cpu[cpu] = self.sec_cpu.get(cpu, 0.0) + us
+        b = self.bursts.get(cpu)
+        if b is not None and b[0] - self.gap <= ts and initial <= b[1] + self.gap:
+            if initial < b[0]:
+                b[0] = initial
+            if ts > b[1]:
+                b[1] = ts
+        else:
+            b = self.bursts[cpu] = [initial, ts]
+        dur = (b[1] - b[0]) * self.k
+        if dur < 1e6:
+            if dur > self.burst_max:
+                self.burst_max = dur
+            if dur > self.core_burst.get(cpu, 0.0):
+                self.core_burst[cpu] = dur
 
     def _close_second(self, sec: int) -> None:
         if self.sec >= 0:
@@ -600,7 +621,9 @@ def _etw_state(stats: ExecStats, dmap: DriverMap, seen: dict, state: str, el: fl
     return dict(kind="latency_etw", state=state, t=round(el, 1), seconds=seconds, events=seen["events"],
                 isr_n=stats.count["isr"], dpc_n=stats.count["dpc"], isr_max=round(stats.max["isr"], 1),
                 dpc_max=round(stats.max["dpc"], 1), hist=stats.hist, bad=stats.bad, modules=len(dmap),
-                drivers=drv, series_max=list(stats.series_max), series_pct=list(stats.series_pct))
+                drivers=drv, series_max=list(stats.series_max), series_pct=list(stats.series_pct),
+                burst_max=round(stats.burst_max, 1),
+                core_burst={str(k): round(v, 1) for k, v in sorted(dict(stats.core_burst).items())})
 
 
 def child(kind: str, a: dict, out: str) -> None:
@@ -646,8 +669,9 @@ def latency_result(states: dict, admin: bool = True) -> dict:
                         kinds.append(d["kind"])
         for k in kinds[:3]:
             findings.append(("info", f"lat.adv.{k}", {}))
-        if sl_ok and (sl.get("max_us") or 0) >= STALL_WARN_US and worst_exec < (sl.get("max_us") or 0) / 2:
-            # програма стояла довше, ніж тривав найдовший DPC/ISR, — процесор забирали не драйвери Windows
+        busy = ew.get("burst_max") or worst_exec  # найдовша безперервна робота DPC/ISR на одному ядрі
+        if sl_ok and (sl.get("max_us") or 0) >= STALL_WARN_US and busy < (sl.get("max_us") or 0) / 2:
+            # програма стояла вдвічі довше, ніж драйвери безперервно тримали ядро, — процесор забирали не вони
             findings.append(("info", "lat.adv.stall_other", {}))
         if ew.get("events_lost") or ew.get("buffers_lost"):
             findings.append(("info", "lat.f.lost", dict(n=(ew.get("events_lost") or 0) +
@@ -669,6 +693,7 @@ def latency_result(states: dict, admin: bool = True) -> dict:
             ("lat.r.stall_pct", f"{sl['lost_pct']:.2f} %" if sl_ok and sl.get("lost_pct") is not None else None),
             ("lat.r.dpc_max", _with_driver(ew, "dpc") if ew_ok else None),
             ("lat.r.isr_max", _with_driver(ew, "isr") if ew_ok else None),
+            ("lat.r.burst", fmt_us(ew.get("burst_max")) if ew_ok and ew.get("burst_max") else None),
             ("lat.r.cpu_pct", f"{max(ew.get('series_pct') or [0]):.1f} %" if ew_ok else None),
             ("lat.r.duration", tr("lat.sec", n=int(max(sl.get("t") or 0, ew.get("t") or 0))))]
     r = HT.result("latency", status, summary, rows=rows, findings=findings,

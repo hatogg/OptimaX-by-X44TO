@@ -52,15 +52,17 @@ STRINGS = {
     "lat.r.stall_pct": ("Час, забраний у програми", "Время, отнятое у программы", "Time taken from the program"),
     "lat.r.dpc_max": ("Найдовший DPC", "Самый долгий DPC", "Longest DPC"),
     "lat.r.isr_max": ("Найдовше переривання (ISR)", "Самое долгое прерывание (ISR)", "Longest interrupt (ISR)"),
+    "lat.r.burst": ("Найдовша безперервна робота DPC/ISR на ядрі", "Самая долгая непрерывная работа DPC/ISR на ядре",
+                    "Longest continuous DPC/ISR run on a core"),
     "lat.r.cpu_pct": ("Час ядра в DPC/ISR (пік за секунду)", "Время ядра в DPC/ISR (пик за секунду)",
                       "Core time in DPC/ISR (peak per second)"),
     "lat.r.duration": ("Тривалість", "Длительность", "Duration"),
-    "lat.f.stall": ("Програма стояла до {us}: процесор забирали переривання, драйвери чи інші процеси ({n} разів "
-                    "від {lim}).",
-                    "Программа стояла до {us}: процессор забирали прерывания, драйверы или другие процессы ({n} раз "
-                    "от {lim}).",
-                    "The program stalled for up to {us}: interrupts, drivers or other processes took the CPU ({n} "
-                    "times of {lim} or more)."),
+    "lat.f.stall": ("Програма стояла до {us}: процесор забирали переривання, драйвери чи інші процеси. Зупинок від "
+                    "{lim}: {n}.",
+                    "Программа стояла до {us}: процессор забирали прерывания, драйверы или другие процессы. Остановок "
+                    "от {lim}: {n}.",
+                    "The program stalled for up to {us}: interrupts, drivers or other processes took the CPU. Stalls "
+                    "of {lim} or more: {n}."),
     "lat.f.driver": ("{drv} ({kind}): {what} до {us}.", "{drv} ({kind}): {what} до {us}.",
                      "{drv} ({kind}): {what} up to {us}."),
     "lat.f.no_admin": ("DPC і переривання не виміряно: потрібні права адміністратора.",
@@ -81,16 +83,18 @@ STRINGS = {
     "lat.f.stall_err": ("Зупинки програми не виміряно: збій процесу тесту ({code}).",
                         "Остановки программы не измерены: сбой процесса теста ({code}).",
                         "Program stalls weren't measured: the test process failed ({code})."),
-    "lat.adv.stall_other": ("Програма стояла довше, ніж тривав найдовший DPC чи переривання, — процесор забирали не "
-                            "драйвери Windows, а BIOS (SMI), гіпервізор чи програми з пріоритетом реального часу "
-                            "(звукові студії, захоплення відео). Оновіть BIOS і драйвер чипсета, закрийте такі програми.",
-                            "Программа стояла дольше, чем длился самый долгий DPC или прерывание, — процессор забирали "
-                            "не драйверы Windows, а BIOS (SMI), гипервизор или программы с приоритетом реального "
-                            "времени (звуковые студии, захват видео). Обновите BIOS и драйвер чипсета, закройте такие "
-                            "программы.",
-                            "The program stalled longer than the longest DPC or interrupt — the CPU was taken not by "
-                            "Windows drivers but by the BIOS (SMI), a hypervisor or real-time priority programs (audio "
-                            "workstations, video capture). Update the BIOS and chipset driver, close such programs."),
+    "lat.adv.stall_other": ("Програма стояла вдвічі довше, ніж драйвери безперервно тримали ядро (DPC і переривання "
+                            "поспіль), — процесор забирали не драйвери Windows, а BIOS (SMI), гіпервізор чи програми з "
+                            "пріоритетом реального часу (звукові студії, захоплення відео). Оновіть BIOS і драйвер "
+                            "чипсета, закрийте такі програми.",
+                            "Программа стояла вдвое дольше, чем драйверы непрерывно держали ядро (DPC и прерывания "
+                            "подряд), — процессор забирали не драйверы Windows, а BIOS (SMI), гипервизор или программы "
+                            "с приоритетом реального времени (звуковые студии, захват видео). Обновите BIOS и драйвер "
+                            "чипсета, закройте такие программы.",
+                            "The program stalled twice as long as drivers kept a core busy in a row (back-to-back DPCs "
+                            "and interrupts) — the CPU was taken not by Windows drivers but by the BIOS (SMI), a "
+                            "hypervisor or real-time priority programs (audio workstations, video capture). Update the "
+                            "BIOS and chipset driver, close such programs."),
     "lat.kind.net":("мережа", "сеть", "network"),
     "lat.kind.gpu": ("відеокарта", "видеокарта", "graphics"),
     "lat.kind.audio": ("звук", "звук", "audio"),
