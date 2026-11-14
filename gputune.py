@@ -901,8 +901,16 @@ def reset_command(t: Tuner) -> str:
     return subprocess.list2cmdline(parts)
 
 
+TEST_MODE = True  # 6.15: розділ у тестовому режимі — вмикається лише самим користувачем (enabled у налаштуваннях)
+
+
 def state(cfg) -> dict:
     return dict(cfg["gpu_tune"] or {})
+
+
+def enabled(cfg) -> bool:
+    """Тестовий режим: поки користувач не ввімкнув розділ, OptimaX не завантажує NVML / ADLX і нічого не застосовує."""
+    return not TEST_MODE or bool(state(cfg).get("enabled"))
 
 
 def save_state(cfg, st: dict) -> None:
@@ -1003,7 +1011,7 @@ def startup(cfg, log=lambda *_: None) -> dict:
     -> {"crashed": bool, "applied": bool, "tuner": Tuner|None}"""
     st = state(cfg)
     out = dict(crashed=False, applied=False, tuner=None)
-    if not st.get("pending") and not (st.get("on_start") and st.get("profile")):
+    if not st.get("pending") and not (st.get("on_start") and st.get("profile") and enabled(cfg)):
         return out
     prof = st.get("profile") or {}
     t = SESSION.open((prof.get("gpu") or "::").split(":", 2)[-1])

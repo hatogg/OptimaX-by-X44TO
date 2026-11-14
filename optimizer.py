@@ -257,7 +257,7 @@ class Main(QWidget):
         # кулери й андервольт відеокарти: збій після зміни частоти чи напруги — заводські значення й без
         # автозастосування; інакше — перевірений профіль, якщо його просили застосовувати під час запуску
         gst = F.CFG["gpu_tune"] or {}
-        if gst.get("pending") or (gst.get("on_start") and gst.get("profile")):
+        if gst.get("pending") or (gst.get("on_start") and gst.get("profile") and GT.enabled(F.CFG)):
             self.run_quick("gpu", lambda log, p: GT.startup(F.CFG, log), silent=True, on_done=self._gpu_started)
         # задачі з правами адміністратора, які старіші версії створили для портативного exe, — прибрати (6.7)
         self.run_quick("tasks", lambda log, p: F.audit_tasks(log), silent=True)

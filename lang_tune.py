@@ -156,7 +156,59 @@ STRINGS = {
                       "тест.",
                       "Update this driver or temporarily disable its device in Device Manager and repeat the test."),
     # ── кулери й андервольт відеокарти ──
-    "hwc.sec.gputune": ("Кулери й андервольт", "Кулеры и андервольт", "Fans & undervolt"),
+    "hwc.sec.gputune": ("Кулери й андервольт · тест", "Кулеры и андервольт · тест", "Fans & undervolt · test"),
+    "gt.test_badge": ("Тестовий режим", "Тестовый режим", "Test mode"),
+    "gt.test_note": ("Цей розділ працює в тестовому режимі: на справжніх картах NVIDIA й AMD його ще перевіряють. "
+                     "Можливі помилки драйвера, а на AMD — і аварійне закриття OptimaX під час звернення до драйвера. "
+                     "Заводські значення завжди можна повернути: «Скинути до заводських», відкат у журналі, "
+                     "OptimaX-Rescue.cmd; налаштування NVIDIA скидаються й після перезавантаження. Поки розділ вимкнено, "
+                     "OptimaX драйвера відеокарти не чіпає.",
+                     "Этот раздел работает в тестовом режиме: на настоящих картах NVIDIA и AMD его ещё проверяют. "
+                     "Возможны ошибки драйвера, а на AMD — и аварийное закрытие OptimaX при обращении к драйверу. "
+                     "Заводские значения всегда можно вернуть: «Сбросить до заводских», откат в журнале, "
+                     "OptimaX-Rescue.cmd; настройки NVIDIA сбрасываются и после перезагрузки. Пока раздел выключен, "
+                     "OptimaX драйвер видеокарты не трогает.",
+                     "This section works in test mode: it is still being checked on real NVIDIA and AMD cards. Driver "
+                     "errors are possible, and on AMD OptimaX may even close unexpectedly while talking to the driver. "
+                     "The factory values can always be restored: Reset to factory, journal rollback, OptimaX-Rescue.cmd; "
+                     "NVIDIA settings also reset after a restart. While the section is off, OptimaX doesn't touch the "
+                     "graphics driver."),
+    "gt.test_enable": ("Увімкнути розділ (тестовий режим)", "Включить раздел (тестовый режим)",
+                       "Turn the section on (test mode)"),
+    "gt.test_off": ("Розділ вимкнено — увімкніть його вище, щоб побачити, що дозволяє ваша відеокарта.",
+                    "Раздел выключен — включите его выше, чтобы увидеть, что позволяет ваша видеокарта.",
+                    "The section is off — turn it on above to see what your graphics card allows."),
+    "gt.test_ask": ("Кулери й андервольт працюють у тестовому режимі: на справжніх картах їх ще перевіряють, тож "
+                    "можливі помилки драйвера, а на AMD — і аварійне закриття OptimaX. Нічого не зміниться, доки ви не "
+                    "натиснете «Застосувати», а заводські значення завжди можна повернути. Увімкнути?",
+                    "Кулеры и андервольт работают в тестовом режиме: на настоящих картах их ещё проверяют, поэтому "
+                    "возможны ошибки драйвера, а на AMD — и аварийное закрытие OptimaX. Ничего не изменится, пока вы не "
+                    "нажмёте «Применить», а заводские значения всегда можно вернуть. Включить?",
+                    "Fans & undervolt work in test mode: they are still being checked on real cards, so driver errors "
+                    "are possible, and on AMD OptimaX may even close unexpectedly. Nothing changes until you press "
+                    "Apply, and the factory values can always be restored. Turn it on?"),
+    "gt.test_on_btn": ("Увімкнути", "Включить", "Turn on"),
+    "gt.log.test_on": ("[GPU] Кулери й андервольт увімкнено (тестовий режим)",
+                       "[GPU] Кулеры и андервольт включены (тестовый режим)",
+                       "[GPU] Fans & undervolt turned on (test mode)"),
+    "gt.log.test_off": ("[GPU] Кулери й андервольт вимкнено, заводські значення повернуто",
+                        "[GPU] Кулеры и андервольт выключены, заводские значения возвращены",
+                        "[GPU] Fans & undervolt turned off, factory values restored"),
+    "wn.615.latency": ("Тест затримки системи (Hardware Center → «Затримки»): найдовші зупинки програми на кожному ядрі "
+                       "й драйвери, які затримують гру та звук, — з порадою, що з ними робити. Без драйвера.",
+                       "Тест задержки системы (Hardware Center → «Задержки»): самые долгие остановки программы на "
+                       "каждом ядре и драйверы, которые задерживают игру и звук, — с советом, что с ними делать. Без "
+                       "драйвера.",
+                       "A system latency test (Hardware Center → Latency): the longest program stalls on every core and "
+                       "the drivers that delay games and audio, with advice on what to do. No driver needed."),
+    "wn.615.gpu": ("Кулери й андервольт відеокарти NVIDIA й AMD — у тестовому режимі (вмикається в Hardware Center): "
+                   "крива вентиляторів, ліміт потужності, автопідбір андервольту з перевіркою стабільності й "
+                   "поверненням заводських значень.",
+                   "Кулеры и андервольт видеокарт NVIDIA и AMD — в тестовом режиме (включается в Hardware Center): "
+                   "кривая вентиляторов, лимит мощности, автоподбор андервольта с проверкой стабильности и возвратом "
+                   "заводских значений.",
+                   "NVIDIA and AMD graphics fans & undervolt — in test mode (turned on in Hardware Center): a fan "
+                   "curve, power limit, undervolt auto-tune with a stability check and restorable factory values."),
     "gt.title": ("Кулери й андервольт відеокарти", "Кулеры и андервольт видеокарты", "GPU fans & undervolt"),
     "gt.sub": ("Через офіційні бібліотеки драйвера (NVIDIA NVML, AMD ADLX), без драйвера ядра. Нічого не змінюється "
                "без «Застосувати»; заводські значення завжди можна повернути.",

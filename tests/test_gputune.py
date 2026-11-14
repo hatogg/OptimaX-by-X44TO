@@ -144,10 +144,11 @@ def test_crash_after_change_restores_factory_on_next_start():
 def test_start_applies_only_a_verified_profile_and_pending_clears_after_a_while():
     with _Env():
         cfg, t = Cfg(), GT.DemoTuner("amd")
-        GT.save_state(cfg, dict(profile=dict(gpu=t.key, voltage=1100), on_start=True, orig={}))
+        GT.save_state(cfg, dict(profile=dict(gpu=t.key, voltage=1100), on_start=True, orig={}, enabled=True))
         GT.SESSION.tuner = t
         assert not GT.startup(cfg)["applied"]                  # не перевірений — не застосовуємо
-        GT.save_state(cfg, dict(profile=dict(gpu=t.key, voltage=1100, verified=1), on_start=True, orig={}))
+        GT.save_state(cfg, dict(profile=dict(gpu=t.key, voltage=1100, verified=1), on_start=True, orig={},
+                                enabled=True))
         assert GT.startup(cfg)["applied"] and t.state["voltage"] == 1100
         st = GT.state(cfg)
         assert st["pending"]
@@ -158,6 +159,22 @@ def test_start_applies_only_a_verified_profile_and_pending_clears_after_a_while(
         st.pop("tuning")
         GT.save_state(cfg, st)
         assert GT.confirm_stable(cfg) and "pending" not in GT.state(cfg)
+
+
+def test_test_mode_section_is_off_until_turned_on():
+    import features as F
+    assert F.DEFAULTS["gpu_tune"]["enabled"] is False and GT.TEST_MODE
+    with _Env():
+        cfg, t = Cfg(), GT.DemoTuner("nvidia")
+        assert not GT.enabled(cfg)
+        GT.save_state(cfg, dict(profile=dict(gpu=t.key, offset=90, verified=1), on_start=True, orig={}))
+        GT.SESSION.tuner = t
+        out = GT.startup(cfg)                                   # вимкнено — нічого не застосовуємо під час запуску
+        assert not out["applied"] and out["tuner"] is None and t.state["offset"] == 0
+        st = GT.state(cfg)
+        st["enabled"] = True
+        GT.save_state(cfg, st)
+        assert GT.enabled(cfg) and GT.startup(cfg)["applied"] and t.state["offset"] == 90
 
 
 def test_rollback_from_journal_clears_active_state():

@@ -24,6 +24,23 @@ VERIFY_SECONDS = 300
 def build(page, v):
     page.gt = dict(run=None, kind="", tune=None, loading=False, started=0.0)
     c, cv = page.section(v, tr("gt.title"), tr("gt.sub"))
+    # 6.15: тестовий режим — що це означає, і перемикач; поки вимкнено, драйвер відеокарти не чіпаємо взагалі
+    page.gt_test = QWidget()
+    tv = vbox(page.gt_test, (14, 2, 14, 6), 6)
+    tb = hbox(spacing=10)
+    tb.addWidget(badge(tr("gt.test_badge"), "warn"))
+    tb.addStretch()
+    tv.addLayout(tb)
+    tv.addWidget(label(tr("gt.test_note"), "desc", wrap=True))
+    er = hbox(spacing=10)
+    page.gt_enable = Switch()
+    page.gt_enable.setChecked(GT.enabled(F.CFG))
+    page.gt_enable.toggled.connect(lambda on: _set_enabled(page, on))
+    er.addWidget(page.gt_enable)
+    er.addWidget(label(tr("gt.test_enable"), "desc", wrap=True), 1)
+    tv.addLayout(er)
+    page.gt_test.setVisible(GT.TEST_MODE)
+    cv.addWidget(page.gt_test)
     head = hbox(margins=(14, 4, 14, 2), spacing=10)
     page.gt_name = label(tr("gt.loading"), "h3", wrap=True)
     head.addWidget(page.gt_name, 1)
@@ -172,7 +189,49 @@ def build(page, v):
     page.gt_timer = QTimer(page)
     page.gt_timer.timeout.connect(lambda: _tick(page))
     _enable(page, False)
-    _load(page)
+    if GT.enabled(F.CFG):
+        _load(page)
+    else:
+        _off(page)
+
+
+def _off(page) -> None:
+    """Розділ вимкнено (тестовий режим): ні карти, ні показників, ні налаштувань."""
+    page.gt_name.setText(tr("gt.test_off"))
+    page.gt_badge.hide()
+    page.gt_live.setText("")
+    clear_layout(page.gt_caps)
+    page.gt_fan_card.hide()
+    page.gt_uv_card.hide()
+    page.gt_timer.stop()
+
+
+def _set_enabled(page, on: bool) -> None:
+    st = GT.state(F.CFG)
+    if on:
+        if not Ask.ask(page, tr("gt.test_badge"), tr("gt.test_ask"), tr("gt.test_on_btn")):
+            page.gt_enable.blockSignals(True)
+            page.gt_enable.setChecked(False)
+            page.gt_enable.blockSignals(False)
+            return
+        st["enabled"] = True
+        GT.save_state(F.CFG, st)
+        LOG.write(tr("gt.log.test_on"))
+        _load(page)
+        page.gt_timer.start(1000)
+        return
+    if page.gt.get("run"):  # спершу зупинити перевірку чи підбір
+        stop_run(page)
+    t = _tuner()
+    if t is not None and st.get("active"):  # вимикаючи розділ, не лишаємо змін, якими вже ніде керувати
+        GT.SESSION.stop_fans()
+        GT.restore_original(F.CFG, t)
+    GT.SESSION.close()
+    st = GT.state(F.CFG)
+    st.update(enabled=False, on_start=False)
+    GT.save_state(F.CFG, st)
+    LOG.write(tr("gt.log.test_off"))
+    _off(page)
 
 
 def _load(page) -> None:
@@ -189,6 +248,9 @@ def _load(page) -> None:
 
 
 def show(page) -> None:
+    if not GT.enabled(F.CFG):
+        _off(page)
+        return
     if GT.SESSION.tuner is None:
         _load(page)
     else:
@@ -198,7 +260,7 @@ def show(page) -> None:
 
 def sync(page) -> None:
     """Стан змінився поза сторінкою (запуск програми, відкат журналу)."""
-    if GT.SESSION.tuner is not None:
+    if GT.SESSION.tuner is not None and GT.enabled(F.CFG):
         _fill(page, GT.SESSION.tuner)
 
 

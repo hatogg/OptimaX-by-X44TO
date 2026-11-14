@@ -49,7 +49,8 @@ def check_hwc(st: dict) -> None:
     h = st["hwc"]
     assert h["built"] == 19, h
     g = h["gputune"]
-    assert g["name"] and g["caps"] == 5 and g["fans"], g
+    assert g["off"] == [True, False, False], ("test mode: the driver must not be touched until turned on", g)
+    assert g["enabled"] and g["name"] and g["caps"] == 5 and g["fans"], g
     nv = g["vendor"] == "nvidia"  # демо-карта AMD андервольтиться напругою, зсуву частоти в неї немає
     assert g["offset"] == (60 if nv else None) and g["reset"] == [0 if nv else None, False, False], g
     assert "°C" in g["live"], g

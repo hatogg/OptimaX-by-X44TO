@@ -441,8 +441,12 @@ hwc["latency_drivers"] = hc.lat_drv_rows.count()
 import gputune as GT  # noqa: E402
 import pages_gputune as PGT  # noqa: E402
 hc.show_section("gputune")
+pump(timeout=0.3)
+off = [GT.SESSION.tuner is None, hc.gt_fan_card.isVisible(), hc.gt_uv_card.isVisible()]  # тестовий режим: вимкнено
+hc.gt_enable.setChecked(True)  # підтвердження «тестовий режим» приймає auto_exec
 pump(lambda: GT.SESSION.tuner is not None and hc.gt_badge.isVisible(), 30)
-gt = {"name": hc.gt_name.text(), "caps": hc.gt_caps.count(), "vendor": GT.SESSION.tuner.vendor}
+gt = {"off": off, "name": hc.gt_name.text(), "caps": hc.gt_caps.count(), "vendor": GT.SESSION.tuner.vendor,
+      "enabled": GT.enabled(F.CFG)}
 hc.gt_fan_mode.select(1, True)
 hc.gt_preset.select(2, True)
 PGT.apply_fans(hc)
