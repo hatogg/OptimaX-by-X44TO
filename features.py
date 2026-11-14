@@ -9,6 +9,7 @@ import ntpath
 import os
 import subprocess
 import sys
+import threading
 import time
 
 import engine as E
@@ -95,6 +96,7 @@ class Config:
         self.problem = None
         self.save_error = None
         self._error_seen = None
+        self._lock = threading.RLock()  # 6.15: записують і фонові потоки — один .tmp, тож по черзі
         saved = self._load()
         for k, v in (saved or {}).items():
             if isinstance(v, dict) and isinstance(self.data.get(k), dict):
@@ -143,29 +145,35 @@ class Config:
         return self.data.get(k)
 
     def __setitem__(self, k, v):
-        self.data[k] = v
-        self.save()
+        with self._lock:
+            self.data[k] = v
+            self.save()
 
     def save(self) -> bool:
-        try:
-            os.makedirs(os.path.dirname(self.path), exist_ok=True)
-            tmp = self.path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(self.data, f, ensure_ascii=False, indent=1)
-                f.flush()
-                os.fsync(f.fileno())
-            if os.path.exists(self.path):
-                try:  # попередня версія — у .bak (лише цілий файл: зіпсований не витісняє добру копію)
-                    self._read(self.path)
-                    os.replace(self.path, self.bak)
-                except (OSError, ValueError):
-                    pass
-            os.replace(tmp, self.path)
-            self.save_error = None
-            return True
-        except Exception as e:  # noqa: BLE001 — налаштування не повинні валити програму, але й мовчати не мають
-            self.save_error = f"{type(e).__name__}: {e}"
-            return False
+        """6.15: по черзі (блокування) і зі знімка. Раніше два потоки, що зберігали одночасно, ділили один .tmp: один
+        переносив його на місце, а другий уже не знаходив свого — і користувач бачив «Не вдається зберегти
+        налаштування»; запис із відступами (повільний, на Python) ще й міг зловити зміну словника посеред обходу."""
+        with self._lock:
+            try:
+                os.makedirs(os.path.dirname(self.path), exist_ok=True)
+                snap = json.loads(json.dumps(self.data, ensure_ascii=False))  # одним кроком, до повільного запису
+                tmp = self.path + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(snap, f, ensure_ascii=False, indent=1)
+                    f.flush()
+                    os.fsync(f.fileno())
+                if os.path.exists(self.path):
+                    try:  # попередня версія — у .bak (лише цілий файл: зіпсований не витісняє добру копію)
+                        self._read(self.path)
+                        os.replace(self.path, self.bak)
+                    except (OSError, ValueError):
+                        pass
+                os.replace(tmp, self.path)
+                self.save_error = None
+                return True
+            except Exception as e:  # noqa: BLE001 — налаштування не повинні валити програму, але й мовчати не мають
+                self.save_error = f"{type(e).__name__}: {e}"
+                return False
 
     def take_save_error(self):
         """Нова помилка запису, про яку ще не казали користувачу (None — немає)."""

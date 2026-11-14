@@ -261,6 +261,32 @@ def test_crash_between_write_steps_uses_the_newer_tmp():
     assert c.problem == "restored" and c["theme"] == "light"
 
 
+def test_saves_from_several_threads_never_report_a_false_error():
+    """6.15 (знайдено в Release #27): два потоки, що зберігали одночасно, ділили settings.json.tmp — другий не
+    знаходив свого файла, і з'являлося «Не вдається зберегти налаштування»."""
+    import threading
+    import features as F
+    d, p, json = _cfg_dir()
+    c = F.Config(p)
+    errors = []
+
+    def writer(n):
+        for i in range(40):
+            c[f"k{n}"] = {"i": i, "pad": "x" * 2000}
+            if c.save_error:
+                errors.append(c.save_error)
+            c.data.setdefault("nested", {})[f"{n}-{i}"] = i  # зміна без збереження з іншого потоку
+    threads = [threading.Thread(target=writer, args=(n,)) for n in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not errors, errors[:3]
+    with open(p, encoding="utf-8") as f:
+        data = json.load(f)
+    assert all(data[f"k{n}"]["i"] == 39 for n in range(6)), {k: v for k, v in data.items() if k.startswith("k")}
+
+
 def test_fresh_install_is_not_a_problem_and_saves_report_errors():
     import features as F
     d, p, json = _cfg_dir()
