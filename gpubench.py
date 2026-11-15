@@ -986,7 +986,7 @@ def run_child(argv) -> int:
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(QColor(255, 255, 255, 40))
                 p.drawRoundedRect(QRectF(30, bar_y, wide - 28, 4), 2, 2)
-                p.setBrush(QColor("#7C5CFF"))
+                p.setBrush(QColor("#D92D3A"))  # 6.18: акцент OptimaX
                 p.drawRoundedRect(QRectF(30, bar_y, (wide - 28) * prog, 4), 2, 2)
                 p.setPen(QColor(255, 255, 255, 120))
                 p.setFont(font(9))

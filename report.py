@@ -110,11 +110,11 @@ def to_text(secs) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
-CSS = """body{font:14px/1.5 'Segoe UI',system-ui,sans-serif;background:#0A0C11;color:#ECEFF4;margin:0;padding:32px}
-main{max-width:900px;margin:auto}h1{font-size:24px;margin:0 0 4px}.sub{color:#9AA3B5;margin-bottom:24px}
-section{background:#12161E;border:1px solid #202734;border-radius:14px;padding:18px 22px;margin-bottom:14px}
+CSS = """body{font:14px/1.5 'Segoe UI',system-ui,sans-serif;background:#141415;color:#EDEDED;margin:0;padding:32px}
+main{max-width:900px;margin:auto}h1{font-size:24px;margin:0 0 4px}.sub{color:#A1A1A6;margin-bottom:24px}
+section{background:#19191B;border:1px solid #262629;border-radius:12px;padding:18px 22px;margin-bottom:14px}
 h2{font-size:16px;margin:0 0 10px}table{border-collapse:collapse;width:100%}td{padding:4px 0;vertical-align:top}
-td:first-child{color:#9AA3B5;width:220px}li{margin:2px 0}ul{margin:0;padding-left:18px}
+td:first-child{color:#A1A1A6;width:220px}li{margin:2px 0}ul{margin:0;padding-left:18px}
 @media print{body{background:#fff;color:#000}section{background:#fff;border-color:#ccc}}"""
 
 

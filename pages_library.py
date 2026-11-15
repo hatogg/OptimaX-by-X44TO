@@ -40,7 +40,7 @@ def placeholder(g: dict, w: int, h: int) -> QPixmap:
         if not ic.isNull():
             p.drawPixmap(int(w / 2 - 24), int(h * 0.30), ic)
     p.setPen(QColor("#FFFFFF"))
-    f = make_font(14, QFont.Weight.DemiBold)
+    f = make_font(14, QFont.Weight.Medium)
     p.setFont(f)
     flags = (Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop).value | Qt.TextFlag.TextWordWrap.value
     p.drawText(QRectF(10, h * 0.55, w - 20, h * 0.4), flags, g["name"])

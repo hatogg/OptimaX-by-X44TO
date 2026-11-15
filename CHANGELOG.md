@@ -2,6 +2,18 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [Unreleased]
+
+### Змінено
+
+- **Новий вигляд (сайт і програма).** Графітові нейтральні тони й один червоний акцент X44TO замість синьо-фіолетових градієнтів: акцент лише на основній дії, вибраному пункті й ключовому числі, стани — зеленим, жовтим і червоним, як і раніше. Без світіння й кольорових плиток іконок, підписи звичайним регістром, шрифт легший (400/500). Показники — моноширинним шрифтом з одиницями, як на приладі, а під графіками й на картці результату — риски шкали. Новий логотип: графітова плитка з червоно-світлим «X» (icon.ico, сайт). На екрані режимів основна кнопка лише в рекомендованого режиму; перемикачі — світлі, не акцентні; «безпечні» зміни позначені зеленим, а не кольором акценту.
+
+<details>
+<summary>English</summary>
+
+**New look (site and app):** graphite neutrals and a single X44TO red accent instead of blue-violet gradients — the accent marks only the primary action, the selection and the key figure; states stay green, amber and red. No glows or colored icon tiles, sentence-case labels, lighter type (400/500). Readings use a monospaced face with units, like an instrument, with scale ticks under charts and on the result card. New logo: a graphite tile with a red-and-white “X” (icon.ico, site). The modes screen has one primary button, on the recommended mode; switches are light rather than accent-colored; safe changes are marked green rather than with the accent color.
+</details>
+
 ## [6.17] — 2026-11-15
 
 Виправлення за незалежним аудитом коду: безпека, гарантія відкату, чесні результати й чесніші описи оптимізацій.

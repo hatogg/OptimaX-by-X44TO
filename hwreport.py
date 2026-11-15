@@ -100,7 +100,7 @@ def _e(v) -> str:
     return html.escape("" if v is None else str(v))
 
 
-def _svg(vals, color: str = "#5B8CFF", w: int = 520, h: int = 70) -> str:
+def _svg(vals, color: str = "#C8202E", w: int = 520, h: int = 70) -> str:
     v = [x for x in vals or [] if isinstance(x, (int, float))]
     if len(v) < 2:
         return ""
@@ -180,8 +180,8 @@ def to_html(rep: dict, for_pdf: bool = False) -> str:
                            f"</td></tr>")
             out.append("</table>")
         if not for_pdf:
-            for sk, col in (("temp", "#E0A21F"), ("gpu_temp", "#E5484D"), ("mhz", "#9B6BFF"), ("ops", "#5B8CFF"),
-                            ("fps", "#5B8CFF")):
+            for sk, col in (("temp", "#E0A21F"), ("gpu_temp", "#E5484D"), ("mhz", "#6E6E73"), ("ops", "#C8202E"),
+                            ("fps", "#C8202E")):
                 svg = _svg((r.get("series") or {}).get(sk))
                 if svg:
                     out.append(f'<div class="mute">{_e(tr("hwc.chart." + sk))}</div>{svg}')

@@ -12,7 +12,7 @@ import re
 
 from PyQt6.QtCore import (Qt, QThread, pyqtSignal, pyqtProperty, QTimer, QPropertyAnimation, QEasingCurve,
                           QRectF, QPointF, QSize, QObject, QRect, QPoint)
-from PyQt6.QtGui import (QColor, QPainter, QPen, QIcon, QPixmap, QPainterPath, QFont, QLinearGradient, QPalette)
+from PyQt6.QtGui import (QColor, QPainter, QPen, QIcon, QPixmap, QPainterPath, QFont, QPalette)
 from PyQt6.QtWidgets import (QWidget, QFrame, QLabel, QPushButton, QAbstractButton, QHBoxLayout, QVBoxLayout,
                              QScrollArea, QPlainTextEdit, QProgressBar, QDialog, QGraphicsOpacityEffect, QSizePolicy,
                              QLayout)
@@ -36,28 +36,31 @@ def asset(name: str):
 # ───────────────────────── тема ─────────────────────────
 # Дві палітри з однаковими ключами. Кожен колір унікальний у межах обох палітр (і не #FFFFFF / #000000): так
 # перемикання теми наживо може перефарбувати навіть рядки стилів, де колір уже підставлено (remap_hex).
+# 6.18: графіт + один червоний акцент X44TO (unslop). Поверхні, лінії й текст — нейтральні; колір мають лише акцент
+# (основна дія, вибране, ключове число) і стани ok / warn / bad. acc — заливка під білим текстом, acc_fh — її наведення,
+# acc_h — червоний як текст чи лінія на тлі теми. acc2, dim — нейтральні тони для другорядних рядів даних.
 THEMES = {
     "dark": {
-        "bg": "#060A13", "side": "#090E1A", "surf": "#0E1524", "surf2": "#131C2F", "hover": "#1A2440",
-        "line": "#19223A", "line2": "#243052", "line3": "#33416A",
-        "text": "#E9EFFA", "sub": "#93A0BA", "mute": "#5D6984",
-        "acc": "#3B82FF", "acc_h": "#6AA1FF", "acc2": "#8B5CF6", "acc2_h": "#A783FA", "acc_bg": "#10203F",
-        "acc_line": "#21407F", "acc2_bg": "#1A1438",
-        "ok": "#2FE5A7", "ok_bg": "#0A2620", "ok_line": "#165440", "ok_hover": "#0F3329",
-        "warn": "#FFB443", "warn_bg": "#291E0B", "warn_line": "#5A4113",
-        "bad": "#FF5A73", "bad_h": "#FF7C90", "bad_bg": "#2B101A", "bad_line": "#5B2033",
-        "logbg": "#04070E", "pink": "#D17BF5", "cyan": "#36C8F5", "knob": "#C3CAD6", "shade": "#010309",
+        "bg": "#141415", "side": "#0F0F10", "surf": "#19191B", "surf2": "#202022", "hover": "#29292C",
+        "line": "#262629", "line2": "#323236", "line3": "#46464B",
+        "text": "#EDEDED", "sub": "#A1A1A6", "mute": "#85858B",
+        "acc": "#D92D3A", "acc_h": "#FF6B73", "acc_fh": "#E5404C", "acc_line": "#5C2A2F",
+        "acc2": "#B5B5BB",
+        "ok": "#4CC38A", "ok_bg": "#12221A", "ok_line": "#24503A", "ok_hover": "#183024",
+        "warn": "#E5A54B", "warn_bg": "#261E12", "warn_line": "#52401F",
+        "bad": "#F0606E", "bad_h": "#F47F8A", "bad_bg": "#2B1518", "bad_line": "#5A262D",
+        "logbg": "#0B0B0C", "dim": "#C2C2C7", "knob": "#D6D6DA", "shade": "#050506",
     },
     "light": {
-        "bg": "#EDF1F8", "side": "#F6F8FC", "surf": "#FDFDFF", "surf2": "#F3F6FB", "hover": "#E8EDF6",
-        "line": "#DDE4EF", "line2": "#CBD4E3", "line3": "#B0BCD0",
-        "text": "#0D1424", "sub": "#4D5970", "mute": "#8892A7",
-        "acc": "#2563EB", "acc_h": "#1D4FD0", "acc2": "#7C3AED", "acc2_h": "#6928D9", "acc_bg": "#E4ECFE",
-        "acc_line": "#B5C9FB", "acc2_bg": "#EFE7FE",
-        "ok": "#0B9F6E", "ok_bg": "#E0F5EC", "ok_line": "#A3DEC6", "ok_hover": "#CDEEDF",
-        "warn": "#B86E00", "warn_bg": "#FFF2DB", "warn_line": "#EFCD92",
-        "bad": "#DC2F4A", "bad_h": "#E84A62", "bad_bg": "#FCE6EA", "bad_line": "#F2B3BE",
-        "logbg": "#F4F6FA", "pink": "#A94BD6", "cyan": "#0A8FBF", "knob": "#FCFCFE", "shade": "#22314F",
+        "bg": "#F2F2F3", "side": "#F8F8F9", "surf": "#FEFEFE", "surf2": "#F5F5F6", "hover": "#EAEAEC",
+        "line": "#E3E3E6", "line2": "#D4D4D8", "line3": "#B9B9BF",
+        "text": "#171717", "sub": "#525252", "mute": "#6E6E73",
+        "acc": "#C8202E", "acc_h": "#A51C28", "acc_fh": "#B01C29", "acc_line": "#EFB8BD",
+        "acc2": "#4A4A52",
+        "ok": "#16A34A", "ok_bg": "#E7F5EC", "ok_line": "#A8DBB8", "ok_hover": "#D4EDDD",
+        "warn": "#B4690E", "warn_bg": "#FBF1E0", "warn_line": "#E8CC98",
+        "bad": "#DC2626", "bad_h": "#E54848", "bad_bg": "#FCE9E9", "bad_line": "#F2B6B6",
+        "logbg": "#F7F7F8", "dim": "#5E5E66", "knob": "#FCFCFD", "shade": "#26262A",
     },
 }
 T = dict(THEMES["dark"])  # поточна палітра; змінюється на місці (set_theme), тож `from ui_kit import T` бачить нову
@@ -81,7 +84,8 @@ def qc(key: str, alpha: int = 255) -> QColor:
     return c
 
 
-IMPACT_COLOR = {"habits": "bad", "medium": "warn", "safe": "acc"}
+MONO_CSS = "font-family: 'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace;"  # 6.18: цифри як на приладі
+IMPACT_COLOR = {"habits": "bad", "medium": "warn", "safe": "ok"}  # 6.18: червоний — акцент, «безпечно» — зелений
 
 QSS = """
 QWidget { color: @text; }
@@ -89,39 +93,39 @@ QWidget#root, QWidget#page, QDialog { background: @bg; }
 QFrame#side { background: @side; border-right: 1px solid @line; }
 QWidget#sideNav { background: transparent; }
 QLabel { background: transparent; }
-QLabel#display { font-size: 28px; font-weight: 700; }
-QLabel#hero { font-size: 46px; font-weight: 700; }
-QLabel#h1 { font-size: 26px; font-weight: 700; }
-QLabel#h2 { font-size: 16px; font-weight: 600; }
-QLabel#h3 { font-size: 14px; font-weight: 600; }
-QLabel#brand { font-size: 16px; font-weight: 700; }
+QLabel#display { font-size: 28px; font-weight: 500; }
+QLabel#hero { font-family: 'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace; font-size: 46px;
+              font-weight: 500; }
+QLabel#h1 { font-size: 26px; font-weight: 500; }
+QLabel#h2 { font-size: 16px; font-weight: 500; }
+QLabel#h3 { font-size: 14px; font-weight: 500; }
+QLabel#brand { font-size: 16px; font-weight: 500; }
 QLabel#sub { color: @sub; font-size: 13px; }
 QLabel#desc { color: @sub; font-size: 12px; }
 QLabel#muted { color: @mute; font-size: 12px; }
-QLabel#micro { color: @mute; font-size: 10px; font-weight: 700; letter-spacing: 1px; }
+QLabel#micro { color: @mute; font-size: 12px; }
 QLabel#navcap { color: @mute; font-size: 11px; padding: 8px 14px 3px 14px; }
 QLabel#rowTitle { font-size: 14px; }
-QLabel#value { font-size: 15px; font-weight: 600; }
-QLabel#big { font-size: 26px; font-weight: 700; }
-QLabel#mono { font-family: 'Cascadia Mono', Consolas, monospace; color: @sub; font-size: 11px;
+QLabel#value { font-size: 15px; font-weight: 500; }
+QLabel#big { font-size: 22px; font-weight: 500; }
+QLabel#mono { font-family: 'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace; color: @sub; font-size: 11px;
               background: @logbg; border: 1px solid @line; border-radius: 8px; padding: 8px 10px; }
 QLabel#note { background: @surf; border: 1px solid @line; border-radius: 10px; padding: 10px 14px;
               color: @sub; font-size: 12px; }
 QLabel#warnNote { color: @warn; font-size: 12px; padding: 8px 14px 4px 14px; }
 QLabel#stepNum { background: @surf2; border: 1px solid @line2; border-radius: 12px; color: @sub;
-                 font-size: 12px; font-weight: 600; }
+                 font-size: 12px; }
 
 QFrame#card { background: @surf; border: 1px solid @line; border-radius: 16px; }
 QFrame#card:hover { border-color: @line2; }
-QFrame#cardAccent { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 @acc_bg, stop:0.55 @surf, stop:1 @acc2_bg);
-                    border: 1px solid @acc_line; border-radius: 18px; }
-QFrame#glass { background: @surf; border: 1px solid @line2; border-radius: 20px; }
+QFrame#cardAccent { background: @surf; border: 1px solid @line2; border-radius: 16px; }
+QFrame#glass { background: @surf; border: 1px solid @line2; border-radius: 16px; }
 QFrame#row { background: transparent; border-radius: 10px; }
 QFrame#row:hover { background: @surf2; }
 QFrame#bar { background: @side; border-top: 1px solid @line; }
 QFrame#banner { background: @bad_bg; border: 1px solid @bad_line; border-radius: 14px; }
 QFrame#bannerWarn { background: @warn_bg; border: 1px solid @warn_line; border-radius: 14px; }
-QFrame#bannerInfo { background: @acc_bg; border: 1px solid @acc_line; border-radius: 14px; }
+QFrame#bannerInfo { background: @surf2; border: 1px solid @line2; border-radius: 14px; }
 QFrame#toast { background: @surf2; border: 1px solid @line3; border-radius: 14px; }
 QFrame#segbar { background: @surf; border: 1px solid @line; border-radius: 12px; }
 
@@ -129,41 +133,42 @@ QPushButton { background: @surf2; border: 1px solid @line2; border-radius: 10px;
 QPushButton:hover { background: @hover; border-color: @line3; }
 QPushButton:pressed { background: @surf; }
 QPushButton:disabled { color: @mute; background: @surf; border-color: @line; }
-QPushButton:focus { border-color: @acc; }
-QPushButton#primary { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 @acc, stop:1 @acc2); border: none;
-                      color: #FFFFFF; font-weight: 600; padding: 10px 22px; border-radius: 12px; }
-QPushButton#primary:hover { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 @acc_h, stop:1 @acc2_h); }
+QPushButton:focus { border-color: @acc_h; }
+QPushButton#primary { background: @acc; border: none; color: #FFFFFF; font-weight: 500; padding: 10px 22px;
+                      border-radius: 10px; }
+QPushButton#primary:hover { background: @acc_fh; }
 QPushButton#primary:pressed { background: @acc; }
 QPushButton#primary:disabled { background: @surf2; color: @mute; }
-QPushButton#danger { background: @bad; border: 1px solid @bad; color: #FFFFFF; font-weight: 600; padding: 10px 22px;
-                     border-radius: 12px; }
+QPushButton#danger { background: @bad; border: 1px solid @bad; color: #FFFFFF; font-weight: 500; padding: 10px 22px;
+                     border-radius: 10px; }
 QPushButton#danger:hover { background: @bad_h; border-color: @bad_h; }
-QPushButton#good { background: @ok_bg; border: 1px solid @ok_line; color: @ok; padding: 10px 20px; border-radius: 12px; }
+QPushButton#good { background: @ok_bg; border: 1px solid @ok_line; color: @ok; padding: 10px 20px;
+                   border-radius: 10px; }
 QPushButton#good:hover { background: @ok_hover; border-color: @ok; }
 QPushButton#good:disabled { color: @mute; background: @surf; border-color: @line; }
-QPushButton#ghost { background: transparent; border: none; color: @acc; padding: 4px 8px; }
-QPushButton#ghost:hover { color: @acc_h; }
+QPushButton#ghost { background: transparent; border: none; color: @sub; padding: 4px 8px; }
+QPushButton#ghost:hover { color: @text; }
 QPushButton#ghost:disabled { color: @mute; }
-QPushButton#sideUpd { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 @acc, stop:1 @acc2); border: none;
-                      color: #FFFFFF; font-weight: 600; padding: 8px 12px; border-radius: 10px; text-align: left; }
-QPushButton#sideUpd:hover { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 @acc_h, stop:1 @acc2_h); }
+QPushButton#sideUpd { background: @acc; border: none; color: #FFFFFF; font-weight: 500; padding: 8px 12px;
+                      border-radius: 10px; text-align: left; }
+QPushButton#sideUpd:hover { background: @acc_fh; }
 QPushButton#nav { text-align: left; background: transparent; border: none; border-radius: 10px;
                   padding: 7px 14px; color: @sub; font-size: 14px; }
 QPushButton#nav:hover { background: @surf; color: @text; }
-QPushButton#nav:checked { background: @acc_bg; color: @text; font-weight: 600; }
-QPushButton#seg { background: transparent; border: none; border-radius: 9px; padding: 7px 18px; color: @sub;
-                  font-weight: 600; }
+QPushButton#nav:checked { background: @surf2; color: @text; font-weight: 500; }
+QPushButton#seg { background: transparent; border: none; border-radius: 8px; padding: 7px 18px; color: @sub;
+                  font-weight: 500; }
 QPushButton#seg:hover { color: @text; }
-QPushButton#seg:checked { background: @acc; color: #FFFFFF; }
-QPushButton#chip { background: transparent; border: 1px solid @line2; border-radius: 15px; padding: 5px 13px;
+QPushButton#seg:checked { background: @hover; color: @text; }
+QPushButton#chip { background: transparent; border: 1px solid @line2; border-radius: 8px; padding: 5px 12px;
                    color: @sub; font-size: 12px; }
 QPushButton#chip:hover { color: @text; border-color: @line3; }
-QPushButton#chip:checked { background: @acc_bg; border-color: @acc; color: @text; }
+QPushButton#chip:checked { background: @hover; border-color: @line3; color: @text; }
 
 QLineEdit, QSpinBox, QComboBox { background: @surf; border: 1px solid @line2; border-radius: 10px; padding: 7px 10px;
                                  selection-background-color: @acc; selection-color: #FFFFFF; }
-QLineEdit:focus, QSpinBox:focus, QComboBox:focus { border-color: @acc; }
-QComboBox QAbstractItemView { background: @surf2; border: 1px solid @line2; selection-background-color: @acc_bg; }
+QLineEdit:focus, QSpinBox:focus, QComboBox:focus { border-color: @acc_h; }
+QComboBox QAbstractItemView { background: @surf2; border: 1px solid @line2; selection-background-color: @hover; }
 
 QScrollArea { border: none; background: transparent; }
 QScrollBar:vertical { background: transparent; width: 10px; margin: 2px; }
@@ -176,17 +181,17 @@ QScrollBar::handle:horizontal { background: @line2; border-radius: 3px; min-widt
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
 
 QPlainTextEdit#log { background: @logbg; border: 1px solid @line; border-radius: 14px; padding: 8px 10px;
-                     color: @sub; selection-background-color: @acc_bg; }
+                     color: @sub; selection-background-color: @hover; }
 QProgressBar { background: @surf2; border: none; border-radius: 4px; }
 QProgressBar#sizebar { background: @surf2; border-radius: 3px; }
 QProgressBar#sizebar::chunk { background: @acc; border-radius: 3px; }
-QProgressBar::chunk { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 @acc, stop:1 @acc2); border-radius: 4px; }
+QProgressBar::chunk { background: @acc; border-radius: 4px; }
 QSlider::groove:horizontal { height: 4px; background: @line2; border-radius: 2px; }
 QSlider::handle:horizontal { background: @text; width: 14px; height: 14px; margin: -5px 0; border-radius: 7px; }
 QToolTip { background: @surf2; color: @text; border: 1px solid @line2; padding: 6px 8px; }
 QMenu { background: @surf2; border: 1px solid @line2; padding: 6px; }
 QMenu::item { padding: 7px 18px; border-radius: 6px; }
-QMenu::item:selected { background: @acc_bg; }
+QMenu::item:selected { background: @hover; }
 QMenu::separator { height: 1px; background: @line2; margin: 4px 8px; }
 """
 
@@ -566,7 +571,7 @@ def icon_pixmap(name: str, color: str, size: int = 20) -> QPixmap:
 def nav_icon(name: str) -> QIcon:
     ic = QIcon()
     ic.addPixmap(icon_pixmap(name, T["sub"]), QIcon.Mode.Normal, QIcon.State.Off)
-    ic.addPixmap(icon_pixmap(name, T["acc_h"]), QIcon.Mode.Normal, QIcon.State.On)
+    ic.addPixmap(icon_pixmap(name, T["text"]), QIcon.Mode.Normal, QIcon.State.On)
     return ic
 
 
@@ -579,19 +584,17 @@ def logo_pixmap(size: int = 40) -> QPixmap:
                            Qt.TransformationMode.SmoothTransformation)
             pm.setDevicePixelRatio(2)
             return pm
+    # 6.18: графітова плитка, «X» з червоної (задньої) і світлої (передньої) риски — як icon.ico і логотип сайту
     pm, p = _canvas(size)
-    g = QLinearGradient(0, 0, size, size)
-    g.setColorAt(0, QColor(T["acc"]))
-    g.setColorAt(1, QColor(T["acc2"]))
-    p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(g)
-    p.drawRoundedRect(QRectF(0, 0, size, size), size * 0.26, size * 0.26)
-    pen = QPen(QColor(255, 255, 255, 150), size * 0.13)
+    p.setPen(QPen(QColor(255, 255, 255, 26), max(1.0, size / 64)))
+    p.setBrush(QColor(35, 35, 37))
+    p.drawRoundedRect(QRectF(0.5, 0.5, size - 1, size - 1), size * 0.24, size * 0.24)
+    pen = QPen(QColor(217, 45, 58), size * 0.125)
     pen.setCapStyle(Qt.PenCapStyle.RoundCap)
     p.setPen(pen)
     a, b = size * 0.31, size * 0.69
     p.drawLine(QPointF(b, a), QPointF(a, b))
-    pen.setColor(QColor("#FFFFFF"))
+    pen.setColor(QColor(237, 237, 237))
     p.setPen(pen)
     p.drawLine(QPointF(a, a), QPointF(b, b))
     p.end()
@@ -647,7 +650,7 @@ def hbox(w: QWidget = None, margins=(0, 0, 0, 0), spacing: int = 0) -> QHBoxLayo
 
 
 BADGE = {
-    "muted": ("sub", "surf2", "line2"), "acc": ("acc_h", "acc_bg", "acc_line"), "ok": ("ok", "ok_bg", "ok_line"),
+    "muted": ("sub", "surf2", "line2"), "acc": ("text", "surf2", "line3"), "ok": ("ok", "ok_bg", "ok_line"),
     "warn": ("warn", "warn_bg", "warn_line"), "bad": ("bad", "bad_bg", "bad_line"),
 }
 
@@ -655,7 +658,7 @@ BADGE = {
 def style_badge(lb: QLabel, text: str, kind: str) -> QLabel:
     fg, bg, bd = (T[k] for k in BADGE.get(kind, BADGE["muted"]))
     lb.setText(text)
-    lb.setStyleSheet(f"color:{fg};background:{bg};border:1px solid {bd};border-radius:9px;"
+    lb.setStyleSheet(f"color:{fg};background:{bg};border:1px solid {bd};border-radius:6px;"
                      f"padding:1px 8px;font-size:11px;")
     return lb
 
@@ -803,7 +806,7 @@ class Switch(QAbstractButton):
         self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.setFixedSize(42, 24)
         self._k = 0.0
-        self._c = QColor(color or T["acc"])
+        self._c = QColor(color or T["text"])  # 6.18: увімкнено — світла доріжка з темною кулькою, без акценту
         self._a = QPropertyAnimation(self, b"knob", self)
         self._a.setDuration(150)
         self._a.setEasingCurve(QEasingCurve.Type.OutCubic)
@@ -850,7 +853,7 @@ class Switch(QAbstractButton):
         if not is_dark():  # на світлому тлі біла кулька без тіні губиться
             p.setBrush(QColor(0, 0, 0, 28))
             p.drawEllipse(QRectF(x, r.top() + 3.8, d, d))
-        p.setBrush(mix(QColor(T["knob"]), QColor("#FFFFFF"), self._k))
+        p.setBrush(mix(QColor(T["knob"]), QColor(T["bg"]), self._k))
         p.drawEllipse(QRectF(x, r.top() + 3, d, d))
         if self.hasFocus():
             p.setPen(QPen(QColor(T["acc_h"]), 1.4))
@@ -930,17 +933,11 @@ class Ring(QWidget):
         p.setPen(pen)
         p.drawArc(r, 0, 360 * 16)
         if self._v > 0.004:
-            glow = QColor(self.c)
-            glow.setAlpha(46)
-            gp = QPen(glow, w + 5)
-            gp.setCapStyle(Qt.PenCapStyle.RoundCap)
-            p.setPen(gp)
-            p.drawArc(r, 90 * 16, -int(self._v * 360 * 16))
             pen.setColor(self.c)
             p.setPen(pen)
             p.drawArc(r, 90 * 16, -int(self._v * 360 * 16))
         p.setPen(QColor(T["text"]))
-        p.setFont(make_font(self.font_px, QFont.Weight.DemiBold))
+        p.setFont(make_font(self.font_px, QFont.Weight.Medium, mono=self.text is None))
         p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.text or f"{round(self._v * 100)}%")
 
 
@@ -1039,9 +1036,8 @@ class Bars(QWidget):
                        f"{max(0.0, hi - hi * k / 3):.0f}")
         n = len(self.data)
         bw = w / n
-        allowed = QColor(T["acc"])
-        allowed.setAlpha(95)
-        blocked = QColor(T["acc2"])
+        allowed = QColor(T["line3"])  # 6.18: головне на графіку — заблоковане (акцент), решта запитів нейтральна
+        blocked = QColor(T["acc"])
         for i, (slot, total, blk) in enumerate(self.data):
             x = pad_l + i * bw
             p.setPen(Qt.PenStyle.NoPen)
@@ -1097,9 +1093,9 @@ class ProfileCard(QAbstractButton):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         r = QRectF(self.rect()).adjusted(0.75, 0.75, -0.75, -0.75)
         bg = QColor(T["surf2"] if self._hover else T["surf"])
-        if self.active:
-            bg = mix(bg, self.c, 0.13)
-            p.setPen(QPen(self.c, 1.5))
+        if self.active:  # 6.18: вибране — акцентна рамка; колір профілю лишається лише в рисці зліва
+            bg = QColor(T["surf2"])
+            p.setPen(QPen(QColor(T["acc_h"]), 1.5))
         else:
             p.setPen(QPen(QColor(T["line2"] if self._hover or self.hasFocus() else T["line"]), 1))
         p.setBrush(bg)
@@ -1108,16 +1104,16 @@ class ProfileCard(QAbstractButton):
         p.setBrush(self.c)
         p.drawRoundedRect(QRectF(14, 16, 4, r.height() - 32), 2, 2)
         p.setPen(QColor(T["text"]))
-        p.setFont(make_font(14, QFont.Weight.DemiBold))
+        p.setFont(make_font(14, QFont.Weight.Medium))
         p.drawText(QRectF(28, 13, r.width() - 34, 22), Qt.AlignmentFlag.AlignVCenter,
                    tr(f"prof.{self.pd['key']}.name"))
-        p.setPen(self.c if self.active else QColor(T["sub"]))
+        p.setPen(QColor(T["text"] if self.active else T["sub"]))
         p.setFont(make_font(12))
         p.drawText(QRectF(28, 35, r.width() - 34, 18), Qt.AlignmentFlag.AlignVCenter,
                    tr(f"prof.{self.pd['key']}.sub"))
         if self.recommended:
             p.setPen(QColor(T["ok"]))
-            p.setFont(make_font(11, QFont.Weight.DemiBold))
+            p.setFont(make_font(11, QFont.Weight.Medium))
             p.drawText(QRectF(28, 53, r.width() - 34, 16), Qt.AlignmentFlag.AlignVCenter, tr("opt.recommended"))
 
 
@@ -1150,9 +1146,9 @@ class OptionCard(QAbstractButton):
         r = QRectF(self.rect()).adjusted(0.75, 0.75, -0.75, -0.75)
         on = self.isChecked()
         acc = QColor(T["acc"])
-        p.setPen(QPen(acc if on else QColor(T["line2"] if self._hover or self.hasFocus() else T["line"]),
-                      1.5 if on else 1))
-        p.setBrush(mix(QColor(T["surf2"] if self._hover else T["surf"]), acc, 0.10 if on else 0))
+        p.setPen(QPen(QColor(T["line3"]) if on else QColor(T["line2"] if self._hover or self.hasFocus() else T["line"]),
+                      1))
+        p.setBrush(QColor(T["surf2"] if self._hover or on else T["surf"]))
         p.drawRoundedRect(r, 12, 12)
         cx, cy = 26, r.center().y()
         if self.multi:
@@ -1176,7 +1172,7 @@ class OptionCard(QAbstractButton):
                 p.setBrush(acc)
                 p.drawEllipse(QPointF(cx, cy), 5, 5)
         p.setPen(QColor(T["text"]))
-        p.setFont(make_font(14, QFont.Weight.DemiBold))
+        p.setFont(make_font(14, QFont.Weight.Medium))
         p.drawText(QRectF(50, 12, r.width() - 64, 22), Qt.AlignmentFlag.AlignVCenter, self.title)
         p.setPen(QColor(T["sub"]))
         p.setFont(make_font(12))

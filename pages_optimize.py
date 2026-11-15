@@ -369,8 +369,8 @@ class ModeCard(QFrame):
         v.addWidget(self.count)
         v.addStretch()
         b = hbox(spacing=8)
-        self.btn = button(tr("mode.open_expert") if mode == "manual" else tr("mode.view"),
-                          "primary" if mode != "manual" else None, lambda: view.choose(mode))
+        self.btn = button(tr("mode.open_expert") if mode == "manual" else tr("mode.view"), None,
+                          lambda: view.choose(mode))
         b.addWidget(self.btn)
         self.btn_why = button("", "ghost", lambda: view.show_why(mode))
         self.btn_why.hide()
@@ -380,6 +380,10 @@ class ModeCard(QFrame):
 
     def set_plan(self, p: dict, recommended: bool):
         self.rec.setVisible(recommended)
+        # 6.18: одна основна (червона) кнопка на екрані — у рекомендованого режиму, решта — звичайні
+        self.btn.setObjectName("primary" if recommended and self.mode != "manual" else "")
+        self.btn.style().unpolish(self.btn)
+        self.btn.style().polish(self.btn)
         if self.mode == "manual":
             self.count.setText(tr("mode.manual.count"))
             return
@@ -833,13 +837,22 @@ class Tile(QFrame):
         v = vbox(spacing=3)
         v.addStretch()
         self.big = label("—", "big") if not ring_color else None
-        if self.big:
-            v.addWidget(self.big)
+        if self.big:  # 6.18: значення — основним кольором, стан — крапкою поруч (а не жирним кольоровим словом)
+            bh = hbox(spacing=8)
+            self.state = QLabel()
+            self.state.setFixedSize(8, 8)
+            bh.addWidget(self.state, 0, Qt.AlignmentFlag.AlignVCenter)
+            bh.addWidget(self.big, 1)
+            v.addLayout(bh)
         v.addWidget(label(caption, "h3", wrap=True))
         self.sub = label("", "desc", wrap=True)
         v.addWidget(self.sub)
         v.addStretch()
         h.addLayout(v, 1)
+
+    def set_state(self, text: str, color: str) -> None:
+        self.big.setText(text)
+        self.state.setStyleSheet(f"background:{color};border-radius:4px;")
 
 
 class StatMini(QFrame):
@@ -976,7 +989,7 @@ class HomePage(QWidget):
         top = hbox(spacing=26)
         sc = vbox(spacing=6)
         cap = hbox(spacing=8)
-        cap.addWidget(label(tr("dash.score").upper(), "micro"))
+        cap.addWidget(label(tr("dash.score"), "micro"))
         cap.addStretch()
         self.btn_how = button(tr("dash.how"), "ghost", self.explain_score)
         cap.addWidget(self.btn_how)
@@ -1009,7 +1022,7 @@ class HomePage(QWidget):
         top.addLayout(sc, 3)
         rd = vbox(spacing=4)
         rcap = hbox(spacing=8)
-        rcap.addWidget(label(tr("dash.profile").upper(), "micro"))
+        rcap.addWidget(label(tr("dash.profile"), "micro"))
         rcap.addStretch()
         self.radar_dot = QLabel()
         self.radar_dot.setFixedSize(8, 8)
@@ -1033,15 +1046,15 @@ class HomePage(QWidget):
         # швидкі дії
         self.quick_box = QWidget()
         qv = vbox(self.quick_box, spacing=10)
-        qv.addWidget(label(tr("dash.quick").upper(), "micro"))
+        qv.addWidget(label(tr("dash.quick"), "micro"))
         qh = hbox(spacing=12)
-        self.q_mem = UM.ActionTile("ram", tr("dash.q.mem"), tr("dash.q.mem_d"), "ok")
+        self.q_mem = UM.ActionTile("ram", tr("dash.q.mem"), tr("dash.q.mem_d"))
         self.q_mem.clicked.connect(lambda: main.free_memory())
-        self.q_clean = UM.ActionTile("broom", tr("dash.q.clean"), tr("dash.q.clean_d"), "acc")
+        self.q_clean = UM.ActionTile("broom", tr("dash.q.clean"), tr("dash.q.clean_d"))
         self.q_clean.clicked.connect(lambda: main.go("cleanup"))
-        self.q_boost = UM.ActionTile("rocket", tr("g.btn_on"), tr("dash.q.boost_d"), "pink")
+        self.q_boost = UM.ActionTile("rocket", tr("g.btn_on"), tr("dash.q.boost_d"))
         self.q_boost.clicked.connect(main.toggle_booster)
-        self.q_lag = UM.ActionTile("gauge", tr("dash.q.lag"), tr("dash.q.lag_d"), "warn")
+        self.q_lag = UM.ActionTile("gauge", tr("dash.q.lag"), tr("dash.q.lag_d"))
         self.q_lag.clicked.connect(lambda: main.go("diagnose"))
         for t in (self.q_mem, self.q_clean, self.q_boost, self.q_lag):
             t.setText(t.title)
@@ -1055,14 +1068,14 @@ class HomePage(QWidget):
         self.live_dot = QLabel()
         self.live_dot.setFixedSize(8, 8)
         live.addWidget(self.live_dot)
-        live.addWidget(label(tr("dash.live").upper(), "micro"))
+        live.addWidget(label(tr("dash.live"), "micro"))
         live.addStretch()
         lv.addLayout(live)
         stats = hbox(spacing=12)
-        self.s_cpu = UM.MetricTile("chip", tr("home.cpu"), "acc")
-        self.s_ram = UM.MetricTile("ram", tr("home.ram"), "pink")
-        self.s_disk = UM.MetricTile("disk", tr("home.disk"), "cyan")
-        self.s_gpu = UM.MetricTile("thermo", tr("home.gpu_temp"), "ok", "°C")
+        self.s_cpu = UM.MetricTile("chip", tr("home.cpu"))
+        self.s_ram = UM.MetricTile("ram", tr("home.ram"))
+        self.s_disk = UM.MetricTile("disk", tr("home.disk"))
+        self.s_gpu = UM.MetricTile("thermo", tr("home.gpu_temp"), unit="°C")
         for s_ in (self.s_cpu, self.s_ram, self.s_disk, self.s_gpu):
             stats.addWidget(s_)
         lv.addLayout(stats)
@@ -1073,7 +1086,7 @@ class HomePage(QWidget):
         av2 = vbox(self.adv, spacing=16)
         v.addWidget(self.adv)
         v = av2
-        v.addWidget(label(tr("home.choose_path").upper(), "micro"))
+        v.addWidget(label(tr("home.choose_path"), "micro"))
         paths = hbox(spacing=14)
         self.path_icons = []
         for key, ico, cb, obj in (("wizard", "wand", main.open_wizard, "primary"),
@@ -1179,9 +1192,9 @@ class HomePage(QWidget):
 
     def retheme(self):
         for ic, name in self.path_icons:
-            ic.setPixmap(icon_pixmap(name, T["acc_h"] if UKX.is_dark() else T["acc"], 24))
-            ic.setStyleSheet(f"background:{T['acc_bg']};border-radius:12px;")
-        self.radar_dot.setStyleSheet(f"background:{T['acc']};border-radius:4px;")
+            ic.setPixmap(icon_pixmap(name, T["sub"], 20))
+            ic.setStyleSheet(f"background:{T['surf2']};border:1px solid {T['line']};border-radius:8px;")
+        self.radar_dot.setStyleSheet(f"background:{T['acc_h']};border-radius:4px;")
         self.live_dot.setStyleSheet(f"background:{T['ok']};border-radius:4px;")
 
     def explain_score(self):
@@ -1246,7 +1259,7 @@ class HomePage(QWidget):
                         tr("home.ram_d", used=f"{s['ram'] * s['ram_total']:.1f}", total=f"{s['ram_total']:.0f}"))
         if s["disk_total"]:
             frac = 1 - s["disk_free"] / s["disk_total"]
-            self.s_disk.set_color("warn" if frac >= 0.9 else "cyan")
+            self.s_disk.set_color("warn" if frac >= 0.9 else "dim")
             self.s_disk.push(frac * 100, frac, tr("home.disk_d", free=f"{s['disk_free']:.0f}"))
         self.update_booster()
         self.blink ^= 1
@@ -1258,7 +1271,7 @@ class HomePage(QWidget):
             self.s_gpu.num.setText("—")
             self.s_gpu.detail.setText(tr("home.gpu_na"))
         else:
-            self.s_gpu.set_color("ok" if t < 70 else "warn" if t < 83 else "bad")
+            self.s_gpu.set_color("dim" if t < 70 else "warn" if t < 83 else "bad")
             self.s_gpu.push(t, t / 100, tr("home.gpu_d"))
 
     def update_booster(self):
@@ -1295,12 +1308,10 @@ class HomePage(QWidget):
         self.t_opt.sub.setText(tr("home.opt_sub", n=an["left"]))
         self.t_priv.ring.set_value(an["privacy"] / 100)
         self.t_priv.sub.setText(tr("home.privacy_sub"))
-        col = {"high": T["warn"], "mid": T["acc_h"], "low": T["ok"]}[an["potential"]]
-        self.t_pot.big.setText(tr(f"home.pot.{an['potential']}"))
-        self.t_pot.big.setStyleSheet(f"color:{col};")
+        col = {"high": T["warn"], "mid": T["mute"], "low": T["ok"]}[an["potential"]]
+        self.t_pot.set_state(tr(f"home.pot.{an['potential']}"), col)
         self.t_pot.sub.setText(tr("home.pot_sub", n=an["left"]))
-        self.t_neck.big.setText(tr(f"neck.{an['neck']}"))
-        self.t_neck.big.setStyleSheet(f"color:{T['ok'] if an['neck'] == 'none' else T['warn']};")
+        self.t_neck.set_state(tr(f"neck.{an['neck']}"), T["ok"] if an["neck"] == "none" else T["warn"])
         self.t_neck.sub.setText(tr(f"neck.{an['neck']}.d"))
         prof = hw.get("profile", "M")
         self.rec_label.setText(tr("home.rec", prof=E.profile_name(prof)))

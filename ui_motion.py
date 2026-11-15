@@ -13,8 +13,7 @@ import math
 
 from PyQt6.QtCore import (Qt, QTimer, QVariantAnimation, QEasingCurve, QRectF, QPointF, QPoint, QRect, QSize,
                           pyqtSignal, QEventLoop)
-from PyQt6.QtGui import (QColor, QPainter, QPen, QPainterPath, QFont, QLinearGradient, QRadialGradient, QPixmap,
-                         QConicalGradient)
+from PyQt6.QtGui import QColor, QPainter, QPen, QPainterPath, QFont, QLinearGradient, QPixmap, QConicalGradient
 from PyQt6.QtWidgets import (QWidget, QFrame, QStackedWidget, QAbstractButton, QGraphicsOpacityEffect, QLabel,
                              QSizePolicy, QApplication)
 
@@ -176,25 +175,16 @@ class Brand(_RailPart):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         cy = self.height() / 2
-        # світіння за логотипом
-        g = QRadialGradient(QPointF(26, cy), 30)
-        g.setColorAt(0, qc("acc", 70 if UK.is_dark() else 40))
-        g.setColorAt(1, qc("acc", 0))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(g)
-        p.drawEllipse(QPointF(26, cy), 30, 30)
         p.drawPixmap(QPointF(8, cy - 18), self.logo)
         if self.k <= 0.02:
             return
         p.setOpacity(self.k)
         p.setPen(QColor(T["text"]))
-        p.setFont(make_font(17, QFont.Weight.Bold))
+        p.setFont(make_font(16, QFont.Weight.Medium))
         p.drawText(QRectF(56, cy - 20, 200, 22), Qt.AlignmentFlag.AlignVCenter, self.name)
         p.setPen(QColor(T["mute"]))
-        f = make_font(10, QFont.Weight.Bold)
-        f.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.8)
-        p.setFont(f)
-        p.drawText(QRectF(57, cy + 2, 200, 16), Qt.AlignmentFlag.AlignVCenter, self.tag or self.by)
+        p.setFont(make_font(11))
+        p.drawText(QRectF(56, cy + 2, 200, 16), Qt.AlignmentFlag.AlignVCenter, self.tag or self.by)
 
 
 class NavCap(_RailPart):
@@ -220,11 +210,9 @@ class NavCap(_RailPart):
         if k > 0.02:
             p.setOpacity(k)
             p.setPen(QColor(T["mute"]))
-            f = make_font(10, QFont.Weight.Bold)
-            f.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.0)
-            p.setFont(f)
+            p.setFont(make_font(12))  # 6.18: звичайний регістр без розрядки
             p.drawText(QRectF(14, 6, self.width() - 20, self.height() - 6), Qt.AlignmentFlag.AlignVCenter,
-                       self._text.upper())
+                       self._text)
 
 
 class NavItem(QAbstractButton):
@@ -288,7 +276,7 @@ class NavItem(QAbstractButton):
             p.setBrush(qc("hover", int(255 * self.hov)))
             p.drawRoundedRect(r, 10, 10)
         if on:
-            col = QColor(T["acc_h"] if UK.is_dark() else T["acc"])
+            col = QColor(T["text"])
         else:
             col = mix(QColor(T["sub"]), QColor(T["text"]), self.hov)
         p.drawPixmap(QPointF(16, r.center().y() - 10), self._icon(col))
@@ -296,7 +284,7 @@ class NavItem(QAbstractButton):
         if k > 0.02:
             p.setOpacity(k)
             p.setPen(QColor(T["text"]) if on else col)
-            p.setFont(make_font(14, QFont.Weight.DemiBold if on else QFont.Weight.Normal))
+            p.setFont(make_font(14, QFont.Weight.Medium if on else QFont.Weight.Normal))
             p.drawText(QRectF(50 - 8 * (1 - k), r.top(), r.width() - 56, r.height()), Qt.AlignmentFlag.AlignVCenter,
                        self.text())
             p.setOpacity(1.0)
@@ -339,11 +327,9 @@ class NavIndicator(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
-        g = QLinearGradient(r.topLeft(), r.topRight())
-        g.setColorAt(0, qc("acc", 64 if UK.is_dark() else 40))
-        g.setColorAt(1, qc("acc", 18 if UK.is_dark() else 14))
-        p.setPen(QPen(qc("acc", 70 if UK.is_dark() else 60), 1))
-        p.setBrush(g)
+        # 6.18: вибраний пункт — сходинка поверхні з тонкою лінією, червона лише риска зліва
+        p.setPen(QPen(QColor(T["line2"]), 1))
+        p.setBrush(QColor(T["surf2"]))
         p.drawRoundedRect(r, 10, 10)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(T["acc"]))
@@ -376,12 +362,7 @@ class StatusLine(_RailPart):
         cy = self.height() / 2
         if self.color_key:
             c = QColor(T[self.color_key])
-            g = QRadialGradient(QPointF(26, cy), 9)
-            g.setColorAt(0, qc(self.color_key, 90))
-            g.setColorAt(1, qc(self.color_key, 0))
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(g)
-            p.drawEllipse(QPointF(26, cy), 9, 9)
             p.setBrush(c)
             p.drawEllipse(QPointF(26, cy), 3.6, 3.6)
         if self.rail.k > 0.02:
@@ -426,12 +407,9 @@ class RailButton(QAbstractButton):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         if self.accent:
-            g = QLinearGradient(r.topLeft(), r.topRight())
-            g.setColorAt(0, mix(QColor(T["acc"]), QColor(T["acc_h"]), self.hov))
-            g.setColorAt(1, mix(QColor(T["acc2"]), QColor(T["acc2_h"]), self.hov))
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(g)
-            p.drawRoundedRect(r, 11, 11)
+            p.setBrush(mix(QColor(T["acc"]), QColor(T["acc_fh"]), self.hov))
+            p.drawRoundedRect(r, 10, 10)
             col = QColor("#FFFFFF")
         else:
             if self.hov > 0.01:
@@ -450,7 +428,7 @@ class RailButton(QAbstractButton):
         if self.rail.k > 0.02 and self.text():
             p.setOpacity(self.rail.k)
             p.setPen(col)
-            p.setFont(make_font(13, QFont.Weight.DemiBold if self.accent else QFont.Weight.Normal))
+            p.setFont(make_font(13, QFont.Weight.Medium if self.accent else QFont.Weight.Normal))
             p.drawText(QRectF(48, 0, r.width() - 52, r.height()), Qt.AlignmentFlag.AlignVCenter, self.text())
 
 
@@ -592,22 +570,14 @@ class GlassSheet(QWidget):
             p.drawPixmap(self.rect(), self.bg)
             p.setOpacity(1.0)
         p.fillRect(self.rect(), qc("shade", int((150 if UK.is_dark() else 70) * self.t)))
-        # м'яка тінь і світіння під карткою
+        # м'яка нейтральна тінь під карткою (6.18: без кольорового світіння)
         cr = QRectF(self.card.geometry())
         p.setPen(Qt.PenStyle.NoPen)
         base = 16 if UK.is_dark() else 5
         for i in range(8):
             p.setBrush(qc("shade", int(base * self.t * (1 - i / 8))))
             d = 2 + i * 4
-            p.drawRoundedRect(cr.adjusted(-d, -d + 12, d, d + 16), 20 + d, 20 + d)
-        gc = QPointF(cr.center().x(), cr.top())
-        rad = cr.width() * 0.75
-        g = QRadialGradient(gc, rad)
-        g.setColorAt(0, qc("acc", int(38 * self.t)))
-        g.setColorAt(0.6, qc("acc", int(10 * self.t)))
-        g.setColorAt(1, qc("acc", 0))
-        p.setBrush(g)
-        p.drawEllipse(gc, rad, rad)
+            p.drawRoundedRect(cr.adjusted(-d, -d + 12, d, d + 16), 16 + d, 16 + d)
 
 
 # ───────────────────────── кругове перемикання теми ─────────────────────────
@@ -647,7 +617,7 @@ class ThemeReveal(QWidget):
         p.drawPixmap(0, 0, self.old)
         p.setClipping(False)
         if 0 < self.r < self.r_max:
-            p.setPen(QPen(qc("acc", 110), 2))
+            p.setPen(QPen(QColor(T["line3"]), 1.5))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawEllipse(self.origin, self.r, self.r)
 
@@ -666,7 +636,7 @@ def reveal_theme(window: QWidget, name: str, origin: QPoint = None) -> None:
 
 # ───────────────────────── заставка ─────────────────────────
 class Splash(QWidget):
-    """Заставка під час запуску: логотип зі світінням, назва, бігуча смужка. finish(window) — плавно передає
+    """Заставка під час запуску: логотип, назва, бігуча смужка. finish(window) — плавно передає
     місце головному вікну."""
 
     def __init__(self, title: str, sub: str):
@@ -739,35 +709,24 @@ class Splash(QWidget):
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         r = QRectF(self.rect()).adjusted(10, 10, -10, -10)
         p.setOpacity(min(1.0, self.t * 1.4))
-        bg = QLinearGradient(r.topLeft(), r.bottomRight())
-        bg.setColorAt(0, QColor(T["surf"]))
-        bg.setColorAt(1, QColor(T["bg"]))
         p.setPen(QPen(QColor(T["line2"]), 1))
-        p.setBrush(bg)
-        p.drawRoundedRect(r, 24, 24)
-        c = QPointF(r.center().x(), r.top() + 104)
-        glow = QRadialGradient(c, 110)
-        glow.setColorAt(0, qc("acc", int(120 * self.t)))
-        glow.setColorAt(0.5, qc("acc2", int(36 * self.t)))
-        glow.setColorAt(1, qc("acc", 0))
+        p.setBrush(QColor(T["surf"]))
+        p.drawRoundedRect(r, 16, 16)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(glow)
-        p.drawEllipse(c, 150, 110)
-        s = 0.7 + 0.3 * self.t
+        c = QPointF(r.center().x(), r.top() + 104)
+        s = 0.9 + 0.1 * self.t
         p.save()
         p.translate(c)
         p.scale(s, s)
         p.drawPixmap(QPointF(-42, -42), self.logo)
         p.restore()
         p.setPen(QColor(T["text"]))
-        p.setFont(make_font(26, QFont.Weight.Bold))
-        p.drawText(QRectF(r.left(), r.top() + 160 + 10 * (1 - self.t), r.width(), 34), Qt.AlignmentFlag.AlignCenter,
+        p.setFont(make_font(26, QFont.Weight.Medium))
+        p.drawText(QRectF(r.left(), r.top() + 160 + 8 * (1 - self.t), r.width(), 34), Qt.AlignmentFlag.AlignCenter,
                    self.title)
         p.setPen(QColor(T["mute"]))
-        f = make_font(11, QFont.Weight.Bold)
-        f.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.4)
-        p.setFont(f)
-        p.drawText(QRectF(r.left(), r.top() + 196, r.width(), 18), Qt.AlignmentFlag.AlignCenter, self.sub.upper())
+        p.setFont(make_font(12))
+        p.drawText(QRectF(r.left(), r.top() + 196, r.width(), 18), Qt.AlignmentFlag.AlignCenter, self.sub)
         # бігуча смужка
         bar = QRectF(r.center().x() - 70, r.bottom() - 34, 140, 4)
         p.setBrush(QColor(T["line"]))
@@ -775,10 +734,7 @@ class Splash(QWidget):
         x = bar.left() + (bar.width() + 50) * self.spin - 50
         seg = QRectF(max(bar.left(), x), bar.top(), min(50.0, bar.right() - max(bar.left(), x)), bar.height())
         if seg.width() > 0:
-            g = QLinearGradient(seg.topLeft(), seg.topRight())
-            g.setColorAt(0, QColor(T["acc"]))
-            g.setColorAt(1, QColor(T["acc2"]))
-            p.setBrush(g)
+            p.setBrush(QColor(T["acc"]))
             p.drawRoundedRect(seg, 2, 2)
 
 
@@ -804,7 +760,7 @@ class CountLabel(QLabel):
 
 # ───────────────────────── шкала-кільце ─────────────────────────
 class Gauge(QWidget):
-    """Кільце з поділок (як спідометр): світяться поділки до значення, по центру — відсотки й підпис."""
+    """Кільце з поділок (як шкала приладу): поділки до значення — кольором рівня, по центру — відсотки й підпис."""
 
     def __init__(self, size: int = 168, caption: str = "", ticks: int = 54):
         super().__init__()
@@ -835,14 +791,13 @@ class Gauge(QWidget):
         start, span = 225.0, 270.0  # від лівого низу за годинниковою стрілкою
         lit = self.v * self.ticks
         hi = QColor(T[self.color_key]) if self.color_key else level_color(self.v)
-        lo = QColor(T["acc"])
         for i in range(self.ticks):
             a = math.radians(start - span * i / (self.ticks - 1))
             ca, sa = math.cos(a), -math.sin(a)
             p1 = QPointF(c.x() + r_in * ca, c.y() + r_in * sa)
             p2 = QPointF(c.x() + r_out * ca, c.y() + r_out * sa)
             if i < lit:
-                col = mix(lo, hi, i / max(1, self.ticks - 1))
+                col = QColor(hi)
                 frac_on = min(1.0, lit - i)
                 col.setAlpha(int(255 * (0.35 + 0.65 * frac_on)))
                 pen = QPen(col, 3.2)
@@ -851,37 +806,25 @@ class Gauge(QWidget):
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             p.setPen(pen)
             p.drawLine(p1, p2)
-        # кінчик зі світінням
-        if self.v > 0.01:
-            a = math.radians(start - span * min(1.0, self.v))
-            tip = QPointF(c.x() + (r_out + 2) * math.cos(a), c.y() - (r_out + 2) * math.sin(a))
-            g = QRadialGradient(tip, 12)
-            g.setColorAt(0, QColor(hi.red(), hi.green(), hi.blue(), 200))
-            g.setColorAt(1, QColor(hi.red(), hi.green(), hi.blue(), 0))
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(g)
-            p.drawEllipse(tip, 12, 12)
         p.setPen(QColor(T["text"]))
         num = f"{round(self.v * 100)}"
-        f = make_font(int(w * 0.24), QFont.Weight.Bold)
+        f = make_font(int(w * 0.22), QFont.Weight.Medium, mono=True)
         p.setFont(f)
         fm = p.fontMetrics()
         nw = fm.horizontalAdvance(num)
-        f2 = make_font(int(w * 0.1), QFont.Weight.DemiBold)
+        f2 = make_font(int(w * 0.1), QFont.Weight.Normal, mono=True)
         p.setFont(f2)
         pw = p.fontMetrics().horizontalAdvance("%")
         x0 = c.x() - (nw + pw + 2) / 2
         p.setFont(f)
-        p.setPen(hi)
         p.drawText(QRectF(x0, c.y() - w * 0.2, nw + 2, w * 0.3), Qt.AlignmentFlag.AlignVCenter, num)
         p.setFont(f2)
+        p.setPen(QColor(T["mute"]))
         p.drawText(QRectF(x0 + nw + 2, c.y() - w * 0.14, pw + 2, w * 0.3), Qt.AlignmentFlag.AlignVCenter, "%")
         if self.caption:
             p.setPen(QColor(T["mute"]))
-            fc = make_font(10, QFont.Weight.Bold)
-            fc.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.8)
-            p.setFont(fc)
-            p.drawText(QRectF(10, c.y() + w * 0.12, w - 20, 18), Qt.AlignmentFlag.AlignCenter, self.caption.upper())
+            p.setFont(make_font(12))
+            p.drawText(QRectF(10, c.y() + w * 0.12, w - 20, 18), Qt.AlignmentFlag.AlignCenter, self.caption)
 
 
 # ───────────────────────── живий графік ─────────────────────────
@@ -946,7 +889,7 @@ class LiveGraph(QWidget):
         area.lineTo(pts[0].x(), r.bottom())
         area.closeSubpath()
         g = QLinearGradient(0, r.top(), 0, r.bottom())
-        g.setColorAt(0, qc(self.color_key, 110 if UK.is_dark() else 70))
+        g.setColorAt(0, qc(self.color_key, 44 if UK.is_dark() else 36))
         g.setColorAt(1, qc(self.color_key, 0))
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(g)
@@ -959,15 +902,13 @@ class LiveGraph(QWidget):
         last = pts[-1]
         if last.x() <= r.right() + 0.5:
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(qc(self.color_key, 70))
-            p.drawEllipse(last, 6, 6)
             p.setBrush(QColor(T[self.color_key]))
             p.drawEllipse(last, 3, 3)
 
 
 # ───────────────────────── оцінка: стовпчики й радар ─────────────────────────
 class ScoreBars(QWidget):
-    """Сходинки від 0 до 100: світяться до оцінки (синій → м'ятний), заповнюються хвилею."""
+    """Сходинки від 0 до 100, як поділки шкали: до оцінки — акцентом, заповнюються хвилею."""
 
     def __init__(self, bars: int = 44, height: int = 92):
         super().__init__()
@@ -992,22 +933,20 @@ class ScoreBars(QWidget):
         gap = 3.0
         bw = (r.width() - gap * (n - 1)) / n
         lit = self.v * n
-        good = self.v >= 0.8
-        c0, c1 = QColor(T["acc"]), QColor(T["ok"] if good else T["cyan"])
         p.setPen(Qt.PenStyle.NoPen)
         for i in range(n):
             h = r.height() * (0.12 + 0.88 * (i + 1) / n)
             x = r.left() + i * (bw + gap)
             rect = QRectF(x, r.bottom() - h, bw, h)
             if i < lit:
-                col = mix(c0, c1, i / max(1, n - 1))
+                col = QColor(T["acc"])
                 col.setAlpha(int(255 * min(1.0, 0.4 + (lit - i))))
             else:
                 col = QColor(T["line"])
             p.setBrush(col)
             p.drawRoundedRect(rect, min(2.0, bw / 2), min(2.0, bw / 2))
         p.setPen(QColor(T["mute"]))
-        p.setFont(make_font(10))
+        p.setFont(make_font(11, mono=True))
         for k, lab in ((0, "0"), (0.5, "50"), (1.0, "100")):
             x = r.left() + (r.width() - 24) * k
             p.drawText(QRectF(x, r.bottom() + 3, 24, 13),
@@ -1062,16 +1001,13 @@ class Radar(QWidget):
             q = pt(i, max(0.04, min(1.0, v)) * self.t)
             shape.moveTo(q) if i == 0 else shape.lineTo(q)
         shape.closeSubpath()
-        g = QRadialGradient(c, rad)
-        g.setColorAt(0, qc("acc", 60))
-        g.setColorAt(1, qc("acc", 150 if UK.is_dark() else 110))
-        p.setBrush(g)
-        p.setPen(QPen(QColor(T["acc"]), 1.8))
+        p.setBrush(qc("acc", 46 if UK.is_dark() else 34))
+        p.setPen(QPen(QColor(T["acc_h"]), 1.6))
         p.drawPath(shape)
         p.setPen(Qt.PenStyle.NoPen)
         for i, (_, v) in enumerate(self.axes):
             q = pt(i, max(0.04, min(1.0, v)) * self.t)
-            p.setBrush(QColor(T["acc_h"] if UK.is_dark() else T["acc"]))
+            p.setBrush(QColor(T["acc_h"]))
             p.drawEllipse(q, 3, 3)
         p.setFont(make_font(11))
         for i, (lab, v) in enumerate(self.axes):
@@ -1175,11 +1111,11 @@ class Spinner(QWidget):
 
 # ───────────────────────── картки головної ─────────────────────────
 class ActionTile(QAbstractButton):
-    """Швидка дія: іконка в кольоровому квадраті, назва, пояснення; при наведенні — підсвітка й підйом."""
+    """Швидка дія: іконка в нейтральному квадраті, назва, пояснення; при наведенні — сходинка поверхні й підйом."""
 
-    def __init__(self, icon: str, title: str, desc: str, color_key: str = "acc"):
+    def __init__(self, icon: str, title: str, desc: str):
         super().__init__()
-        self.icon_name, self.title, self.desc, self.color_key = icon, title, desc, color_key
+        self.icon_name, self.title, self.desc = icon, title, desc
         self.badge = ""
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
@@ -1212,40 +1148,33 @@ class ActionTile(QAbstractButton):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         h = self.hov
         r = QRectF(self.rect()).adjusted(1, 2 - 2 * h, -1, -1 - 2 * h)
-        p.setPen(QPen(mix(QColor(T["line"]), QColor(T[self.color_key]), 0.55 * h), 1))
+        p.setPen(QPen(mix(QColor(T["line"]), QColor(T["line3"]), h), 1))
         p.setBrush(mix(QColor(T["surf"]), QColor(T["surf2"]), h))
         p.drawRoundedRect(r, 14, 14)
-        if h > 0.01:
-            g = QRadialGradient(QPointF(r.left() + 34, r.center().y()), 90)
-            g.setColorAt(0, qc(self.color_key, int(46 * h)))
-            g.setColorAt(1, qc(self.color_key, 0))
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(g)
-            p.drawRoundedRect(r, 14, 14)
-        box = QRectF(r.left() + 14, r.center().y() - 19, 38, 38)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(qc(self.color_key, 40 if UK.is_dark() else 30))
-        p.drawRoundedRect(box, 11, 11)
-        p.drawPixmap(QPointF(box.center().x() - 10, box.center().y() - 10),
-                     icon_pixmap(self.icon_name, T[self.color_key], 20))
-        x = box.right() + 14
+        box = QRectF(r.left() + 14, r.center().y() - 18, 36, 36)
+        p.setPen(QPen(QColor(T["line"]), 1))
+        p.setBrush(QColor(T["surf2"]))
+        p.drawRoundedRect(box, 8, 8)
+        p.drawPixmap(QPointF(box.center().x() - 9, box.center().y() - 9),
+                     icon_pixmap(self.icon_name, mix(QColor(T["sub"]), QColor(T["text"]), h).name(), 18))
+        x = box.right() + 12
         p.setPen(QColor(T["text"]))
-        p.setFont(make_font(14, QFont.Weight.DemiBold))
+        p.setFont(make_font(14, QFont.Weight.Medium))
         p.drawText(QRectF(x, r.top() + 13, r.width() - x - 16, 20), Qt.AlignmentFlag.AlignVCenter, self.title)
         p.setPen(QColor(T["sub"]))
         p.setFont(make_font(12))
         fm = p.fontMetrics()
         p.drawText(QRectF(x, r.top() + 34, r.width() - x - 16, 18), Qt.AlignmentFlag.AlignVCenter,
                    fm.elidedText(self.desc, Qt.TextElideMode.ElideRight, int(r.width() - x + r.left() - 16)))
-        if self.badge:
-            p.setFont(make_font(10, QFont.Weight.Bold))
-            bw = p.fontMetrics().horizontalAdvance(self.badge) + 14
-            br = QRectF(r.right() - bw - 10, r.top() + 10, bw, 18)
-            p.setBrush(qc(self.color_key, 50))
+        if self.badge:  # стан (наприклад, режим гри увімкнено): крапка ok і тихий текст
+            p.setFont(make_font(11))
+            bw = p.fontMetrics().horizontalAdvance(self.badge)
+            bx = r.right() - bw - 14
             p.setPen(Qt.PenStyle.NoPen)
-            p.drawRoundedRect(br, 9, 9)
-            p.setPen(QColor(T[self.color_key]))
-            p.drawText(br, Qt.AlignmentFlag.AlignCenter, self.badge)
+            p.setBrush(QColor(T["ok"]))
+            p.drawEllipse(QPointF(bx - 8, r.top() + 19), 3, 3)
+            p.setPen(QColor(T["sub"]))
+            p.drawText(QRectF(bx, r.top() + 10, bw + 2, 18), Qt.AlignmentFlag.AlignVCenter, self.badge)
         if self.hasFocus():
             p.setPen(QPen(QColor(T["acc_h"]), 1.4))
             p.setBrush(Qt.BrushStyle.NoBrush)
@@ -1253,9 +1182,10 @@ class ActionTile(QAbstractButton):
 
 
 class MetricTile(QFrame):
-    """Живий показник: іконка й назва, число з одиницею, підпис і графік за останні хвилини."""
+    """Живий показник: іконка й назва, число з одиницею (моно, як на приладі), підпис і графік за останні хвилини.
+    color_key — колір графіка: нейтральний, доки показник у нормі; warn / bad — коли ні."""
 
-    def __init__(self, icon: str, caption: str, color_key: str = "acc", unit: str = "%", n: int = 40):
+    def __init__(self, icon: str, caption: str, color_key: str = "dim", unit: str = "%", n: int = 40):
         super().__init__()
         self.setObjectName("card")
         self.icon_name, self.caption, self.color_key, self.unit = icon, caption, color_key, unit
@@ -1269,7 +1199,7 @@ class MetricTile(QFrame):
         cap.setObjectName("h3")
         top.addWidget(cap, 1)
         self.num = CountLabel(lambda v: f"{v:.0f}", ms=700)
-        self.num.setStyleSheet("font-size: 22px; font-weight: 700;")
+        self.num.setStyleSheet(f"{UK.MONO_CSS} font-size: 22px; font-weight: 500;")
         top.addWidget(self.num)
         self.unit_lbl = QLabel(unit)
         self.unit_lbl.setObjectName("muted")
@@ -1283,7 +1213,7 @@ class MetricTile(QFrame):
         self.retheme()
 
     def retheme(self):
-        self.ico.setPixmap(icon_pixmap(self.icon_name, T[self.color_key], 20))
+        self.ico.setPixmap(icon_pixmap(self.icon_name, T["sub"], 18))
         self.graph.color_key = self.color_key
 
     def set_color(self, key: str) -> None:
@@ -1342,17 +1272,13 @@ class ThemeCard(QAbstractButton):
             p.drawRoundedRect(QRectF(side.left() + 6, side.top() + 10 + i * 11, side.width() - 12, 5), 2.5, 2.5)
         x0 = side.right() + 8
         hero = QRectF(x0, r.top() + 9, r.right() - x0 - 8, r.height() * 0.42)
-        g = QLinearGradient(hero.topLeft(), hero.bottomRight())
-        g.setColorAt(0, QColor(pal["acc_bg"]))
-        g.setColorAt(1, QColor(pal["surf"]))
-        p.setBrush(g)
+        p.setBrush(QColor(pal["surf"]))
         p.drawRoundedRect(hero, 5, 5)
         n = 12
         bw = (hero.width() * 0.55) / n
         for i in range(n):
             h = (hero.height() - 12) * (0.2 + 0.8 * (i + 1) / n)
-            c = mix(QColor(pal["acc"]), QColor(pal["ok"]), i / n)
-            p.setBrush(c)
+            p.setBrush(QColor(pal["acc"] if i < n * 0.6 else pal["line2"]))
             p.drawRect(QRectF(hero.left() + 8 + i * bw, hero.bottom() - 6 - h, bw - 1.2, h))
         y = hero.bottom() + 6
         tw = (r.right() - x0 - 8 - 12) / 3
@@ -1403,5 +1329,5 @@ class ThemeCard(QAbstractButton):
             p.setBrush(QColor(T["acc"]))
             p.drawEllipse(QPointF(r.left() + 20, cy), 4, 4)
         p.setPen(QColor(T["text"]))
-        p.setFont(make_font(13, QFont.Weight.DemiBold if on else QFont.Weight.Normal))
+        p.setFont(make_font(13, QFont.Weight.Medium if on else QFont.Weight.Normal))
         p.drawText(QRectF(r.left() + 34, cy - 10, r.width() - 40, 20), Qt.AlignmentFlag.AlignVCenter, self.title)

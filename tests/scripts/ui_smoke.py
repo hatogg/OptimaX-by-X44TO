@@ -33,6 +33,9 @@ from PyQt6.QtWidgets import QDialog, QFileDialog, QMenu  # noqa: E402
 
 DEMO = os.environ.get("OPTIMAX_DEMO", "gaming")
 SHOTS = os.environ.get("OPTIMAX_TEST_SHOTS")
+# 6.18: знімки для сайту й посібника — перед кожним знімком дати сторінці дозаповнитися (живі показники, анімації)
+# і забрати курсор з бічного меню, щоб воно було згорнуте. Звичайний прогін тестів цього не робить.
+SETTLE = float(os.environ.get("OPTIMAX_SHOTS_SETTLE") or 0)
 GB.DemoRun.SPEED = 3000.0  # демо-заміри FPS за частки секунди
 errors, dialogs, steps = [], [], {}
 sys.excepthook = lambda tp, v, tb: errors.append("".join(traceback.format_exception(tp, v, tb))[-2000:])
@@ -53,6 +56,10 @@ def pump(cond=lambda: False, timeout: float = 5.0) -> bool:
 
 def shot(widget, name: str) -> None:
     if SHOTS and not _boot.STUB:
+        if SETTLE:
+            from PyQt6.QtGui import QCursor
+            QCursor.setPos(widget.mapToGlobal(widget.rect().bottomRight()))
+            pump(timeout=SETTLE)
         os.makedirs(SHOTS, exist_ok=True)
         widget.grab().save(os.path.join(SHOTS, f"{DEMO}-{LANG}-{name}.png"))
 

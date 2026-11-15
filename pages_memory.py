@@ -7,7 +7,7 @@ from __future__ import annotations
 import time
 
 from PyQt6.QtCore import Qt, QTimer, QRectF, QPointF
-from PyQt6.QtGui import QColor, QPainter, QPen, QFont, QLinearGradient
+from PyQt6.QtGui import QColor, QPainter, QPen, QFont
 from PyQt6.QtWidgets import QWidget, QFrame, QLabel, QProgressBar
 
 import engine as E
@@ -16,7 +16,7 @@ import memtools as MT
 import ui_kit as UK
 import ui_motion as UM
 from i18n import tr
-from ui_kit import (T, qc, label, button, card, vbox, hbox, scroller, page_header, make_font, Switch, Worker, LOG)
+from ui_kit import (T, label, button, card, vbox, hbox, scroller, page_header, make_font, Switch, Worker, LOG)
 
 
 def gb(mb: float, digits: int = 1) -> str:
@@ -24,27 +24,27 @@ def gb(mb: float, digits: int = 1) -> str:
 
 
 class Stat(QWidget):
-    """Підпис дрібними великими літерами і значення під ним."""
+    """Тихий підпис і значення під ним (моно, як на приладі)."""
 
     def __init__(self, caption: str, color_key: str = None):
         super().__init__()
         v = vbox(self, spacing=2)
-        self.cap = label(caption.upper(), "micro")
+        self.cap = label(caption, "micro")
         v.addWidget(self.cap)
         self.val = UM.CountLabel(lambda x: gb(x), ms=700)
-        self.val.setStyleSheet("font-size: 19px; font-weight: 700;")
+        self.val.setStyleSheet(f"{UK.MONO_CSS} font-size: 19px; font-weight: 500;")
         self.color_key = color_key
         v.addWidget(self.val)
         self.retheme()
 
     def retheme(self):
         if self.color_key:
-            self.val.setStyleSheet(f"font-size: 19px; font-weight: 700; color: {T[self.color_key]};")
+            self.val.setStyleSheet(f"{UK.MONO_CSS} font-size: 19px; font-weight: 500; color: {T[self.color_key]};")
 
 
 class ConsumerRow(QWidget):
     """Рядок «хто займає»: кольорова смуга за станом, ініціал, назва, скільки процесів, частка пам'яті."""
-    STATE = {"active": "acc", "background": "pink", "idle": "mute"}
+    STATE = {"active": "acc", "background": "dim", "idle": "mute"}
 
     def __init__(self):
         super().__init__()
@@ -75,32 +75,26 @@ class ConsumerRow(QWidget):
         g = self.g
         key = self.STATE.get(g["state"], "mute")
         r = QRectF(self.rect()).adjusted(0, 3, 0, -3)
-        grad = QLinearGradient(r.topLeft(), r.topRight())
-        grad.setColorAt(0, qc(key, 46 if UK.is_dark() else 30))
-        grad.setColorAt(0.6, qc(key, 8))
-        grad.setColorAt(1, qc(key, 0))
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(grad)
+        p.setBrush(QColor(T["surf"]))
         p.drawRoundedRect(r, 12, 12)
         p.setBrush(QColor(T[key]))
         p.drawRoundedRect(QRectF(r.left(), r.top() + 10, 3, r.height() - 20), 1.5, 1.5)
         # ініціал у колі
         c = QPointF(r.left() + 30, r.center().y())
-        p.setBrush(qc(key, 60))
+        p.setBrush(QColor(T["surf2"]))
         p.drawEllipse(c, 15, 15)
         p.setPen(QColor(T["text"]))
-        p.setFont(make_font(13, QFont.Weight.Bold))
+        p.setFont(make_font(13, QFont.Weight.Medium))
         p.drawText(QRectF(c.x() - 15, c.y() - 15, 30, 30), Qt.AlignmentFlag.AlignCenter, (g["title"] or "?")[:1])
         x = r.left() + 56
         right_w = max(260, int(r.width() * 0.42))
-        p.setFont(make_font(14, QFont.Weight.DemiBold))
+        p.setFont(make_font(14, QFont.Weight.Medium))
         p.drawText(QRectF(x, r.top() + 7, r.width() - x - right_w, 20), Qt.AlignmentFlag.AlignVCenter,
                    p.fontMetrics().elidedText(g["title"], Qt.TextElideMode.ElideRight, int(r.width() - x - right_w)))
         p.setPen(QColor(T["mute"]))
-        f = make_font(10, QFont.Weight.Bold)
-        f.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.7)
-        p.setFont(f)
-        sub = tr(f"mem.state.{g['state']}").upper() + " · " + tr("mem.procs", n=g["count"]).upper()
+        p.setFont(make_font(12))
+        sub = tr(f"mem.state.{g['state']}") + " · " + tr("mem.procs", n=g["count"])
         p.drawText(QRectF(x, r.top() + 27, r.width() - x - right_w, 16), Qt.AlignmentFlag.AlignVCenter, sub)
         # частка
         bar = QRectF(r.right() - right_w + 16, r.center().y() - 3, right_w - 110, 6)
@@ -108,13 +102,10 @@ class ConsumerRow(QWidget):
         p.setBrush(QColor(T["line"]))
         p.drawRoundedRect(bar, 3, 3)
         fill = QRectF(bar.left(), bar.top(), bar.width() * min(1.0, g["mb"] / self.top) * self.k, bar.height())
-        bg = QLinearGradient(fill.topLeft(), fill.topRight())
-        bg.setColorAt(0, QColor(T["acc"]))
-        bg.setColorAt(1, QColor(T[key if key != "mute" else "acc_h"]))
-        p.setBrush(bg)
+        p.setBrush(QColor(T[key]))
         p.drawRoundedRect(fill, 3, 3)
         p.setPen(QColor(T["text"]))
-        p.setFont(make_font(14, QFont.Weight.DemiBold))
+        p.setFont(make_font(14, QFont.Weight.Medium, mono=True))
         p.drawText(QRectF(r.right() - 84, r.top(), 72, r.height()),
                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, gb(g["mb"] * self.k))
 
@@ -148,17 +139,14 @@ class BeforeAfter(QWidget):
         if self.before > 0:
             frac = UM.lerp(1.0, self.after / self.before, self.t)
             fill = QRectF(bar.left(), bar.top(), bar.width() * frac, bar.height())
-            g = QLinearGradient(fill.topLeft(), fill.topRight())
-            g.setColorAt(0, QColor(T["acc"]))
-            g.setColorAt(1, QColor(T["ok"]))
-            p.setBrush(g)
+            p.setBrush(QColor(T["ok"]))
             p.drawRoundedRect(fill, 3, 3)
         p.setFont(make_font(11))
         p.setPen(QColor(T["mute"]))
         p.drawText(QRectF(r.left(), 18, r.width() / 2, 22), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                    tr("mem.was", v=gb(self.before)))
         p.setPen(QColor(T["ok"]))
-        p.setFont(make_font(11, QFont.Weight.DemiBold))
+        p.setFont(make_font(11, QFont.Weight.Medium))
         p.drawText(QRectF(r.center().x(), 18, r.width() / 2, 22),
                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, tr("mem.now", v=gb(self.after)))
 
@@ -260,10 +248,10 @@ class CleanSheet(UM.GlassSheet):
         self.burst = UM.CheckBurst(70)
         rv.addWidget(self.burst, 0, Qt.AlignmentFlag.AlignHCenter)
         self.big = UM.CountLabel(lambda v: gb(v), ms=1100)
-        self.big.setStyleSheet("font-size: 34px; font-weight: 700;")
+        self.big.setStyleSheet(f"{UK.MONO_CSS} font-size: 34px; font-weight: 500;")
         self.big.setAlignment(Qt.AlignmentFlag.AlignCenter)
         rv.addWidget(self.big)
-        self.big_cap = label(tr("mem.freed").upper(), "micro")
+        self.big_cap = label(tr("mem.freed"), "micro")
         self.big_cap.setAlignment(Qt.AlignmentFlag.AlignCenter)
         rv.addWidget(self.big_cap)
         rv.addSpacing(6)
@@ -350,7 +338,7 @@ class MemoryPage(QWidget):
         self.live_dot = QLabel()
         self.live_dot.setFixedSize(8, 8)
         live.addWidget(self.live_dot)
-        live.addWidget(label(tr("mem.live").upper(), "micro"))
+        live.addWidget(label(tr("mem.live"), "micro"))
         live.addStretch()
         right.addLayout(live)
         stats = hbox(spacing=26)
@@ -396,7 +384,7 @@ class MemoryPage(QWidget):
         chv.addWidget(self.who_sub)
         ch.addLayout(chv, 1)
         legend = hbox(spacing=14)
-        for st, key in (("active", "acc"), ("background", "pink"), ("idle", "mute")):
+        for st, key in (("active", "acc"), ("background", "dim"), ("idle", "mute")):
             d = UK.dot(T[key], 8)
             legend.addWidget(d)
             legend.addWidget(label(tr(f"mem.state.{st}"), "muted"))

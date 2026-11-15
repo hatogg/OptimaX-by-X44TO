@@ -11,7 +11,7 @@ import re
 import time
 
 from PyQt6.QtCore import Qt, QRectF, QPointF
-from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap, QLinearGradient, QGuiApplication, QFont
+from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap, QGuiApplication, QFont
 from PyQt6.QtWidgets import QDialog, QLabel, QFileDialog
 
 import engine as E
@@ -125,8 +125,8 @@ def collect(main, show_hw: bool = True) -> dict:
 
 
 # ───────────────────────── малювання ─────────────────────────
-def _text(p, rect, text, px, color, weight=QFont.Weight.Normal, align=None):
-    p.setFont(make_font(px, weight))
+def _text(p, rect, text, px, color, weight=QFont.Weight.Normal, align=None, mono=False):
+    p.setFont(make_font(px, weight, mono))
     p.setPen(QColor(color))
     p.drawText(QRectF(*rect), align if align is not None else (Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
                text)
@@ -151,25 +151,18 @@ def render(d: dict, dpr: float = 2.0) -> QPixmap:
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    bg = QLinearGradient(0, 0, W, H)
-    bg.setColorAt(0, QColor("#0B0E17"))
-    bg.setColorAt(1, QColor("#171230"))
+    # 6.18: рівне тло теми без кольорових плям; цифри — моно, як на приладі
     p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(bg)
+    p.setBrush(QColor(T["bg"]))
     p.drawRoundedRect(QRectF(0, 0, W, H), 1, 1)
-    for (x, y, r), col, a in (((W - 110, 70, 300), T["acc"], 30), ((150, H + 80, 360), T["acc2"], 26)):
-        c = QColor(col)
-        c.setAlpha(a)
-        p.setBrush(c)
-        p.drawEllipse(QPointF(x, y), r, r)
 
     # шапка
     p.drawPixmap(QPointF(64, 50), logo_pixmap(52))
-    _text(p, (130, 50, 400, 30), "OptimaX", 26, T["text"], QFont.Weight.Bold)
+    _text(p, (130, 50, 400, 30), "OptimaX", 26, T["text"], QFont.Weight.Medium)
     _text(p, (130, 82, 400, 22), "by X44TO", 15, T["sub"])
     _text(p, (W - 364, 54, 300, 24), d.get("when", ""), 15, T["sub"], align=Qt.AlignmentFlag.AlignRight |
           Qt.AlignmentFlag.AlignVCenter)
-    _text(p, (64, 140, W - 128, 54), tr("sc.title"), 40, T["text"], QFont.Weight.Bold)
+    _text(p, (64, 140, W - 128, 54), tr("sc.title"), 40, T["text"], QFont.Weight.Medium)
     if d.get("hw_line"):
         _text(p, (64, 196, W - 128, 28), d["hw_line"], 18, T["sub"])
 
@@ -179,15 +172,19 @@ def render(d: dict, dpr: float = 2.0) -> QPixmap:
     panel = QColor(T["surf"])
     panel.setAlpha(225)
     p.setBrush(panel)
-    p.setPen(QPen(QColor(T["acc_line"]), 1.2))
-    p.drawRoundedRect(box, 24, 24)
+    p.setPen(QPen(QColor(T["line2"]), 1.2))
+    p.drawRoundedRect(box, 16, 16)
+    # риски шкали вздовж низу панелі — фірмова деталь OptimaX
+    for i, x in enumerate(range(int(box.left()) + 36, int(box.right()) - 35, 16)):
+        p.setPen(QPen(QColor(T["line3" if i % 6 == 0 else "line2"]), 1))
+        p.drawLine(QPointF(x, box.bottom() - 1), QPointF(x, box.bottom() - (10 if i % 6 == 0 else 5)))
     if hero:
         _text(p, (100, 268, 760, 26), hero["title"], 18, T["sub"])
         val = lambda v: num(v)  # noqa: E731
-        _text(p, (100, 300, 250, 84), val(hero["before"]), 46, T["mute"], QFont.Weight.DemiBold,
-              Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        _text(p, (100, 300, 250, 84), val(hero["before"]), 44, T["mute"], QFont.Weight.Normal,
+              Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, mono=True)
         _text(p, (356, 300, 70, 84), "→", 40, T["sub"], align=Qt.AlignmentFlag.AlignCenter)
-        _text(p, (432, 300, 300, 84), val(hero["after"]), 66, T["text"], QFont.Weight.Bold)
+        _text(p, (432, 300, 300, 84), val(hero["after"]), 62, T["text"], QFont.Weight.Medium, mono=True)
         _text(p, (100, 386, 760, 26), (hero["unit"] + ("   ·   " + hero["sub"] if hero.get("sub") else "")), 16,
               T["sub"])
         good = hero["pct"] >= 0
@@ -195,11 +192,11 @@ def render(d: dict, dpr: float = 2.0) -> QPixmap:
         fill = QColor(T["ok_bg"] if good else T["bad_bg"])
         p.setBrush(fill)
         p.setPen(QPen(QColor(T["ok_line"] if good else T["bad_line"]), 1.2))
-        p.drawRoundedRect(QRectF(*bx), 22, 22)
-        _text(p, bx, f"{hero['pct']:+.0f}%", 58, T["ok"] if good else T["bad"], QFont.Weight.Bold,
-              Qt.AlignmentFlag.AlignCenter)
+        p.drawRoundedRect(QRectF(*bx), 12, 12)
+        _text(p, bx, f"{hero['pct']:+.0f}%", 52, T["ok"] if good else T["bad"], QFont.Weight.Medium,
+              Qt.AlignmentFlag.AlignCenter, mono=True)
     else:
-        _text(p, (100, 280, W - 200, 60), tr("sc.no_hero_t", n=d.get("tweaks", 0)), 34, T["text"], QFont.Weight.Bold)
+        _text(p, (100, 280, W - 200, 60), tr("sc.no_hero_t", n=d.get("tweaks", 0)), 34, T["text"], QFont.Weight.Medium)
         _text(p, (100, 346, W - 200, 60), tr("sc.no_hero_d"), 17, T["sub"])
 
     # плитки
@@ -213,13 +210,13 @@ def render(d: dict, dpr: float = 2.0) -> QPixmap:
             c.setAlpha(215)
             p.setBrush(c)
             p.setPen(QPen(QColor(T["line2"]), 1))
-            p.drawRoundedRect(QRectF(x, y, tw, 142), 18, 18)
+            p.drawRoundedRect(QRectF(x, y, tw, 142), 14, 14)
             _text(p, (x + 20, y + 16, tw - 40, 22), t["title"], 15, T["sub"])
-            _text(p, (x + 20, y + 44, tw - 40, 44), t["value"], 27 if "→" in t["value"] else 32, T["text"],
-                  QFont.Weight.Bold)
+            _text(p, (x + 20, y + 44, tw - 40, 44), t["value"], 22 if "→" in t["value"] else 30, T["text"],
+                  QFont.Weight.Medium, mono=True)
             if "pct" in t:
                 _text(p, (x + 20, y + 96, tw - 40, 26), f"{t['pct']:+.0f}%", 18,
-                      T["ok"] if t["good"] else T["bad"], QFont.Weight.DemiBold)
+                      T["ok"] if t["good"] else T["bad"], QFont.Weight.Medium, mono=True)
             elif t.get("sub"):
                 _text(p, (x + 20, y + 96, tw - 40, 26), t["sub"], 15, T["sub"])
 
