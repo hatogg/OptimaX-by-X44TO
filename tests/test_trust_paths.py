@@ -292,7 +292,8 @@ def test_winget_only_from_trusted_package_folder():
     finally:
         os.environ["PATH"] = old_path
         A._WINGET.clear()
-    assert A.winget_path() == "winget", "demo mode outside Windows is unchanged"
+    with patched(E, IS_WIN=False):  # (тест іде й на справжній Windows у CI)
+        assert A.winget_path() == "winget", "demo mode outside Windows is unchanged"
 
 
 def test_cdb_only_from_trusted_locations():
