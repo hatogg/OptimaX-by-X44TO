@@ -2,7 +2,7 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
-## [7.1.0] — 2026-11-15
+## [7.1.0] — 2026-11-20
 
 Аналоги CrystalDiskInfo і CPU-Z всередині OptimaX і виправлення за відгуками користувачів 7.0.0 (7.0.1 окремо не
 виходила).

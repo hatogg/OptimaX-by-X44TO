@@ -255,7 +255,7 @@ class HwCenterPage(QWidget):
         g.setContentsMargins(32, 0, 32, 8)
         self.chips = {}
         for key in SECTIONS:
-            c = chip(tr(f"hwc.sec.{key}"))
+            c = chip(tr(f"hwc.sec.{key}").replace("&", "&&"))  # 7.1: «&» у Qt — гаряча клавіша («Fans _undervolt»)
             c.clicked.connect(lambda _=False, k=key: self.show_section(k))
             self.chips[key] = c
             g.addWidget(c)
