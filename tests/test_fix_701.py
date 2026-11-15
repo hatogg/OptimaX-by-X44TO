@@ -26,10 +26,11 @@ import healthcheck as HC  # noqa: E402
 
 # ── Resizable BAR ──
 def resource_list(*descs) -> bytes:
-    """REG_RESOURCE_LIST (x64) з одним повним дескриптором: (тип, прапорці, початок, довжина)."""
+    """REG_RESOURCE_LIST (x64) з одним повним дескриптором: (тип, прапорці, початок, довжина).
+    7.1: частковий дескриптор на x64 — 20 байтів (union 16 через KAFFINITY), тож доповнюємо 4 нулями."""
     b = struct.pack("<I", 1) + struct.pack("<iIHHI", 5, 3, 1, 1, len(descs))
     for typ, flags, start, length in descs:
-        b += struct.pack("<BBHQI", typ, 0, flags, start, length)
+        b += struct.pack("<BBHQI", typ, 0, flags, start, length) + b"\0" * 4
     return b
 
 
@@ -42,6 +43,16 @@ def test_resource_map_sees_the_large_bar():
     assert H.parse_resource_list(legacy) == 256 << 20
     assert H.parse_resource_list(resource_list((7, 0x0200, 0, 1 << 20))) == 256 << 20  # LARGE_40: довжина << 8
     assert H.parse_resource_list(b"\x01\x00") is None, "обрізані дані — невідомо, а не 0"
+    # NVIDIA з ReBAR: BAR0 (регістри, 16 МБ) першим, BAR1 (16 ГБ) — другим; з кроком 16 губився саме він
+    rtx = resource_list((3, 0, 0xF6000000, 16 << 20), (7, 0x0800, 0x6000000000, 4), (7, 0x0200, 0x6400000000, 1 << 17))
+    assert H.parse_resource_list(rtx) == 16 << 30
+    import ctypes
+
+    class Partial(ctypes.Structure):  # справжній розмір CM_PARTIAL_RESOURCE_DESCRIPTOR на x64 (pack 4)
+        _pack_ = 4
+        _fields_ = [("t", ctypes.c_ubyte), ("s", ctypes.c_ubyte), ("f", ctypes.c_ushort),
+                    ("u", ctypes.c_ubyte * 16)]
+    assert ctypes.sizeof(Partial) == H._CM_PARTIAL_SIZE == 20
 
 
 def rebar(**g):
@@ -87,8 +98,12 @@ def test_kingston_a400_worn_out_is_seen():
 
 
 def test_smart_life_sources_and_failure_threshold():
-    assert H.smart_summary(blob(attr(0xA9, 100, 7)))["life"] == 93, "WD: у raw — відсоток використаного"
+    # 7.1: лише нормалізоване значення — «сире» в різних виробників означає різне
+    assert H.smart_summary(blob(attr(0xA9, 100, 100)))["life"] == 100, "WD: новий диск, raw = % залишку"
     assert H.smart_summary(blob(attr(0xB1, 61, 1200)))["life"] == 61, "Samsung: нормалізоване значення"
+    assert H.smart_summary(blob(attr(0xB1, 99, 3)))["life"] == 99, "Samsung: raw B1 — цикли стирання, не %"
+    assert H.smart_summary(blob(attr(0xE9, 100, 0)))["life"] == 100, "Intel: raw E9 = 0 — не «зношено»"
+    assert H.smart_summary(blob(attr(0xCA, 98, 2)))["life"] == 98, "Crucial: raw CA — % використаного"
     assert H.smart_summary(blob(attr(0xE7, 100, 0x64)))["life"] == 100
     assert H.smart_summary(blob(attr(0x05, 100, 0)))["life"] is None, "немає атрибута ресурсу — невідомо"
     sm = H.smart_summary(blob(attr(0x05, 9, 2000)), thresholds(x05=10))
@@ -101,11 +116,20 @@ def test_smart_life_sources_and_failure_threshold():
     f["disks"][0]["smart_fail"] = ["05"]
     assert card(f, "disk")["st"] == HC.BAD
     assert H.smart_summary(b"") == {}
+    # гарячий Seagate: 0xBE (100 − °C) нижче порогу — це температура, а не відмова
+    assert H.smart_summary(blob(attr(0xBE, 40, 60)), thresholds(xbe=45))["fail"] == []
+    # PredictFailure — окремим рядком, без «атрибута predict»
+    disks = [dict(id="1", name="HDD", health="Healthy", wear=None)]
+    H.apply_smart(disks, [dict(id="1", v=base64.b64encode(blob(attr(0x09, 100, 5))).decode(), t="", pf=True)])
+    assert disks[0].get("smart_predict") and not disks[0].get("smart_fail")
+    f = facts()
+    f["disks"][0]["smart_predict"] = True
+    assert any(d[0] == "hc.disk.predict" for d in card(f, "disk")["det"])
 
 
 def test_storage_script_reads_smart_by_disk_number():
     s = H.STORAGE_SCRIPT
-    assert "MSStorageDriver_FailurePredictData" in s and "Win32_DiskDrive" in s and "smart=$sm" in s
+    assert "MSStorageDriver_FailurePredict" in s and "($c+'Data')" in s and "Win32_DiskDrive" in s and "smart=$sm" in s
 
 
 # ── Ethernet: Interrupt Moderation / Flow Control ──

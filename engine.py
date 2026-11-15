@@ -2036,8 +2036,10 @@ def _nic_run(ctx: Ctx, read_script: str, dry_note: str) -> None:
     rec = {"t": "ps", "c": "; ".join(_nic_plan_lines(plan, undo=True))}
     ctx.undo.append(rec)
     rc, out = ps("; ".join(_nic_plan_lines(plan, undo=False)), 90, stoppable=False)
-    if rc != 0:
+    if rc != 0:  # 7.1: чесний результат — «частково», а не «готово»
         ctx.log(f"  ⚠ {first_line(out, 90) or rc}")
+        ctx.fail("nic")
+        return
     ctx.log(tr("e.nic_done", n=len(plan)))
 
 
@@ -2064,7 +2066,8 @@ WIFI_FILTER = ("$_.NdisPhysicalMedium -eq 9 -or $_.InterfaceDescription -match "
 # 7.0.1: частина Realtek 2.5G та USB-адаптерів віддає NdisPhysicalMedium = 0 (не вказано) —
 # тоді Ethernet видно з MediaType
 ETH_FILTER = ("($_.NdisPhysicalMedium -eq 14 -or ($_.NdisPhysicalMedium -eq 0 -and $_.MediaType -eq '802.3')) -and "
-              "$_.InterfaceDescription -notmatch 'Wi-?Fi|Wireless|WLAN|802\\.11'")
+              "$_.InterfaceDescription -notmatch "
+              "'Wi-?Fi|Wireless|WLAN|802\\.11|TAP|VPN|Virtual|Hamachi|Radmin|Wintun|WireGuard|ZeroTier'")
 
 
 def _nic_props(ctx: Ctx, media_filter: str, prop_filter: str, target: str) -> None:
@@ -2109,7 +2112,8 @@ NIC_STATE_PS = (
     "  pm=$(if ($pm) { [string]$pm.AllowComputerToTurnOffDevice } else { '' }); p=$p} };"
     " ConvertTo-Json -InputObject @($r) -Compress -Depth 4")
 _WIFI_RE = re.compile(r"Wi-?Fi|Wireless|WLAN|802\.11|Killer.*AX|Centrino", re.I)  # як WIFI_FILTER
-_NOT_ETH_RE = re.compile(r"Wi-?Fi|Wireless|WLAN|802\.11", re.I)  # як ETH_FILTER
+# 7.1: і віртуальні адаптери VPN (TAP, Hamachi, Radmin…), що кажуть про себе «802.3»
+_NOT_ETH_RE = re.compile(r"Wi-?Fi|Wireless|WLAN|802\.11|TAP|VPN|Virtual|Hamachi|Radmin|Wintun|WireGuard|ZeroTier", re.I)
 
 
 def nic_snapshot() -> Optional[list]:

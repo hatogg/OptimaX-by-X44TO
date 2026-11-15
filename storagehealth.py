@@ -84,8 +84,9 @@ def parse_ata_smart(values: bytes, thresholds: bytes = b"") -> dict:
     return attrs
 
 
-def ata_summary(attrs: dict, sector: int = 512) -> dict:
-    """Зведення атрибутів SMART у ті самі поля, що й NVMe."""
+def ata_summary(attrs: dict, sector: int = 512, ssd=None, vendor: str = "") -> dict:
+    """Зведення атрибутів SMART у ті самі поля, що й NVMe. ssd=False — HDD: атрибути ресурсу не читаємо (у HDD
+    0xCA — Data Address Mark Errors, а не знос); None — невідомо."""
     def raw(aid, mask=None):
         a = attrs.get(aid)
         if not a:
@@ -94,16 +95,17 @@ def ata_summary(attrs: dict, sector: int = 512) -> dict:
     d = dict(reallocated=raw(5), pending=raw(197), offline_uncorrectable=raw(198), crc_errors=raw(199),
              reported_uncorrectable=raw(187), power_on_hours=raw(9, 0xFFFFFFFF), power_cycles=raw(12, 0xFFFFFFFF),
              temperature=raw(194, 0xFF), reallocation_events=raw(196))
-    life = attrs.get(231) or attrs.get(233) or attrs.get(177)
-    if life:
-        d["life_left"] = life["current"] if life["current"] <= 100 else None
-    if 202 in attrs and attrs[202]["raw"] <= 100:
-        d["life_left"] = 100 - attrs[202]["raw"]
+    if ssd is not False:  # 7.1: у HDD цих атрибутів ресурсу немає — не показуємо «100 %»
+        life = attrs.get(231) or attrs.get(233) or attrs.get(177) or (
+            attrs.get(169) if vendor in ("wd", "sandisk") else None)
+        if life:
+            d["life_left"] = life["current"] if life["current"] <= 100 else None
+        if vendor == "crucial" and 202 in attrs and attrs[202]["raw"] <= 100:  # Percent Lifetime Used
+            d["life_left"] = 100 - attrs[202]["raw"]
     lbas = raw(241) or raw(246)
     if lbas:
         d["tb_written"] = round(lbas * sector / 1e12, 2)
-    d["failing"] = sorted(a["name"] for a in attrs.values()
-                          if a.get("threshold") and a["current"] and a["current"] <= a["threshold"])
+    d["failing"] = sorted(a["name"] for a in attrs.values() if attr_level(a.get("id") or 0, a) == BAD)
     return d
 
 
@@ -124,7 +126,7 @@ def assess(info: dict) -> dict:
             f.append((HT.FAIL, "sh.f.nvme_critical", dict(what=", ".join(tr(f"sh.w.{x}") for x in w))))
         elif w:
             f.append((HT.WARN, "sh.f.nvme_warning", dict(what=", ".join(tr(f"sh.w.{x}") for x in w))))
-        if nv.get("spare") is not None and nv.get("spare_threshold") and nv["spare"] <= nv["spare_threshold"]:
+        if nv.get("spare") is not None and nv.get("spare_threshold") and nv["spare"] < nv["spare_threshold"]:
             f.append((HT.FAIL, "sh.f.spare", dict(s=nv["spare"], t=nv["spare_threshold"])))
         used = nv.get("percentage_used")
         if used is not None and used >= 100:
@@ -244,6 +246,8 @@ VENDOR_ATTR = {  # виробник -> уточнення назв
     "wd": {0xA5: "Total Write/Erase Count", 0xA6: "Min W/E Cycle", 0xA7: "Min Bad Block/Die",
            0xA8: "Maximum Erase Cycle", 0xA9: "Percent Lifetime Remaining", 0xE6: "Media Wearout Indicator",
            0xF4: "Average Erase Count", 0xF5: "Max Erase Count", 0xF6: "Total Erase Count"},
+    "sandisk": {0xA9: "Percent Lifetime Remaining", 0xE6: "Media Wearout Indicator",
+                0xF1: "Total Writes (GiB)", 0xF2: "Total Reads (GiB)"},
     "intel": {0xE1: "Host Writes (32 MiB)", 0xE2: "Workload Media Wear", 0xE3: "Workload Read/Write Ratio",
               0xE4: "Workload Timer", 0xE9: "Media Wearout Indicator", 0xF1: "Total Host Writes (32 MiB)",
               0xF2: "Total Host Reads (32 MiB)", 0xF9: "Total NAND Writes (GiB)"},
@@ -258,10 +262,12 @@ NVME_ROWS = (  # (номер рядка як у CrystalDiskInfo, назва, к�
     (0x0D, "Unsafe Shutdowns", "unsafe_shutdowns"), (0x0E, "Media and Data Integrity Errors", "media_errors"),
     (0x0F, "Number of Error Information Log Entries", "error_log_entries"))
 SATA_GEN = {1: "SATA/150", 2: "SATA/300", 3: "SATA/600"}
-ATA_MAJOR = ((11, "ACS-4"), (10, "ACS-3"), (9, "ACS-2"), (8, "ATA8-ACS"), (7, "ATA/ATAPI-7"), (6, "ATA/ATAPI-6"),
+ATA_MAJOR = ((12, "ACS-5"), (11, "ACS-4"), (10, "ACS-3"), (9, "ACS-2"), (8, "ATA8-ACS"), (7, "ATA/ATAPI-7"),
+             (6, "ATA/ATAPI-6"),
              (5, "ATA/ATAPI-5"))
-SATA_REV = ((11, "SATA 3.5"), (10, "SATA 3.4"), (9, "SATA 3.3"), (8, "SATA 3.2"), (7, "SATA 3.1"), (6, "SATA 3.0"),
-            (5, "SATA 2.6"), (4, "SATA 2.5"), (3, "SATA II Ext"), (2, "SATA 1.0a"), (1, "ATA8-AST"))
+# 7.1: слово 222, біт 0 — ATA8-AST … біт 10 — SATA 3.5 (як у smartmontools); раніше все було на біт вище
+SATA_REV = ((10, "SATA 3.5"), (9, "SATA 3.4"), (8, "SATA 3.3"), (7, "SATA 3.2"), (6, "SATA 3.1"), (5, "SATA 3.0"),
+            (4, "SATA 2.6"), (3, "SATA 2.5"), (2, "SATA II Ext"), (1, "SATA 1.0a"), (0, "ATA8-AST"))
 GOOD, CAUTION, BAD, UNKNOWN = "good", "caution", "bad", "unknown"
 
 
@@ -318,7 +324,7 @@ def vendor_of(model: str) -> str:
     m = (model or "").upper()
     for key, marks in (("kingston", ("KINGSTON", "SA400", "SUV", "SKC", "SEDC", "SNV", "SNS", "SV300")),
                        ("samsung", ("SAMSUNG", "MZ-", "MZ7")), ("crucial", ("CRUCIAL", "CT", "MICRON", "MTFD")),
-                       ("wd", ("WDC WDS", "WD BLUE", "WD GREEN", "WD RED SA", "SANDISK")),
+                       ("sandisk", ("SANDISK",)), ("wd", ("WDC WDS", "WD BLUE", "WD GREEN", "WD RED SA")),
                        ("intel", ("INTEL", "SSDSC"))):
         if any(m.startswith(x) or f" {x}" in m for x in marks):
             return key
@@ -333,7 +339,7 @@ def attr_name(aid: int, model: str = "", ssd: bool = False) -> str:
 def attr_level(aid: int, a: dict) -> str:
     """Крапка рядка, як у CrystalDiskInfo: поріг — погано; перепризначені / нестабільні / невиправні > 0 — увага."""
     thr, cur = a.get("threshold"), a.get("current")
-    if thr and cur is not None and 0 < thr < 0xFE and cur <= thr:
+    if thr and cur and 0 < thr < 0xFE and cur <= thr:  # 7.1: 0 — немає нормалізованого значення
         return BAD
     if aid in (0x05, 0xC5, 0xC6) and (a.get("raw") or 0) & 0xFFFFFFFF:
         return CAUTION
@@ -348,14 +354,15 @@ def host_io(model: str, attrs: dict, sector: int = 512) -> dict:
         a = attrs.get(aid) or attrs.get(str(aid))
         return (a or {}).get("raw")
     gib, lba = 2 ** 30 / 1e9, sector / 1e9
-    unit = {"kingston": gib, "intel": 32 * 2 ** 20 / 1e9}.get(v, lba)
+    # 7.1: SanDisk F1/F2 — GiB; невідомий виробник — не вгадуємо (у різних це LBA, GiB чи 32 MiB)
+    unit = {"kingston": gib, "sandisk": gib, "intel": 32 * 2 ** 20 / 1e9, "samsung": lba, "wd": lba}.get(v)
     out = {}
     w, r = (raw(0xF6), None) if v == "crucial" else (raw(0xF1), raw(0xF2))
     if v == "crucial":
         unit = lba
-    if w:
+    if w and unit:
         out["host_writes_gb"] = round(w * unit)
-    if r:
+    if r and unit:
         out["host_reads_gb"] = round(r * unit)
     nand = raw(0xE9) if v == "kingston" else raw(0xF9) if v == "intel" else None
     if nand:
@@ -382,9 +389,9 @@ def nvme_table(nv: dict) -> list:
         if v is None:
             continue
         lvl = GOOD
-        if key == "critical_warning" and v:
-            lvl = BAD
-        elif key == "spare" and nv.get("spare_threshold") and v <= nv["spare_threshold"]:
+        if key == "critical_warning" and v:  # 7.1: лише температура (біт 1) — «увага», як і в оцінці
+            lvl = CAUTION if v == 0x02 else BAD
+        elif key == "spare" and nv.get("spare_threshold") and v < nv["spare_threshold"]:
             lvl = BAD
         elif key == "percentage_used" and v >= 100:
             lvl = BAD
@@ -401,6 +408,8 @@ def health_label(info: dict) -> tuple:
     st = (info.get("assess") or {}).get("status")
     lab = {HT.PASS: GOOD, HT.WARN: CAUTION, HT.FAIL: BAD}.get(st, UNKNOWN)
     nv, ata = info.get("nvme") or {}, info.get("ata") or {}
+    if lab == GOOD and not nv and not ata:  # 7.1: лише «Healthy» від Windows (USB тощо) — це ще не «Добре»
+        lab = UNKNOWN
     life = 100 - nv["percentage_used"] if nv.get("percentage_used") is not None else ata.get("life_left")
     if life is None and info.get("wear") is not None:
         life = 100 - info["wear"]
@@ -427,7 +436,8 @@ def details(info: dict) -> list:
     return [("di.firmware", idf.get("firmware") or info.get("firmware")),
             ("di.serial", idf.get("serial") or info.get("serial")),
             ("di.interface", idf.get("interface") or info.get("bus")),
-            ("di.transfer", info.get("link") or idf.get("transfer")),
+            ("di.transfer", (info.get("link") if info.get("nvme") or info.get("media") == "NVMe" else None)
+             or idf.get("transfer")),
             ("di.letters", letters or None),
             ("di.standard", idf.get("standard") or None),
             ("di.features", ", ".join(idf.get("features") or []) or None),
@@ -448,8 +458,9 @@ def smart_table(info: dict) -> list:
     return []
 
 
-def report_text(disks: list) -> str:
-    """Текстовий звіт для «Копіювати» — як «Edit → Copy» у CrystalDiskInfo, щоб скинути на форум чи в чат."""
+def report_text(disks: list, mask_serial: str = None) -> str:
+    """Текстовий звіт для «Копіювати» — як «Edit → Copy» у CrystalDiskInfo, щоб скинути на форум чи в чат.
+    mask_serial — чим замінити серійний номер (лише в його рядку: заміна по всьому тексту псувала raw-значення)."""
     import hwtests as HT
     lines = [f"OptimaX {E.VERSION} — {tr('di.title')}", ""]
     for d in disks:
@@ -461,6 +472,8 @@ def report_text(disks: list) -> str:
         t = (d.get("assess") or {}).get("temperature")
         lines.append(f"  {tr('di.temp'):<22}: {f'{t} °C' if t is not None else '----'}")
         for k, v in details(d):
+            if k == "di.serial" and v and mask_serial is not None:
+                v = mask_serial
             lines.append(f"  {tr(k):<22}: {v if v is not None else '----'}")
         tab = smart_table(d)
         if tab:
@@ -570,9 +583,11 @@ def read_ata(num) -> dict:
         attrs = parse_ata_smart(vals, thr)
         if not attrs:
             return {}
-        d = ata_summary(attrs)
+        idf = parse_ata_identify(_identify_cmd(h, int(num)))
+        rot = idf.get("rotation")
+        d = ata_summary(attrs, ssd=None if rot is None else rot == "SSD", vendor=vendor_of(idf.get("model")))
         d["attrs"] = {str(k): {kk: vv for kk, vv in v.items() if kk != "id"} for k, v in attrs.items()}
-        d["identify"] = parse_ata_identify(_identify_cmd(h, int(num)))
+        d["identify"] = idf
         return d
     finally:
         ctypes.windll.kernel32.CloseHandle(ctypes.c_void_p(h))
@@ -669,7 +684,8 @@ DEMO_HDD = [(0x01, 117, 99, 6, 158_442_112), (0x03, 97, 97, 0, 0), (0x04, 96, 96
             (0xC7, 200, 200, 0, 0), (0xF0, 100, 253, 0, 8_402), (0xF1, 100, 253, 0, 21_470_204_331),
             (0xF2, 100, 253, 0, 43_210_993_812)]
 DEMO_OLD_HDD = [(0x01, 200, 200, 51, 3), (0x03, 186, 177, 21, 1_658), (0x04, 96, 96, 0, 4_210),
-                (0x05, 199, 199, 140, 8), (0x07, 200, 200, 0, 0), (0x09, 71, 71, 0, 21_840), (0x0A, 100, 100, 0, 0), (0x0B, 100, 100, 0, 0),
+                (0x05, 199, 199, 140, 8), (0x07, 200, 200, 0, 0), (0x09, 71, 71, 0, 21_840), (0x0A, 100, 100, 0, 0),
+                (0x0B, 100, 100, 0, 0),
                 (0x0C, 97, 97, 0, 3_911), (0xC0, 200, 200, 0, 211), (0xC1, 186, 186, 0, 44_612), (0xC2, 103, 91, 0, 44),
                 (0xC4, 199, 199, 0, 8), (0xC5, 200, 200, 0, 0), (0xC6, 100, 253, 0, 0), (0xC7, 200, 200, 0, 0),
                 (0xC8, 100, 253, 0, 0)]
@@ -734,7 +750,9 @@ def disk_health(disk: dict, rel: dict = None, extra: dict = None) -> dict:
                 info["identify"] = read_nvme_identify(num)
             if not info.get("nvme"):
                 info["ata"] = read_ata(num)
-                info["identify"] = (info["ata"] or {}).pop("identify", {}) or {}
+                ata_idf = (info["ata"] or {}).pop("identify", {}) or {}
+                if ata_idf or not info.get("identify"):  # 7.1: не затерти паспорт NVMe порожнім
+                    info["identify"] = ata_idf
         info["rel"] = (rel or {}).get(str(num), {})
         x = (extra or {}).get(str(num), {})
         info["firmware"], info["serial"], info["link"] = x.get("fw") or None, x.get("sn") or None, pcie_link(x)

@@ -272,7 +272,8 @@ class DiskInfoPanel(QWidget):
         self.page.run_bg(lambda log, p: SH.check_all(hw), self.fill)
 
     def _auto(self) -> None:
-        if self.isVisible() and not self.busy:
+        # 7.1: згорнуте вікно лишає isVisible() — без опитування дисків і запису settings.json кожні 5 хвилин
+        if self.isVisible() and not self.window().isMinimized() and not self.busy:
             self.load()
 
     def fill(self, disks) -> None:
@@ -281,7 +282,9 @@ class DiskInfoPanel(QWidget):
         self.btn_refresh.setText(tr("di.refresh"))
         if not isinstance(disks, list):
             self.status.setText(tr("di.failed"))
+            self.status.show()  # 7.1: і після вдалого першого читання — інакше збій оновлення непомітний
             return
+        cur_id = self.disks[self.cur].get("id") if 0 <= self.cur < len(self.disks) else None
         self.disks = disks
         HT.save(F.CFG, SH.health_result(disks))
         clear_layout(self.tabs)
@@ -294,8 +297,9 @@ class DiskInfoPanel(QWidget):
         self.status.setVisible(not disks)
         self.status.setText(tr("di.none"))
         self.body.setVisible(bool(disks))
-        if disks:
-            self.select(min(self.cur, len(disks) - 1))
+        if disks:  # 7.1: той самий диск за id (USB відключили — список зсунувся)
+            ids = [d.get("id") for d in disks]
+            self.select(ids.index(cur_id) if cur_id in ids else min(self.cur, len(disks) - 1))
         self.timer.start()
         self.page.refresh_overview()
 
@@ -355,12 +359,7 @@ class DiskInfoPanel(QWidget):
     def copy(self) -> None:
         if not self.disks:
             return
-        text = SH.report_text(self.disks)
-        if not self.show_serial:
-            for d in self.disks:
-                s = dict(SH.details(d)).get("di.serial")
-                if s:
-                    text = text.replace(s, MASK)
+        text = SH.report_text(self.disks, None if self.show_serial else MASK)
         QGuiApplication.clipboard().setText(text)
         self.btn_copy.setText(tr("di.copied"))
         QTimer.singleShot(1800, lambda: self.btn_copy.setText(tr("di.copy")))

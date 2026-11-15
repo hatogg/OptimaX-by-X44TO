@@ -30,6 +30,7 @@ class CpuzPanel(QWidget):
         super().__init__()
         self.page, self.data, self.tab, self.slot, self.gpu_i = page, None, "cpu", 0, 0
         self.clock, self.meter, self.busy, self.live, self.reader = None, None, False, {}, None
+        self.need_keys = set()
         v = vbox(self, spacing=12)
         bar = hbox(spacing=8)
         self.tabs = Segmented([tr(f"cz.tab.{t}") for t in TABS])
@@ -75,15 +76,20 @@ class CpuzPanel(QWidget):
 
     def fill(self, d) -> None:
         self.busy = False
-        if not isinstance(d, dict):
+        if not isinstance(d, dict) or "error" in d:  # 7.1: помилка Worker — це не дані («потрібен PawnIO» тут брехав)
             self.title.setText(tr("di.failed"))
+            self.sub.setText(str((d or {}).get("error") or "") if isinstance(d, dict) else "")
+            self.sub.setVisible(bool(self.sub.text()))
             return
         self.data = d
         if self.reader and self.reader is not d.get("live"):
             self.reader.close()
         self.reader = d.get("live")
-        if self.meter is None:
-            self.meter = CZ.ClockMeter((d.get("cpu") or {}).get("base_mhz") or 0)
+        base = (d.get("cpu") or {}).get("base_mhz") or 0
+        if self.meter is None or self.meter.base != base:  # залізо дочиталося пізніше — нова базова частота
+            if self.meter:
+                self.meter.close()
+            self.meter = CZ.ClockMeter(base)
         self.clock = d.get("demo_clock")
         self.live = self.reader.read() if self.reader else CZ.demo_live(d, self.clock)
         self.show_tab(self.tab)
@@ -98,7 +104,11 @@ class CpuzPanel(QWidget):
             self.clock = self.data["demo_clock"] + random.choice((-100, 0, 0, 100))
         self.live = self.reader.read() if self.reader else CZ.demo_live(self.data, self.clock)
         if self.tab == "cpu":
-            for key, val in CZ.cpu_rows(self.data, self.clock, self.live):
+            rows = CZ.cpu_rows(self.data, self.clock, self.live)
+            if any((v is CZ.NEEDS_DRIVER) != (k in self.need_keys) for k, v in rows):
+                self.show_tab("cpu")  # «потрібен PawnIO» змінився на значення (чи навпаки) — інший вигляд рядка
+                return
+            for key, val in rows:
                 lb = self.values.get(key)
                 if lb is not None and key in ("cz.clock", "cz.multiplier", "cz.voltage", "cz.bus") \
                         and val is not CZ.NEEDS_DRIVER:
@@ -171,6 +181,7 @@ class CpuzPanel(QWidget):
     def _grid(self, rows: list) -> None:
         clear_layout(self.grid)
         self.values = {}
+        self.need_keys = {k for k, v in rows if v is CZ.NEEDS_DRIVER}
         wide = {"cz.instructions", "cz.spec"}
         r = c = 0
         need = False

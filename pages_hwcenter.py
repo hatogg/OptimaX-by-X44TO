@@ -276,6 +276,13 @@ class HwCenterPage(QWidget):
     def set_hw(self, hw: dict) -> None:
         if self.current == "overview":
             self.refresh_overview()
+        # 7.1: розділ відкрили до того, як залізо визначилось — дочитати з повними даними, а не чекати 5 хвилин
+        cz = getattr(self, "cpuz", None)
+        if cz is not None and not ((cz.data or {}).get("cpu") or {}).get("base_mhz"):
+            cz.load()
+        di = getattr(self, "diskinfo", None)
+        if di is not None and not getattr(di, "disks", None):
+            di.load()
         if getattr(self, "buildcheck", None):
             self.buildcheck.set_hw(hw, self.main.checks or [])
 

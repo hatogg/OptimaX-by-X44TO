@@ -181,7 +181,8 @@ def disk_facts(hw: dict) -> list:
                 demo_free = {"C": {"old": 7.2, "laptop": 41.0}.get(E.DEMO, 182.4), "D": 912.0}.get(L, 300.0)
                 free.append(dict(l=L, free=demo_free, total=float(d.get("size_gb") or 1000)))
         out.append(dict(name=d.get("name") or "?", health=d.get("health"), wear=d.get("wear"), temp=d.get("temp"),
-                        media=d.get("media"), free=free, smart_fail=d.get("smart_fail") or []))
+                        media=d.get("media"), free=free, smart_fail=d.get("smart_fail") or [],
+                        smart_predict=bool(d.get("smart_predict"))))
     return out
 
 
@@ -329,6 +330,10 @@ def check_disk(f: dict) -> dict:
         if d.get("smart_fail"):  # 7.0.1: атрибут SMART на порозі відмови, хоч Windows і пише «Healthy»
             st = BAD
             det.append(_d("hc.disk.smart", name=d["name"], ids=", ".join(d["smart_fail"])))
+            opens.append(["hwc", "storage"])
+        if d.get("smart_predict"):  # 7.1: диск сам передбачає відмову (SMART PredictFailure)
+            st = BAD
+            det.append(_d("hc.disk.predict", name=d["name"]))
             opens.append(["hwc", "storage"])
         if isinstance(d.get("wear"), (int, float)) and d["wear"] >= DISK_WEAR_BAD:
             st = BAD

@@ -60,8 +60,9 @@ def _make_cpuid():
 def cpuid(leaf: int, sub: int = 0):
     """(eax, ebx, ecx, edx) або None поза Windows x64."""
     global _cpuid_fn
-    if not E.IS_WIN or struct.calcsize("P") != 8:
-        return None
+    import platform
+    if not E.IS_WIN or struct.calcsize("P") != 8 or platform.machine().upper() not in ("AMD64", "X86_64"):
+        return None  # 7.1: на ARM64 x86-байти впали б із нативною помилкою
     if _cpuid_fn is None:
         try:
             _cpuid_fn = _make_cpuid() or False
@@ -195,8 +196,9 @@ def short_name(spec: str) -> str:
     s = re.sub(r"\((R|TM|tm|r)\)|®|™", "", spec or "")
     s = re.sub(r"^\d+(st|nd|rd|th) Gen\s+", "", s)
     s = re.sub(r"\s*@.*$", "", s)
-    s = re.sub(r"\s+\d+-Core\b.*$", "", s)
-    s = re.sub(r"\b(CPU|Processor|with Radeon Graphics)\b", "", s)
+    s = re.sub(r"\s+(?:\d+|Dual|Quad|Six|Eight|Ten|Twelve|Sixteen)-Core\b.*$", "", s, flags=re.I)
+    s = re.sub(r"\s+(?:with|w/)\s+Radeon\b.*$", "", s, flags=re.I)
+    s = re.sub(r"\b(CPU|Processor)\b", "", s)
     return re.sub(r"\s+", " ", s).strip()
 
 
@@ -232,7 +234,7 @@ def cache_summary(rel: list) -> list:
             continue
         parts = sorted(g.items(), key=lambda x: -x[0][0])
         size = " + ".join(f"{n} x {_kb(kb)}" if n > 1 else _kb(kb) for (kb, _a), n in parts)
-        ways = " + ".join(dict.fromkeys(f"{a}-way" if a not in (0, 0xFF) else "fully assoc."
+        ways = " + ".join(dict.fromkeys(f"{a}-way" if a not in (0, 0xFF) else tr("cz.fully_assoc")
                                         for (_kb_, a), _n in parts))
         out.append((lk, size, ways))
     return out
@@ -282,7 +284,8 @@ class ClockMeter:
         v = Val()
         if self.pdh.PdhCollectQueryData(self.q) != 0:
             return None
-        if self.pdh.PdhGetFormattedCounterValue(self.c, 0x200, None, ctypes.byref(v)) != 0 or v.status not in (0, 1):
+        # 7.1: PDH_FMT_DOUBLE | PDH_FMT_NOCAP100 — інакше PDH обрізає відсоток на 100 і турбо не видно (як monitor.py)
+        if self.pdh.PdhGetFormattedCounterValue(self.c, 0x8200, None, ctypes.byref(v)) != 0 or v.status not in (0, 1):
             return None
         return round(self.base * v.value / 100) if v.value > 0 else None
 
@@ -314,8 +317,8 @@ def smbios_cpu_mem(raw: bytes) -> dict:
 def socket_name(s) -> str:
     """Лише справжня назва роз'єму: «LGA1700», «AM5», «FCLGA1700», «BGA1744» — не «CPU 1» чи «U3E1»."""
     s = (s or "").strip()
-    return s if re.search(r"\b(?:FC)?LGA\s?\d+|\bAM[2-5]\+?\b|\bFM2\+?\b|\bBGA\s?\d+|\bsTR[X\d]*|\bSP\d\b|Socket",
-                          s, re.I) else ""
+    return s if re.search(r"\b(?:FC)?LGA\s?\d+|\bAM[2-5]\+?\b|\bFM2\+?\b|\bBGA\s?\d+|\bsTR[X\d]*|\bSP\d\b"
+                          r"|Socket\s+(?:AM|FM|LGA|sTR|SP)\w*", s, re.I) else ""
 
 
 def channels(modules: list) -> str:
@@ -324,8 +327,9 @@ def channels(modules: list) -> str:
     for m in modules:
         name = f"{m.get('slot') or ''} {m.get('bank') or ''}"
         mt = re.search(r"channel\s*([A-H])\b|channel([A-H])-|\bDIMM_?([A-H])\d", name, re.I)
-        if mt:
-            seen.add((mt.group(1) or mt.group(2) or mt.group(3)).upper())
+        if mt:  # 7.1: Intel 12+ — «Controller0-ChannelA» і «Controller1-ChannelA» — це два канали
+            ctl = re.search(r"controller\s*(\d)", name, re.I)
+            seen.add((ctl.group(1) if ctl else "", (mt.group(1) or mt.group(2) or mt.group(3)).upper()))
     return len(seen) or None
 
 
@@ -340,7 +344,8 @@ $n=@(Get-CimInstance Win32_PnPEntity -Filter "PNPClass='System'" -EA SilentlyCon
 def chipset_from_names(names: list):
     """«Intel(R) Z790 Chipset LPC/eSPI Controller - 7A04» -> «Intel Z790»; AMD — «AMD FCH» з назви SMBus/LPC."""
     for n in names or []:
-        m = re.search(r"Intel\S*\s+(?:\(R\)\s*)?([A-Z]{1,2}\d{2,3}[A-Z]?)\s+(?:Chipset|LPC|Express|eSPI)", n)
+        m = re.search(r"Intel\S*\s+(?:\(R\)\s*)?([A-Z]{1,2}\d{2,3}[A-Z]?)\s+(?:Chipset|LPC|Express|eSPI)", n) or \
+            (re.search(r"Intel.*(?:Chipset|LPC).*\(([A-Z]{1,2}\d{2,3}[A-Z]?)\)", n))  # «300 Series … (Z370)»
         if m:
             return f"Intel {m.group(1)}"
     for n in names or []:
@@ -404,7 +409,8 @@ def collect(hw: dict, info: dict = None) -> dict:
     spec = cid.get("spec") or hw.get("cpu") or ""
     code, tech = codename(cid.get("vendor") or "", cid.get("ext_family") or 0, cid.get("ext_model") or 0,
                           cid.get("stepping") or 0, spec)
-    cpu = dict(name=short_name(spec) or None, codename=code, technology=tech, package=socket_name(sm.get("socket")),
+    cpu = dict(name=short_name(spec) or None, vendor=cid.get("vendor"), codename=code, technology=tech,
+               package=socket_name(sm.get("socket")),
                spec=spec or None, family=cid.get("family"), model=cid.get("model"), stepping=cid.get("stepping"),
                ext_family=cid.get("ext_family"), ext_model=cid.get("ext_model"),
                instructions=cid.get("instructions") or [], base_mhz=hw.get("mhz") or None,
@@ -422,19 +428,56 @@ def collect(hw: dict, info: dict = None) -> dict:
                            int(HN._reg(r"HARDWARE\DESCRIPTION\System\CentralProcessor\0", "~MHz") or 0))
         if not live.ok:
             live = None
+        warn = []
         try:
-            spd = [PIO.parse_spd(raw) for _a, raw in PIO.read_spd(ram.get("type") or "")]
-        except Exception as e:  # покажемо в примітці, а не сховаємо
+            spd = [PIO.parse_spd(raw) for _a, raw in PIO.read_spd(ram.get("type") or "", warn)]
+        except PIO.SpdError as e:  # причину — у примітку «Пам'яті», а не мовчки «----»
+            spd_error = str(e)
+        except Exception as e:
             spd_error = f"{type(e).__name__}: {e}"
+        if warn:
+            spd_error = "; ".join(([spd_error] if spd_error else []) + warn)
     elif drv == "demo":
         spd = [PIO.parse_spd(PIO.make_ddr4_spd()) for m in mods if m.get("mb")]
-    for m, s in zip([m for m in mods if m.get("mb")], [s for s in spd if s]):
-        m["spd"] = s
+    attach_spd(mods, spd)
     return dict(cpu=cpu, caches=cache_summary(caches), board=dict(info.get("board") or {}, chipset=chipset),
                 bios=info.get("bios") or {}, ram=dict(ram, channels=channels(mods), modules=mods),
                 gpus=[dict(g, link=gpu_links.get(g.get("name"))) for g in info.get("gpus") or []], driver=drv,
                 live=live, spd_error=spd_error,
                 demo_clock=None if E.IS_WIN else DEMO.get(E.DEMO, DEMO["gaming"]).get("clock"))
+
+
+def attach_spd(mods: list, spd: list) -> None:
+    """7.1: SPD -> слот за партномером. Без збігів — по порядку, лише якщо кількість збігається й кожен модуль
+    прочитано (інакше таймінги одного модуля «з'їхали» б на сусідній слот). Решта лишається без SPD."""
+    real = [m for m in mods if m.get("mb")]
+    good = [s for s in spd if s]
+    used = set()
+    for m in real:
+        part = (m.get("part") or "").strip().upper()
+        for i, s in enumerate(good):
+            if i not in used and part and (s.get("part") or "").strip().upper() == part:
+                m["spd"] = s
+                used.add(i)
+                break
+    if not used and len(good) == len(spd) == len(real):
+        for m, s in zip(real, good):
+            m["spd"] = s
+
+
+def pawnio_helps(d: dict, field: str) -> bool:
+    """Чи заповнить PawnIO це поле на цьому залізі (інакше обіцянка «потрібен PawnIO» нечесна)."""
+    c = d.get("cpu") or {}
+    vendor, fam, model = c.get("vendor"), c.get("ext_family") or 0, c.get("ext_model") or 0
+    if field == "spd":
+        return ((d.get("ram") or {}).get("type") or "") in ("DDR4", "DDR5")
+    if vendor == "Intel":
+        if field == "voltage":
+            return PIO.intel_volts_ok(fam, model)
+        return fam == 6 and model >= 0x1A
+    if vendor == "AMD" and 0x17 <= fam <= 0x1A:
+        return field != "voltage" or PIO.amd_svi2(fam, model)
+    return False
 
 
 def demo_live(d: dict, clock) -> dict:
@@ -454,14 +497,12 @@ def _n(v, unit=""):
     return None if v in (None, "", 0) else f"{v}{unit}"
 
 
-def _drv(d: dict, value, spd: bool = False):
-    """Значення з PawnIO; драйвера немає — NEEDS_DRIVER; драйвер є, але регістр не дав відповіді — None («----»).
-    spd=True: SPD читаємо лише з DDR4 / DDR5 — для DDR3 і старіших PawnIO не допоможе, тож там просто «----»."""
+def _drv(d: dict, value, field: str):
+    """Значення з PawnIO; драйвера немає й PawnIO справді заповнить поле на цьому залізі — NEEDS_DRIVER; інакше
+    (драйвер є, але регістр мовчить; DDR3; Zen 4 без формули напруги; модулів немає в збірці) — None («----»)."""
     if value is not None:
         return value
-    if spd and ((d.get("ram") or {}).get("type") or "") not in ("DDR4", "DDR5"):
-        return None
-    return None if d.get("driver") in ("ok", "demo") else NEEDS_DRIVER
+    return NEEDS_DRIVER if d.get("driver") == "absent" and pawnio_helps(d, field) else None
 
 
 def cpu_rows(d: dict, clock=None, live: dict = None) -> list:
@@ -476,18 +517,20 @@ def cpu_rows(d: dict, clock=None, live: dict = None) -> list:
     if lv.get("ratio"):
         mult = f"x{lv['ratio']:g}" + (f" ({lv['lo']} – {lv['hi']})" if lv.get("lo") and lv.get("hi") else "")
     bus = f"{lv['bus']:.2f} MHz" if lv.get("bus") else None
-    if bus is None and d.get("driver") not in ("ok", "demo") and c.get("bus_bios"):
+    if bus is None and not lv and c.get("bus_bios"):
         bus = f"{c['bus_bios']} MHz ({tr('cz.by_bios')})"
     volts = f"{lv['volts']:.3f} V" if lv.get("volts") else None
     return [("cz.name", c.get("name")), ("cz.codename", c.get("codename")), ("cz.package", c.get("package")),
-            ("cz.technology", c.get("technology")), ("cz.voltage", _drv(d, volts)), ("cz.spec", c.get("spec")),
+            ("cz.technology", c.get("technology")), ("cz.voltage", _drv(d, volts, "voltage")),
+            ("cz.spec", c.get("spec")),
             ("cz.family", hexf(c.get("family"))), ("cz.model", hexf(c.get("model"))),
             ("cz.stepping", hexf(c.get("stepping"))), ("cz.ext_family", hexf(c.get("ext_family"))),
             ("cz.ext_model", hexf(c.get("ext_model"))), ("cz.instructions", ", ".join(c.get("instructions") or [])),
             ("cz.clock", f"{clock} MHz" if clock else None),
-            ("cz.multiplier", mult or (f"≈ x{clock / 100:.1f}" if clock and d.get("driver") not in ("ok", "demo")
-                                       else _drv(d, None))),
-            ("cz.bus", bus or _drv(d, None)),
+            # без драйвера — оцінка: частота / шина за BIOS (не завжди 100 МГц: Celeron N3060 — 80)
+            ("cz.multiplier", mult or (f"≈ x{clock / (c.get('bus_bios') or 100):.1f}" if clock and not lv
+                                       else _drv(d, None, "multiplier"))),
+            ("cz.bus", bus or _drv(d, None, "bus")),
             ("cz.base", _n(c.get("base_mhz"), " MHz")), ("cz.cores", cores), ("cz.threads", c.get("threads"))]
 
 
@@ -521,8 +564,8 @@ def memory_rows(d: dict) -> list:
                                                                  if mods else None),
             ("cz.dram_freq", f"{conf / 2:.1f} MHz" if conf else None), ("cz.effective", _n(conf, " MT/s")),
             ("cz.max_speed", _n(r.get("max_speed"), " MT/s")),
-            ("cz.jedec", _drv(d, PIO.timings_text(spd) if spd else None, True)),
-            ("cz.profiles", _drv(d, profiles_text(spd) if spd else None, True))]
+            ("cz.jedec", _drv(d, PIO.timings_text(spd) if spd else None, "spd")),
+            ("cz.profiles", _drv(d, profiles_text(spd) if spd else None, "spd"))]
 
 
 def profiles_text(s: dict) -> str:
@@ -541,11 +584,11 @@ def slot_rows(m: dict, d: dict = None) -> list:
             ("cz.mem_type", " ".join(x for x in (m.get("type"), m.get("form")) if x) or None),
             ("cz.max_speed", _n(m.get("speed"), " MT/s")), ("cz.effective", _n(m.get("conf"), " MT/s")),
             ("cz.mod_vendor", m.get("vendor")), ("cz.part", m.get("part")),
-            ("cz.rank", {1: "Single", 2: "Dual", 4: "Quad"}.get(m.get("rank"), _n(m.get("rank")))),
+            ("cz.rank", tr(f"cz.rank{m['rank']}") if m.get("rank") in (1, 2, 4) else _n(m.get("rank"))),
             ("cz.mod_voltage", f"{m['mv'] / 1000:.2f} V" if m.get("mv") else None),
             ("cz.mfg_date", s.get("date")),
-            ("cz.jedec", _drv(d, PIO.timings_text(s) if s else None, True)),
-            ("cz.profiles", _drv(d, profiles_text(s) if s else None, True))]
+            ("cz.jedec", _drv(d, PIO.timings_text(s) if s else None, "spd")),
+            ("cz.profiles", _drv(d, profiles_text(s) if s else None, "spd"))]
 
 
 def gpu_rows(g: dict) -> list:

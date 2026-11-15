@@ -57,6 +57,9 @@ def test_codenames_and_names():
     assert CZ.short_name("Intel(R) Celeron(R) CPU N3060 @ 1.60GHz") == "Intel Celeron N3060"
     assert CZ.short_name("Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz") == "Intel Xeon E5-2680 v4"
     assert CZ.short_name("AMD Ryzen 7 5700U with Radeon Graphics") == "AMD Ryzen 7 5700U"
+    assert CZ.short_name("AMD Ryzen AI 9 HX 370 w/ Radeon 890M") == "AMD Ryzen AI 9 HX 370"
+    assert CZ.short_name("AMD FX-8350 Eight-Core Processor") == "AMD FX-8350"
+    assert CZ.short_name("Intel(R) Core(TM) Ultra 7 265K") == "Intel Core Ultra 7 265K"
 
 
 def cache_rel(level, ctype, kb, assoc, line=64) -> bytes:
@@ -87,6 +90,11 @@ def test_board_memory_helpers():
     assert CZ.channels([dict(slot="DIMM_A1"), dict(slot="DIMM_A2")]) == 1
     assert CZ.channels([dict(slot="DIMM 1", bank="P0 CHANNEL A"), dict(slot="DIMM 2", bank="P0 CHANNEL B")]) == 2
     assert CZ.channels([dict(slot="DIMM 1")]) is None
+    # Intel 12+: два контролери по каналу A — це два канали
+    assert CZ.channels([dict(slot="Controller0-ChannelA-DIMM1"), dict(slot="Controller1-ChannelA-DIMM1")]) == 2
+    assert CZ.socket_name("SOCKET 0") == "" and CZ.socket_name("CPU Socket - U3E1") == ""
+    assert CZ.socket_name("Socket AM4") == "Socket AM4"
+    assert CZ.chipset_from_names(["Intel(R) 300 Series Chipset Family LPC Controller (Z370) - A2C9"]) == "Intel Z370"
 
 
 def test_demo_tabs_and_report():
@@ -111,10 +119,37 @@ def test_demo_tabs_and_report():
     with patched(E, DEMO="old", IS_WIN=False):
         d = CZ.collect(H._from_demo("old"))
     cpu = dict(CZ.cpu_rows(d, 2480, CZ.demo_live(d, 2480)))
-    assert cpu["cz.voltage"] is CZ.NEEDS_DRIVER and cpu["cz.multiplier"] == "≈ x24.8"
+    # Celeron N3060 (Atom-ядра): напруги PawnIO не дасть — «----», а не обіцянка; множник — частота / шина за BIOS
+    assert cpu["cz.voltage"] is None and cpu["cz.multiplier"] == "≈ x31.0"
     assert cpu["cz.bus"] == "80 MHz (per BIOS)"
     assert dict(CZ.memory_rows(d))["cz.jedec"] is None  # DDR3: PawnIO тут не допоможе — «----», а не обіцянка
-    assert "PawnIO" in CZ.report_text(d, 2480)
+    # Raptor Lake без PawnIO — «потрібен PawnIO» для напруги; Zen 4 без PawnIO — «----» (формули SVI3 немає)
+    with patched(E, DEMO="gaming", IS_WIN=False):
+        d = CZ.collect(H._from_demo("gaming"))
+    d["driver"] = "absent"
+    assert dict(CZ.cpu_rows(d, 5276))["cz.voltage"] is CZ.NEEDS_DRIVER
+    d["cpu"].update(vendor="AMD", ext_family=0x19, ext_model=0x61)
+    assert dict(CZ.cpu_rows(d, 5276))["cz.voltage"] is None
+    assert dict(CZ.cpu_rows(d, 5276))["cz.multiplier"] == "≈ x52.8"
+    d["driver"] = "no_modules"  # PawnIO є, модулів немає — не просимо його встановити
+    d["ram"]["modules"] = [dict(m, spd=None) for m in d["ram"]["modules"]]
+    assert dict(CZ.memory_rows(d))["cz.jedec"] is None
+
+
+def test_spd_attached_by_part_number_not_by_order():
+    import pawnio as PIO
+    a = PIO.parse_spd(PIO.make_ddr4_spd(part="KF432C16BB/16"))
+    b = PIO.parse_spd(PIO.make_ddr4_spd(part="CMK16GX4M2B3200C16", mfr=(0x02, 0x9E)))
+    mods = [dict(mb=16384, part="CMK16GX4M2B3200C16"), dict(mb=16384, part="KF432C16BB/16")]
+    CZ.attach_spd(mods, [a, b])
+    assert mods[0]["spd"]["part"] == "CMK16GX4M2B3200C16" and mods[1]["spd"]["part"] == "KF432C16BB/16"
+    # один модуль не прочитано, партномерів немає — нічого не «з'їжджає» на сусідній слот
+    mods = [dict(mb=8192), dict(mb=8192)]
+    CZ.attach_spd(mods, [{}, a])
+    assert "spd" not in mods[0] and "spd" not in mods[1]
+    mods = [dict(mb=8192), dict(mb=8192)]
+    CZ.attach_spd(mods, [a, b])
+    assert mods[0]["spd"] is a and mods[1]["spd"] is b
     with patched(E, DEMO="x3d", IS_WIN=False):
         d = CZ.collect(H._from_demo("x3d"))
     assert dict(CZ.cpu_rows(d))["cz.codename"] == "Raphael (Zen 4)"

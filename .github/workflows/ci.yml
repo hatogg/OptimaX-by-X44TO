@@ -162,22 +162,26 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
       # 7.1: офіційні підписані модулі PawnIO (LGPL 2.1) — у збірку, для множника, напруги й таймінгів SPD.
-      # Драйвер PawnIO сам перевіряє підпис модуля, тож змінений файл він просто не завантажить.
+      # Версія й SHA-256 зафіксовані в pawnio.py (MODULES_TAG, MODULE_SHA256): інший файл — збірка падає.
       - name: PawnIO modules
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          $tag = python -c "import pawnio; print(pawnio.MODULES_TAG)"
+          $want = python -c "import pawnio, json; print(json.dumps(pawnio.MODULE_SHA256))" | ConvertFrom-Json
           $tmp = Join-Path $env:RUNNER_TEMP "pawnio-modules"
-          gh release download --repo namazso/PawnIO.Modules --pattern "*" --dir $tmp
+          gh release download $tag --repo namazso/PawnIO.Modules --pattern "*" --dir $tmp
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           Get-ChildItem $tmp -Filter *.zip | ForEach-Object {
             Expand-Archive $_.FullName -DestinationPath (Join-Path $tmp $_.BaseName) -Force }
-          foreach ($m in "IntelMSR", "AMDFamily17", "SmbusI801", "SmbusPIIX4") {
+          foreach ($m in $want.PSObject.Properties.Name) {
             $f = Get-ChildItem $tmp -Recurse -Filter "$m.bin" | Select-Object -First 1
-            if (-not $f -or $f.Length -lt 64) { throw "PawnIO module $m.bin is missing in the latest release" }
+            if (-not $f) { throw "PawnIO $tag : $m.bin is missing" }
+            $h = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower()
+            if ($h -ne $want.$m) { throw "PawnIO $tag : $m.bin sha256 $h, expected $($want.$m)" }
             Copy-Item $f.FullName pawnio/
-            "$m.bin  $($f.Length) B  sha256 $((Get-FileHash $f.FullName).Hash)"
+            "$m.bin  $($f.Length) B  sha256 $h  OK"
           }
       - name: Inno Setup
         shell: pwsh

@@ -36,7 +36,7 @@ def identify(model="KINGSTON SA400S37480G", serial="50026B7783C331F6", fw="SBFKK
     w[84] = 1 << 5                        # GPL
     w[169] = 1 if trim else 0
     w[217] = rpm
-    w[222] = 0x1000 | 1 << 8              # SATA 3.2
+    w[222] = 0x1000 | 1 << 7              # SATA 3.2 (біт 7; біт 0 — ATA8-AST)
     b = bytearray(struct.pack("<256H", *w))
     b[20:40] = ata_str(serial, 10)
     b[46:54] = ata_str(fw, 4)
@@ -93,6 +93,9 @@ def test_host_writes_in_vendor_units():
     assert SH.host_io("Samsung SSD 870 EVO 1TB", samsung)["host_writes_gb"] == 10_240  # LBA по 512 байтів
     assert SH.host_io("CT500MX500SSD1", {0xF6: dict(raw=2_000_000_000)})["host_writes_gb"] == 1_024
     assert SH.host_io("Samsung SSD 870 EVO 1TB", {}) == {}
+    # 7.1: SanDisk F1 — GiB; невідомий виробник — не вгадуємо одиницю
+    assert SH.host_io("SanDisk SDSSDH3500G", {0xF1: dict(raw=5000)})["host_writes_gb"] == round(5000 * 2 ** 30 / 1e9)
+    assert SH.host_io("NONAME SSD 512GB", {0xF1: dict(raw=5000)}) == {}
 
 
 def test_nvme_table_and_health_label():
@@ -106,12 +109,41 @@ def test_nvme_table_and_health_label():
     assert SH.health_label(dict(nvme=dict(percentage_used=12), assess=dict(status=HT.PASS))) == (SH.GOOD, 88)
     assert SH.health_label(dict(ata=dict(life_left=0), assess=dict(status=HT.FAIL))) == (SH.BAD, 0)
     assert SH.health_label(dict(assess=dict(status=HT.NA))) == (SH.UNKNOWN, None)
+    # 7.1: лише «Healthy» від Windows без SMART (USB) — не «Добре»
+    assert SH.health_label(dict(health="Healthy", assess=dict(status=HT.PASS)))[0] == SH.UNKNOWN
+    # запас NVMe, що дорівнює порогу, — ще не відмова (критично лише нижче); лише температурний біт — увага
+    nv = dict(spare=10, spare_threshold=10, critical_warning=0x02)
+    rows = {r[1]: r[0] for r in SH.nvme_table(nv)}
+    assert rows[3] == SH.GOOD and rows[1] == SH.CAUTION
+    assert not any(k == "sh.f.spare" for _l, k, _a in SH.assess(dict(nvme=nv))["findings"])
+
+
+def test_hdd_life_and_zero_values():
+    """7.1: у HDD 0xCA — Data Address Mark Errors, а не знос: ніякого «100 %»; значення 0 — не «поріг відмови»."""
+    attrs = {202: dict(id=202, current=100, worst=100, threshold=0, raw=0, name="x"),
+             5: dict(id=5, current=0, worst=0, threshold=36, raw=0, name="Reallocated")}
+    assert "life_left" not in SH.ata_summary(attrs, ssd=False)
+    assert "life_left" not in SH.ata_summary(attrs, ssd=True, vendor="samsung"), "CA — лише Crucial/Micron"
+    assert SH.ata_summary(attrs, ssd=True, vendor="crucial")["life_left"] == 100
+    assert SH.attr_level(5, attrs[5]) == SH.GOOD and SH.ata_summary(attrs)["failing"] == []
+
+
+def test_report_masks_only_the_serial_line():
+    with patched(E, DEMO="gaming", IS_WIN=False):
+        disks = SH.check_all(H._from_demo("gaming"))
+    serial = dict(SH.details(disks[0]))["di.serial"]
+    text = SH.report_text(disks, "••••")
+    assert serial and serial not in text and "••••" in text
+    assert text.count("••••") == sum(1 for d in disks if dict(SH.details(d)).get("di.serial"))
 
 
 def test_pcie_link_text():
     assert SH.pcie_link(dict(cs=4, cw=4, ms=4, mw=4)) == "PCIe 4.0 x4 | PCIe 4.0 x4"
     assert SH.pcie_link(dict(cs=3, cw=2, ms=4, mw=4)) == "PCIe 3.0 x2 | PCIe 4.0 x4"
     assert SH.pcie_link({}) is None
+    # 7.1: у SATA-диска «батько» — контролер AHCI: його лінія PCIe — не режим диска
+    info = dict(media="SSD", link="PCIe 3.0 x1 | PCIe 3.0 x2", identify=dict(transfer="SATA/600 | SATA/600"))
+    assert dict(SH.details(info))["di.transfer"] == "SATA/600 | SATA/600"
 
 
 def test_demo_disks_details_and_report():

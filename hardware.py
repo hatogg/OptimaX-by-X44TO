@@ -178,12 +178,12 @@ $pt=@(Get-Partition | Where-Object { $_.DriveLetter } | ForEach-Object { @{l=[st
 $sm=@(); try {
   $dd=@{}; foreach ($x in @(Get-CimInstance Win32_DiskDrive -ErrorAction Stop)) {
     $dd[[string]$x.PNPDeviceID]=[string]$x.Index }
-  $w='root\wmi'; $th=@{}; $pf=@{}
-  foreach ($x in @(Get-CimInstance -Namespace $w -ClassName MSStorageDriver_FailurePredictThresholds -EA SilentlyContinue)) {
+  $w='root\wmi'; $c='MSStorageDriver_FailurePredict'; $th=@{}; $pf=@{}
+  foreach ($x in @(Get-CimInstance -Namespace $w -ClassName ($c+'Thresholds') -EA SilentlyContinue)) {
     $th[[string]$x.InstanceName]=$x.VendorSpecific }
-  foreach ($x in @(Get-CimInstance -Namespace $w -ClassName MSStorageDriver_FailurePredictStatus -EA SilentlyContinue)) {
+  foreach ($x in @(Get-CimInstance -Namespace $w -ClassName ($c+'Status') -EA SilentlyContinue)) {
     $pf[[string]$x.InstanceName]=[bool]$x.PredictFailure }
-  foreach ($x in @(Get-CimInstance -Namespace $w -ClassName MSStorageDriver_FailurePredictData -ErrorAction Stop)) {
+  foreach ($x in @(Get-CimInstance -Namespace $w -ClassName ($c+'Data') -ErrorAction Stop)) {
     $n=[string]$x.InstanceName; $id=$dd[($n -replace '_\d+$','')]
     if ($id -ne $null) { $sm += @{id=$id; v=[Convert]::ToBase64String([byte[]]$x.VendorSpecific); pf=$pf[$n];
       t=$(if ($th[$n]) { [Convert]::ToBase64String([byte[]]$th[$n]) })} } }
@@ -366,11 +366,14 @@ def ram_speed_fix(speed: int, conf: int) -> int:
 # 7.0.1 (скарга: CrystalDiskInfo — «Bad 0%», а OptimaX — «диски в порядку»): SATA-диски часто не віддають знос
 # у Get-StorageReliabilityCounter, а Windows пише «Healthy», доки диск не відмовив. Читаємо самі атрибути SMART.
 # Залишок ресурсу записів — перший наявний атрибут: (id, звідки брати відсоток залишку).
+# 7.1: лише нормалізоване значення (100 = новий). «Сире» в Samsung B1 — цикли стирання, в Intel E9 — 0, у WD A9 —
+# відсоток залишку, тож min(cur, raw) робив новий Samsung «зношеним на 97 %». Сире — лише Crucial CA (% використаного).
 SMART_LIFE = ((0xE7, "cur"),       # SSD Life Left: Kingston, Seagate, Phison/SandForce, ADATA
-              (0xA9, "raw_used"),  # Remaining Lifetime: WD/SanDisk — у raw відсоток використаного
+              (0xA9, "cur"),       # Percent Lifetime Remaining: WD/SanDisk
               (0xCA, "raw_used"),  # Percent Lifetime Used: Crucial/Micron
               (0xB1, "cur"),       # Wear Leveling Count: Samsung
               (0xE9, "cur"))       # Media Wearout Indicator: Intel
+SMART_NOT_FAILURE = {0xBE, 0xC2}  # температура, нормалізована як 100 − °C: гарячий диск — не «поріг відмови»
 
 
 def smart_attrs(blob: bytes) -> dict:
@@ -396,14 +399,15 @@ def smart_summary(data: bytes, thresholds: bytes = b"", predict_fail=False) -> d
         if how == "raw_used":
             life = 100 - raw if raw <= 100 else None
         elif cur <= 100:
-            life = min(cur, raw) if raw <= 100 else cur  # у частини Kingston відсоток — і в raw
+            life = cur
         if life is not None:
             break
     thr = {}
     for off in range(2, min(len(thresholds or b""), 2 + 30 * 12) - 11, 12):
         if thresholds[off]:
             thr[thresholds[off]] = thresholds[off + 1]
-    fail = sorted(aid for aid, (cur, _raw) in attrs.items() if 0 < thr.get(aid, 0) < 0xFE and cur <= thr[aid])
+    fail = sorted(aid for aid, (cur, _raw) in attrs.items()
+                  if aid not in SMART_NOT_FAILURE and 0 < thr.get(aid, 0) < 0xFE and cur <= thr[aid])
     return dict(life=life, fail=fail, predict=bool(predict_fail))
 
 
@@ -421,8 +425,10 @@ def apply_smart(disks: list, smart: list) -> None:
             continue
         if sm.get("life") is not None:
             d["wear"] = max(d.get("wear") or 0, 100 - sm["life"])
-        if sm.get("fail") or sm.get("predict"):
-            d["smart_fail"] = [f"{a:02X}" for a in sm.get("fail") or []] or ["predict"]
+        if sm.get("fail"):
+            d["smart_fail"] = [f"{a:02X}" for a in sm["fail"]]
+        if sm.get("predict"):  # 7.1: сам диск передбачає відмову — окремим рядком, без «атрибута predict»
+            d["smart_predict"] = True
 
 
 def merge_disks(ps_disks: list, parts: list, native: list) -> list:
@@ -853,7 +859,10 @@ def is_integrated(name: str, vram: float = 0.0) -> bool:
 # 7.0.1 (скарга: «Resizable BAR вимкнено», хоча SAM у драйвері AMD увімкнено): Win32_DeviceMemoryAddress не показує
 # вікна пам'яті понад 4 ГБ (CmResourceTypeMemoryLarge) — а саме таким стає BAR відеокарти з Resizable BAR.
 RESOURCE_MAP_KEY = r"HARDWARE\RESOURCEMAP\PnP Manager\PnpManager"
-_CM_MEMORY, _CM_MEMORY_LARGE = 3, 7
+_CM_MEMORY, _CM_DEVICE_SPECIFIC, _CM_MEMORY_LARGE = 3, 5, 7
+# 7.1: на x64 CM_PARTIAL_RESOURCE_DESCRIPTOR — 20 байтів (pack 4; union 16 через KAFFINITY у Interrupt), а не 16:
+# з кроком 16 другий і далі дескриптори читалися зі зсувом, і BAR1 NVIDIA / BAR2 Intel Arc губився
+_CM_PARTIAL_SIZE = 20
 _CM_LARGE_SHIFT = ((0x0200, 8), (0x0400, 16), (0x0800, 32))  # CM_RESOURCE_MEMORY_LARGE_40 / _48 / _64
 
 
@@ -867,7 +876,10 @@ def parse_resource_list(blob: bytes) -> Optional[int]:
             off += 16
             for _ in range(n):
                 typ, _share, flags, _start, length = struct.unpack_from("<BBHQI", blob, off)
-                off += 16
+                off += _CM_PARTIAL_SIZE
+                if typ == _CM_DEVICE_SPECIFIC:  # після нього — DataSize байтів даних пристрою
+                    off += struct.unpack_from("<I", blob, off - _CM_PARTIAL_SIZE + 4)[0]
+                    continue
                 if typ == _CM_MEMORY_LARGE:
                     length <<= next((s for bit, s in _CM_LARGE_SHIFT if flags & bit), 0)
                 if typ in (_CM_MEMORY, _CM_MEMORY_LARGE):

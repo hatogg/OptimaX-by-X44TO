@@ -41,6 +41,9 @@ def test_msr_decoding():
     # Zen 5: FID 12 бітів по 5 МГц
     assert PIO.amd_pstate(940, 0x1A, 0x44) == (4700, None)
     assert PIO.amd_svi2(0x17, 0x71) and not PIO.amd_svi2(0x19, 0x61)
+    # напруга з IA32_PERF_STATUS — лише Core від Sandy Bridge, не Atom і не Core 2
+    assert PIO.intel_volts_ok(6, 0xB7) and PIO.intel_volts_ok(6, 0x2A)
+    assert not PIO.intel_volts_ok(6, 0x17) and not PIO.intel_volts_ok(6, 0x4C) and not PIO.intel_volts_ok(6, 0xBE)
 
 
 def ddr5_spd(tck=416, aa=16640, rcd=16640, rp=16640, ras=32000, xmp=True, expo=True) -> bytes:
@@ -69,6 +72,11 @@ def test_spd_parsing():
     s = PIO.parse_spd(ddr5_spd())
     assert (s["kind"], s["speed"], s["timings"], s["vendor"]) == ("DDR5", 4800, (40, 40, 40, 77), "Micron")
     assert s["part"] == "CT16G48C40U5.M8A1" and s["date"] == "7/2024" and s["xmp"] and s["expo"]
+    # SPD зберігає tCK округленим донизу: DDR5-6400 (312 пс) JEDEC CL52, DDR5-6000 (333 пс) — CL48, без непарних CL
+    s = PIO.parse_spd(ddr5_spd(tck=312, aa=16250, rcd=16250, rp=16250, ras=32000, xmp=False, expo=False))
+    assert s["speed"] == 6400 and s["timings"] == (52, 52, 52, 103)
+    s = PIO.parse_spd(ddr5_spd(tck=333, aa=16000, rcd=16000, rp=16000, ras=32000))
+    assert s["speed"] == 6000 and s["timings"][:3] == (48, 48, 48)
     assert PIO.parse_spd(b"") == {} and PIO.parse_spd(bytes(512)) == {}
 
 
@@ -76,11 +84,16 @@ class FakeBus:
     """Шина з одним DDR4-модулем на 0x50 або одним DDR5 (SPD5118) на 0x51. Записує, хто й що писав."""
 
     def __init__(self, kind: str, raw: bytes, name="SmbusI801"):
-        self.kind, self.raw, self.page, self.writes = kind, raw, 0, []
+        self.kind, self.raw, self.page, self.writes, self.reads = kind, raw, 0, [], 0
         self.drv = type("D", (), {"name": name, "call": lambda *a, **k: None})()
         self.addr = 0x50 if kind == "DDR4" else 0x51
+        self.protected = False
+
+    def ack(self, addr):
+        return self.kind == "DDR4" and addr == 0x36 and self.page == 0
 
     def read(self, addr, cmd):
+        self.reads += 1
         if addr != self.addr:
             return None  # NACK
         if self.kind == "DDR4":
@@ -101,17 +114,33 @@ class FakeBus:
 
 
 def test_spd_paging_restores_state():
+    warn = []
     bus = FakeBus("DDR4", PIO.make_ddr4_spd())
-    assert PIO._ddr4(bus, 0x51) is None  # порожній слот
-    raw = PIO._ddr4(bus, 0x50)
-    assert raw == PIO.make_ddr4_spd() and bus.page == 0
+    assert PIO._ddr4(bus, 0x51, warn) is None  # порожній слот
+    bus.reads = 0
+    raw = PIO._ddr4(bus, 0x50, warn)
+    assert PIO.parse_spd(raw) == PIO.parse_spd(PIO.make_ddr4_spd()) and bus.page == 0 and not warn
+    assert bus.reads < 200, "лише потрібні байти — менше тримаємо м'ютекс шини"
     assert {a for a, _c, _v in bus.writes} <= {0x36, 0x37}  # у самі модулі нічого не пишемо
     bus = FakeBus("DDR5", ddr5_spd())
     bus.page = 3  # BIOS лишив сторінку 3 — так і має лишитися
-    assert PIO._ddr5(bus, 0x50) is None and not bus.writes  # на чужій адресі навіть не пробуємо
-    raw = PIO._ddr5(bus, 0x51)
-    assert PIO.parse_spd(raw)["speed"] == 4800 and bus.page == 3
+    assert PIO._ddr5(bus, 0x50, warn) is None and not bus.writes  # на чужій адресі навіть не пробуємо
+    raw = PIO._ddr5(bus, 0x51, warn)
+    assert PIO.parse_spd(raw)["speed"] == 4800 and bus.page == 3 and not warn
     assert all(a == 0x51 and c == 0x0B for a, c, _v in bus.writes)  # лише регістр сторінки MR11
+
+
+def test_module_hash_is_checked_before_loading(tmp_path=None):
+    """Модуль, чий SHA-256 не збігається з MODULE_SHA256, у драйвер не передається (підміна в %TEMP%)."""
+    import tempfile
+    from test_undo_guarantees import patched
+    d = tempfile.mkdtemp()
+    open(os.path.join(d, "IntelMSR.bin"), "wb").write(b"not the signed module" * 10)
+    opened = []
+    with patched(PIO, module_dir=lambda: d, Driver=type("Drv", (), {"open": staticmethod(
+            lambda: opened.append(1))})):
+        assert PIO.open_module(("IntelMSR",)) is None and not opened
+    assert set(PIO.MODULE_SHA256) == set(PIO.MODULES) and PIO.MODULES_TAG
 
 
 def test_status_off_windows():

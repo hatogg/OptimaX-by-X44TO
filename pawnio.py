@@ -11,15 +11,19 @@ OptimaX свого драйвера не має й PawnIO сам не встан
 у теку pawnio\\ поруч із програмою разом із текстом ліцензії.
 
 Безпека.
-• Драйвер сам перевіряє підпис модуля: змінений файл він не завантажить.
+• Версія модулів зафіксована (MODULES_TAG), а перед завантаженням у драйвер OptimaX звіряє SHA-256 вмісту файлу з
+  MODULE_SHA256 — вже прочитаного в пам'ять, тож підмінити файл у %TEMP% (портативна збірка) між перевіркою й
+  завантаженням не вийде.
 • Модулі дають читати лише перелічені в них регістри. OptimaX у MSR нічого не пише.
-• Єдиний запис — вибір сторінки SPD на шині SMBus (DDR4: адреси 0x36 / 0x37, DDR5: регістр MR11 концентратора). Це
-  тимчасовий регістр, а не налаштування системи, тому він не йде через журнал. Після читання повертаємо сторінку як
-  була — так само роблять CPU-Z, HWiNFO і LibreHardwareMonitor.
+• Записи на шину SMBus — лише вибір сторінки SPD (DDR4: адреси 0x36 / 0x37, DDR5: регістр MR11 концентратора) і, на
+  AMD, вибір порту контролера. Це тимчасові регістри, а не налаштування системи (скидаються з вимкненням), тому вони
+  не йдуть через журнал. Після читання повертаємо як було; не вдалося — кажемо про це (spd_error), а не мовчимо.
+  У саму пам'ять SPD (дані модуля) не пишемо ніколи.
 • Шину ділимо з іншими програмами через загальний м'ютекс Access_SMBUS.HTP.Method.
 """
 from __future__ import annotations
 
+import hashlib
 import math
 import os
 import struct
@@ -39,6 +43,14 @@ def _ctl(fn: int) -> int:
 IOCTL_LOAD, IOCTL_EXEC = _ctl(0x821), _ctl(0x841)
 FN_LEN = 32
 MODULES = ("IntelMSR", "AMDFamily17", "SmbusI801", "SmbusPIIX4")
+# 7.1: офіційний реліз PawnIO.Modules, який кладе в збірку CI (.github/workflows/ci.yml звіряє ці ж хеші)
+MODULES_TAG = "0.2.11"
+MODULE_SHA256 = {
+    "IntelMSR": "d6ed85d65ab17a22f813ef98207d6d537155ee2ded5976a21cb48413c9b92e5f",
+    "AMDFamily17": "dae74615761b78bdf064dfb3e136252ddcc6fc727d88f14738d0e5800d427a91",
+    "SmbusI801": "a0f7d066e7efda28c0e754c1f52dbd8dc280d388ba8575b514a80cb67490530c",
+    "SmbusPIIX4": "91f9b4b1c39e3d399ce48477a89d8f6bd3e58a2241064a4daec3a1513dff56e5",
+}
 
 
 def module_dir() -> str:
@@ -131,6 +143,8 @@ def open_module(names):
                 blob = f.read()
         except OSError:
             continue
+        if hashlib.sha256(blob).hexdigest() != MODULE_SHA256.get(name):  # не той файл — у драйвер не передаємо
+            continue
         d = Driver.open()
         if not d:
             return None
@@ -147,6 +161,16 @@ def intel_perf_status(v: int) -> tuple:
     (Sandy Bridge і новіші)."""
     vid = v >> 32 & 0xFFFF
     return v >> 8 & 0xFF, round(vid / 8192, 3) if vid else None
+
+
+# Atom / E-ядерні Celeron і Pentium: напругу в IA32_PERF_STATUS не віддають (або віддають інакше)
+INTEL_ATOM = {0x1C, 0x26, 0x27, 0x35, 0x36, 0x37, 0x4A, 0x4C, 0x4D, 0x5A, 0x5C, 0x5D, 0x5F, 0x7A, 0x86, 0x96, 0x9C,
+              0xBE}
+
+
+def intel_volts_ok(family: int, model: int) -> bool:
+    """Напруга в бітах 47:32 IA32_PERF_STATUS — лише Core від Sandy Bridge (сім. 6, модель ≥ 0x2A), не Atom."""
+    return family == 6 and model >= 0x2A and model not in INTEL_ATOM
 
 
 def intel_platform_info(v: int) -> tuple:
@@ -177,7 +201,7 @@ class CpuLive:
     def __init__(self, vendor: str, family: int, model: int, reg_mhz: int):
         self.vendor, self.family, self.model, self.reg_mhz = vendor, family, model, reg_mhz
         self.drv, self.base_ratio, self.min_ratio, self.max_ratio = None, None, None, None
-        if vendor == "Intel":
+        if vendor == "Intel" and family == 6 and model >= 0x1A:  # Nehalem і новіші: є MSR_PLATFORM_INFO
             self.drv = open_module(("IntelMSR",))
         elif vendor == "AMD" and 0x17 <= family <= 0x1A:
             self.drv = open_module(("AMDFamily17",))
@@ -204,6 +228,7 @@ class CpuLive:
         return out[0] if out else None
 
     def _on_core0(self, fn):
+        """Перший логічний процесор поточної групи (на ПК до 64 потоків — справді ядро 0)."""
         import ctypes
         k32 = ctypes.windll.kernel32
         k32.GetCurrentThread.restype = ctypes.c_void_p
@@ -232,6 +257,8 @@ class CpuLive:
             if v is None:
                 return {}
             ratio, volts = intel_perf_status(v)
+            if not intel_volts_ok(self.family, self.model):  # 7.1: Core 2 / Nehalem / Atom — не вигадувати вольти
+                volts = None
         else:
             v = self.msr(0xC0010293)
             if v is None:
@@ -250,7 +277,7 @@ class CpuLive:
 
 # ───────────────────────── пам'ять: SPD через SMBus ─────────────────────────
 READ, WRITE = 1, 0
-BYTE_DATA, PROC_CALL = 2, 4
+BYTE, BYTE_DATA, PROC_CALL = 1, 2, 4
 
 
 class BusLock:
@@ -274,93 +301,130 @@ class BusLock:
             self.k32.CloseHandle(self.h)
 
 
+class SpdError(Exception):
+    """Причина, чому SPD не прочитано (показуємо в «Пам'яті», а не мовчимо)."""
+
+
 class Smbus:
     def __init__(self):
         self.drv = open_module(("SmbusI801", "SmbusPIIX4"))
-        self.old_port = None
-        if self.drv and self.drv.name == "SmbusPIIX4":  # SPD сидить на порту 0 контролера AMD
+        self.old_port, self.protected = None, False
+        if not self.drv:
+            return
+        if self.drv.name == "SmbusPIIX4":  # SPD сидить на порту 0 контролера AMD
             out = self.drv.call("ioctl_piix4_port_sel", [0], 1)
             self.old_port = out[0] if out else None
+        else:  # нові чипсети Intel забороняють запис у SPD — тоді сторінку DDR5 міняють через PROC_CALL
+            out = self.drv.call("ioctl_write_protection", [], 1)
+            self.protected = bool(out and out[0])
 
     def read(self, addr: int, cmd: int):
         out = self.drv.call("ioctl_smbus_xfer", [addr, READ, cmd, BYTE_DATA], 1)
         return out[0] & 0xFF if out else None
 
+    def ack(self, addr: int) -> bool:
+        """Чи відповідає пристрій на адресі (читання одного байта без команди)."""
+        return self.drv.call("ioctl_smbus_xfer", [addr, READ, 0, BYTE], 1) is not None
+
     def write(self, addr: int, cmd: int, val: int) -> bool:
         return self.drv.call("ioctl_smbus_xfer", [addr, WRITE, cmd, BYTE_DATA, val], 0) is not None
 
-    def close(self) -> None:
+    def close(self) -> bool:
+        """-> чи повернули порт PIIX4 як був."""
+        ok = True
         if self.drv:
             if self.old_port not in (None, 0, 2**64 - 1):
-                self.drv.call("ioctl_piix4_port_sel", [self.old_port], 1)
+                ok = self.drv.call("ioctl_piix4_port_sel", [self.old_port], 1) is not None
             self.drv.close()
             self.drv = None
+        return ok
 
 
-def _ddr4(bus: Smbus, addr: int):
-    if not bus.write(0x36, 0, 0) or bus.read(addr, 2) != 0x0C:
+# 7.1: лише байти, які розбирає parse_spd (~170 замість 512 транзакцій — менше тримаємо м'ютекс шини)
+DDR4_BYTES = (range(0, 128), range(320, 350), range(384, 387))  # таймінги; виробник, дата, партномер; XMP
+DDR5_PAGES = {0: range(0, 64), 4: range(512, 551), 5: range(640, 642), 6: range(832, 836)}
+
+
+def _ddr4(bus: Smbus, addr: int, warn: list):
+    # Частина модулів міняє сторінку без ACK на команду (ee1004.c, RAMSPDToolkit) — результат запису не
+    # перевіряємо, а сторінку визначаємо так: 0x36 відповідає лише на сторінці 0.
+    bus.write(0x36, 0, 0)
+    if not bus.ack(0x36) or bus.read(addr, 2) != 0x0C:
         return None
     raw = bytearray(512)
     try:
-        for page in (0, 1):
-            if not bus.write(0x36 + page, 0, 0):
-                return None
-            for i in range(256):
-                b = bus.read(addr, i)
+        for rng in DDR4_BYTES:
+            page = rng[0] >> 8
+            if page:
+                bus.write(0x37, 0, 0)
+                if bus.ack(0x36):  # досі сторінка 0
+                    return None
+            for i in rng:
+                b = bus.read(addr, i & 0xFF)
                 if b is None:
                     return None
-                raw[page * 256 + i] = b
+                raw[i] = b
     finally:
         bus.write(0x36, 0, 0)  # сторінка 0 — як після ввімкнення ПК
+        if not bus.ack(0x36):
+            warn.append("DDR4: page 0 not restored")
     return bytes(raw)
 
 
 def _ddr5_page(bus: Smbus, addr: int, page: int) -> bool:
-    if not bus.write(addr, 0x0B, page) and bus.drv.name == "SmbusI801":
-        # на нових чипсетах Intel запис у SPD заборонено — сторінку міняють через PROC_CALL (як RAMSPDToolkit)
+    if bus.protected:  # Intel із захистом запису: PROC_CALL (як RAMSPDToolkit)
         bus.drv.call("ioctl_smbus_xfer", [addr, READ, 0x0B, PROC_CALL, page], 1)
+    else:
+        bus.write(addr, 0x0B, page)
     cur = bus.read(addr, 0x0B)
-    return cur is not None and cur & 7 == page
+    return cur is not None and cur & 0x0F == page
 
 
-def _ddr5(bus: Smbus, addr: int):
+def _ddr5(bus: Smbus, addr: int, warn: list):
     if bus.read(addr, 0) != 0x51 or bus.read(addr, 1) != 0x18:  # концентратор SPD5118
         return None
     old = bus.read(addr, 0x0B)
+    if old is None or old & 0x08:  # 2-байтова адресація — не наш режим, нічого не чіпаємо
+        return None
     raw = bytearray(1024)
     try:
-        for page in (0, 4, 5, 6):  # 0 — таймінги, 4 — виробник і партномер, 5 — XMP 3.0, 6 — EXPO
+        for page, rng in DDR5_PAGES.items():
             if not _ddr5_page(bus, addr, page):
                 return None if page == 0 else bytes(raw)
-            for i in range(128):
-                b = bus.read(addr, 0x80 | i)
+            for i in rng:
+                b = bus.read(addr, 0x80 | (i & 0x7F))
                 if b is None:
                     return None
-                raw[page * 128 + i] = b
+                raw[i] = b
     finally:
-        if old is not None:
-            _ddr5_page(bus, addr, old & 7)
+        if not _ddr5_page(bus, addr, old & 0x0F):
+            warn.append(f"DDR5 0x{addr:02X}: MR11 not restored")
     return bytes(raw) if raw[2] == 0x12 else None
 
 
-def read_spd(mem_type: str) -> list:
-    """[(адреса, сирий SPD)] для кожного модуля. Лише DDR4 / DDR5 і лише якщо тип збігається зі SMBIOS."""
+def read_spd(mem_type: str, warn: list = None) -> list:
+    """[(адреса, сирий SPD)] для кожного модуля. Лише DDR4 / DDR5 і лише якщо тип збігається зі SMBIOS.
+    Не вдалося взагалі — SpdError з причиною; недоліки по дорозі (не повернули сторінку) — у warn."""
+    warn = [] if warn is None else warn
     if not E.IS_WIN or mem_type not in ("DDR4", "DDR5"):
         return []
     out = []
     with BusLock() as lock:
         if not lock.held:
-            return []
+            raise SpdError("SMBus busy (Access_SMBUS.HTP.Method)")
         bus = Smbus()
         if not bus.drv:
-            return []
+            raise SpdError("no PawnIO SMBus module for this chipset")
         try:
             for addr in range(0x50, 0x58):
-                raw = _ddr4(bus, addr) if mem_type == "DDR4" else _ddr5(bus, addr)
+                raw = _ddr4(bus, addr, warn) if mem_type == "DDR4" else _ddr5(bus, addr, warn)
                 if raw:
                     out.append((addr, raw))
         finally:
-            bus.close()
+            if not bus.close():
+                warn.append("PIIX4 port not restored")
+    if not out:
+        raise SpdError(f"no {mem_type} SPD answered on SMBus")
     return out
 
 
@@ -373,9 +437,12 @@ def _s8(b: int) -> int:
     return b - 256 if b > 127 else b
 
 
-def _nck(t_ps: float, tck: float) -> int:
-    """Час -> такти з допуском JEDEC (1 %), як у таблицях CPU-Z."""
-    return max(1, math.ceil(t_ps / tck - 0.01))
+def _nck(t_ps: float, tck: float, kind: str = "DDR4") -> int:
+    """Час -> такти з допуском JEDEC. DDR5: (t × 0.997 / tCK) з відкиданням + 1 (JESD400-5); DDR4: 2.5 %.
+    SPD зберігає tCK округленим донизу (312.5 -> 312 пс), тож без допуску DDR5-6400 давав непарний CL53."""
+    if kind == "DDR5":
+        return max(1, (int(t_ps) * 997 // int(tck) + 1000) // 1000)
+    return max(1, math.ceil(t_ps / tck - 0.025))
 
 
 def _speed(tck: float, kind: str) -> int:
@@ -423,13 +490,13 @@ def parse_spd(raw: bytes) -> dict:
         xmp = raw[640:642] == b"\x0C\x4A"
         profiles = 0
         expo = raw[832:836] == b"EXPO"  # 0x340, сторінка 6
-        ranks = (raw[234] >> 3 & 7) + 1
+        ranks = None  # байт 234 — на сторінці 1, яку не читаємо; ранг є в SMBIOS
     else:
         return {}
-    cl = _nck(t["aa"], tck)
+    cl = _nck(t["aa"], tck, kind)
     supported = [cl_base + i * cl_step for i in range(cl_mask.bit_length()) if cl_mask >> i & 1]
     cl = next((c for c in supported if c >= cl), cl)
-    timings = (cl, _nck(t["rcd"], tck), _nck(t["rp"], tck), _nck(t["ras"], tck))
+    timings = (cl, _nck(t["rcd"], tck, kind), _nck(t["rp"], tck, kind), _nck(t["ras"], tck, kind))
     yy, ww = _bcd(year), _bcd(week)
     return dict(kind=kind, speed=_speed(tck, kind), mhz=round(1_000_000 / tck, 1), timings=timings,
                 vendor=HI.JEDEC.get((mfr[0] & 0x7F, mfr[1] & 0x7F)), part=_ascii(part) or None, ranks=ranks,
