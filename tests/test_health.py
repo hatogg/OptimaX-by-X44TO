@@ -256,3 +256,21 @@ def test_every_card_text_formats_in_every_language():
                 assert HC.report_lines(r)
         finally:
             i18n.set_language(old)
+
+
+def test_reads_a_real_windows():
+    """На справжній Windows (CI: windows-2022 / 2025) скрипт фактів виконується й повертає всі блоки — лише читання."""
+    from _util import IS_WIN, skip
+    if not IS_WIN:
+        skip("needs real Windows")
+    f = HC.collect({}, only=sorted(HC.PS_CHECKS - {"time"}))
+    ps = f.get("ps")
+    assert isinstance(ps, dict), "FACTS_PS returned no JSON (PowerShell error?)"
+    for k in ("wureboot", "defpol", "uac", "rdp", "autorun", "timesvc", "audio"):
+        assert k in ps, (k, sorted(ps))
+    assert isinstance(ps["wureboot"], bool)
+    assert str((ps.get("timesvc") or {}).get("start") or "") in ("Manual", "Automatic", "Disabled", "")
+    r = HC.evaluate(f)
+    errs = [c for c in r["checks"] if c["head"][0] == "hc.err"]
+    assert not errs, errs
+    assert isinstance(f.get("uptime"), int) and f["uptime"] > 0
