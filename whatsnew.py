@@ -10,7 +10,7 @@ import features as F
 # версія -> ключі рядків (lang_life.py); у вікні — у такому порядку
 NOTES = {
     # 7.0.0 — перший реліз після 6.15: новий вигляд + головне з 6.16 і 6.17 (окремо не випускалися)
-    "7.0.1": ["wn.701.rebar", "wn.701.smart", "wn.701.nic"],
+    "7.1.0": ["wn.710.disks", "wn.701.rebar", "wn.701.smart", "wn.701.nic"],
     "7.0.0": ["wn.700.design", "wn.616.health", "wn.617.safety", "wn.617.honest"],
     "6.17": ["wn.617.safety", "wn.617.honest", "wn.617.tweaks"],
     "6.16": ["wn.616.health", "wn.616.fix"],

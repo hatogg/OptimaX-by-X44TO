@@ -2,6 +2,15 @@
 (українська, російська, англійська)."""
 
 STRINGS = {
+    # ── «Що нового» 7.1.0 ──
+    "wn.710.disks": ("«Диски» в Hardware Center — як CrystalDiskInfo: стан і залишок ресурсу, температура, прошивка, "
+                     "режим, функції, записано й прочитано, повна таблиця SMART і журнал NVMe, звіт одним кліком.",
+                     "«Диски» в Hardware Center — как CrystalDiskInfo: состояние и остаток ресурса, температура, "
+                     "прошивка, режим, функции, записано и прочитано, полная таблица SMART и журнал NVMe, отчёт "
+                     "одним кликом.",
+                     "Drives in Hardware Center, like CrystalDiskInfo: health and remaining endurance, temperature, "
+                     "firmware, transfer mode, features, host reads and writes, the full SMART table and NVMe log, "
+                     "a report in one click."),
     # ── «Що нового» 7.0.1 ──
     "wn.701.rebar": ("Resizable BAR (AMD SmartAccess Memory) більше не показується вимкненим, коли він увімкнений.",
                      "Resizable BAR (AMD SmartAccess Memory) больше не показывается выключенным, когда он включён.",

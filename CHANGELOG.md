@@ -2,9 +2,13 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
-## [7.0.1] — 2026-11-15
+## [7.1.0] — 2026-11-15
 
-Виправлення за відгуками користувачів 7.0.0.
+Аналог CrystalDiskInfo всередині OptimaX і виправлення за відгуками користувачів 7.0.0 (7.0.1 окремо не виходила).
+
+### Додано
+
+- **«Диски» в Hardware Center — як CrystalDiskInfo.** Вкладки всіх дисків зі станом і температурою; для вибраного — стан («Добре / Увага / Погано») із залишком ресурсу, температура, прошивка, серійний номер, інтерфейс, режим (SATA/600 чи PCIe 4.0 x4 — зараз і максимум), стандарт (ACS-3, SATA 3.2, NVM Express 1.4), функції (S.M.A.R.T., NCQ, TRIM, APM, DevSleep…), оберти, записано й прочитано (для SATA — в одиницях свого виробника: Kingston, Samsung, Crucial, Intel), записано в NAND, увімкнення й години роботи. Повна таблиця SMART (ID, атрибут, поточне, найгірше, поріг, сире значення в hex або dec) з назвами атрибутів і уточненнями виробників; для NVMe — весь журнал здоров'я рядками. Під таблицею — висновки простими словами. «Копіювати звіт» кладе текст у буфер, як «Edit → Copy» у CrystalDiskInfo. Серійні номери приховані, доки їх не відкрити. Дані оновлюються кожні 5 хвилин, поки розділ відкритий. Паспорт диска — з ATA IDENTIFY і NVMe Identify Controller, лінія PCIe — з контролера NVMe. Лише читання.
 
 ### Виправлено
 
@@ -14,6 +18,8 @@
 
 <details>
 <summary>English</summary>
+
+**Added — Drives in Hardware Center, a CrystalDiskInfo inside OptimaX:** tabs for every drive with health and temperature; for the selected drive — health (Good / Caution / Bad) with remaining endurance, temperature, firmware, serial number, interface, transfer mode (SATA/600 or PCIe 4.0 x4, current and max), standard, features (S.M.A.R.T., NCQ, TRIM, APM, DevSleep…), rotation rate, total host reads/writes (in each vendor's units for SATA: Kingston, Samsung, Crucial, Intel), NAND writes, power-on count and hours. The full SMART table (ID, attribute, current, worst, threshold, raw in hex or dec) with vendor-specific attribute names; for NVMe the whole health log as rows. Plain-language conclusions below the table. Copy report puts a text report on the clipboard, like CrystalDiskInfo's Edit → Copy. Serial numbers stay hidden until you reveal them. Data refreshes every 5 minutes while the section is open. Read-only. 7.0.1 was never released on its own; its fixes are part of 7.1.0:
 
 Fixes from user reports on 7.0.0. **Resizable BAR reported off while it is on** (AMD SmartAccess Memory, RX 7800 XT): WMI does not show memory windows above 4 GB, which is exactly what a resized GPU BAR becomes; the BAR size now comes from the PnP resource map, and OptimaX says “off” only when it read that map in full. **A worn-out SSD shown as fine:** some SATA drives (e.g. Kingston A400) don't report wear to Windows counters and Windows says “Healthy” until the drive fails; OptimaX now reads SMART attributes — remaining endurance (E7, A9, CA, B1, E9) and attributes at their failure threshold; ≤ 10% left or an attribute at threshold is a drive problem in PC health and in What slows it down. **Interrupt Moderation and Flow Control turned off by hand were not seen:** some Realtek 2.5G and USB adapters report an unspecified physical medium — Ethernet is now also recognised by MediaType 802.3 (for applying the tweak too), and the state counts connected adapters only, so an unused second port no longer makes the tweak “not applied”.
 </details>

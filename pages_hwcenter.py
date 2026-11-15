@@ -751,13 +751,11 @@ class HwCenterPage(QWidget):
 
     # ───────────────────────── Диски ─────────────────────────
     def _build_storage(self, v):
-        top = hbox(spacing=8)
-        self.sh_btn = button(tr("hwc.sh.check"), "primary", self.load_storage)
-        top.addWidget(self.sh_btn)
-        top.addWidget(label(tr("hwc.sh.note"), "muted", wrap=True), 1)
-        v.addLayout(top)
-        self.sh_box = vbox(spacing=12)
-        v.addLayout(self.sh_box)
+        # 7.1: усе, що диск каже про себе, як у CrystalDiskInfo — читається одразу, як відкрити розділ
+        from pages_diskinfo import DiskInfoPanel
+        self.diskinfo = DiskInfoPanel(self)
+        v.addWidget(self.diskinfo)
+        QTimer.singleShot(0, self.diskinfo.load)
         c, cv = self.section(v, tr("hwc.db.title"), tr("hwc.db.sub"))
         r = hbox(margins=(14, 4, 14, 4), spacing=10)
         r.addWidget(label(tr("hwc.db.disk"), "desc"))
@@ -807,31 +805,7 @@ class HwCenterPage(QWidget):
         self._sync_disk()
 
     def load_storage(self):
-        import storagehealth as SH
-        self.sh_btn.setEnabled(False)
-        self.sh_btn.setText(tr("btn.working"))
-        hw = self.main.hw or {}
-        self.run_bg(lambda log, p: SH.check_all(hw), self.fill_storage)
-
-    def fill_storage(self, disks):
-        import storagehealth as SH
-        self.sh_btn.setEnabled(True)
-        self.sh_btn.setText(tr("hwc.sh.check"))
-        if not isinstance(disks, list):
-            return
-        clear_layout(self.sh_box)
-        HT.save(F.CFG, SH.health_result(disks))
-        for d in disks:
-            c, cv = section_card(d.get("name") or "?", " · ".join(x for x in (
-                d.get("media"), d.get("bus"), f"{d['size_gb']} GB" if d.get("size_gb") else "",
-                ", ".join(f"{x}:" for x in d.get("letters") or [])) if x))
-            a = d["assess"]
-            view = ResultView()
-            view.set(HT.result("storage_health", a["status"], tr(f"sh.sum1.{a['status']}"), rows=d["rows"],
-                               findings=a["findings"]))
-            cv.addWidget(view)
-            self.sh_box.addWidget(c)
-        self.refresh_overview()
+        self.diskinfo.load()
 
     def start_disk(self):
         if self.db_box.busy or not self.db_disk:
