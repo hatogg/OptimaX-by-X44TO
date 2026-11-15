@@ -2,7 +2,9 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
-## [Unreleased]
+## [7.0.0] — 2026-11-15
+
+Перший реліз після 6.15: новий вигляд програми й сайту, а також усе, що було в 6.16 («Здоров'я ПК») і 6.17 (виправлення за незалежним аудитом коду) — ці дві версії окремо не випускалися, їхні розділи нижче.
 
 ### Змінено
 
@@ -10,6 +12,8 @@
 
 <details>
 <summary>English</summary>
+
+The first release after 6.15: a new look for the app and the site, plus everything from 6.16 (PC health) and 6.17 (fixes from an independent code audit) — those two versions were never released on their own; their sections are below.
 
 **New look (site and app):** graphite neutrals and a single X44TO red accent instead of blue-violet gradients — the accent marks only the primary action, the selection and the key figure; states stay green, amber and red. No glows or colored icon tiles, sentence-case labels, lighter type (400/500). Readings use a monospaced face with units, like an instrument, with scale ticks under charts and on the result card. New logo: a graphite tile with a red-and-white “X” (icon.ico, site). The modes screen has one primary button, on the recommended mode; switches are light rather than accent-colored; safe changes are marked green rather than with the accent color.
 </details>
