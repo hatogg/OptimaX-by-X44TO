@@ -481,6 +481,35 @@ hc.refresh_overview()
 hwc["tiles"] = hc.ov_grid.count()
 steps["hwc"] = hwc
 
+# 6.16: «Здоров'я ПК» — перевірка на демо-фактах, «Виправити все безпечне» з повторною перевіркою, окреме
+# виправлення через журнал відкату і звіт із розділом здоров'я. Наприкінці: журнал змін вище вже порахований.
+import healthcheck as HC  # noqa: E402
+w.go("diagnose")
+dg = w.pages["diagnose"]
+F.CFG["health_last"] = None
+dg.health.check()
+pump(lambda: isinstance(F.CFG["health_last"], dict) and dg.health.btn.isEnabled() and dg.health.box.count() > 0, 120)
+hl = F.CFG["health_last"] or {}
+st_h = {"score": hl.get("score"), "checks": len(hl.get("checks") or []), "rows": dg.health.box.count(),
+        "safe": len(HC.safe_fixes(hl)), "ring": dg.health.ring.text, "crash_synced": dg.crash.box.count() > 0,
+        "fix_visible": not dg.health.btn_fix.isHidden(), "oks": HC.counts(hl)[HC.OK]}
+dg.health.toggle_ok()
+st_h["rows_all"] = dg.health.box.count()
+shot(w, "health-card")
+n_d = len(dialogs)
+dg.health.fix_all()
+pump(lambda: len(dialogs) > n_d and dg.health.btn.isEnabled(), 120)
+st_h["plan_dialogs"] = dialogs[n_d:]
+st_h["safe_after"] = len(HC.safe_fixes(F.CFG["health_last"] or {}))
+dg.health.fix_one("autorun_off")
+pump(timeout=0.3)
+ar = next((c for c in (F.CFG["health_last"] or {}).get("checks") or [] if c["id"] == "autorun"), {})
+st_h["journal"] = E.JOURNAL.has("hc_autorun_off")
+st_h["autorun_after"] = ar.get("st")
+import report as RP  # noqa: E402
+st_h["report"] = any(UK.tr("hc.title") in t for t, _ in RP.sections(w.hw or {}, w.checks, w.analysis))
+steps["health"] = st_h
+
 # «Що нового» і звіт про помилку (попередній перегляд: поза Windows браузер не відкривається)
 n_d = len(dialogs)
 PL.show_whats_new(w, E.VERSION)

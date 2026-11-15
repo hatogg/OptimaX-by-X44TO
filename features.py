@@ -56,6 +56,7 @@ DEFAULTS = {
     "play": {},  # сесії ігор: {sessions: [{exe, name, start, last, end, lost}], totals: {exe: секунд}}
     "game_fps": {},  # історія FPS по іграх: {exe: [{ts, avg, low1, low01, stutters_pm, smooth}]}
     "crash_last": None,  # останній розбір «Чому впав комп?»
+    "health_last": None,  # остання перевірка «Здоров'я ПК» (healthcheck.py)
     "crash_seen": 0,  # час останнього аварійного перезавантаження, про яке вже розповіли
     "phone": {},  # монітор на телефоні: {enabled, token, port}
     # «Чому зависає?» (freezecatch.py): ловець увімкнено, глибокий запис WPR, останній показаний фриз, час «Очистити»

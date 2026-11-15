@@ -139,7 +139,10 @@ class DiagnosePage(QWidget):
         outer.addWidget(page_header(tr("nav.diagnose"), tr("diag.sub")))
         body, v = page_body()
 
-        # «Чому лагає?» — головний інструмент сторінки, тож він перший
+        # 6.16: «Здоров'я ПК» — загальна перевірка Windows з оцінкою; далі «Чому лагає?» — про продуктивність
+        import pages_health as PHC
+        self.health = PHC.HealthCard(main, v, page=self)
+        # «Чому лагає?» — головний інструмент продуктивності
         dc = card("cardAccent")
         dv = vbox(dc, (24, 20, 24, 20), 12)
         dv.addWidget(label(tr("diag.title"), "h1"))

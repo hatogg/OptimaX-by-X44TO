@@ -15,6 +15,20 @@ def check_612(st: dict) -> None:
     assert z["cleared_rows"] == 2, z  # після «Очистити»: попередження fTPM і «фризів поки не було»
 
 
+def check_616(st: dict) -> None:
+    """OptimaX 6.16: «Здоров'я ПК» — 14 перевірок з оцінкою, безпечні виправлення одним планом з повторною перевіркою,
+    окреме виправлення через журнал відкату, розділ у звіті."""
+    h = st["health"]
+    assert h["checks"] == 14 and 0 <= h["score"] <= 100 and h["ring"] == str(h["score"]), h
+    assert h["rows_all"] == 14 and h["rows"] == 14 - h["oks"], ("OK checks are folded until asked", h)
+    assert h["crash_synced"], "the health check reads the crash log — the crash card must show it too"
+    if h["safe"]:
+        assert h["fix_visible"] and "PlanDialog" in h["plan_dialogs"] and "RunDialog" in h["plan_dialogs"], h
+        assert h["safe_after"] == 0, ("every safe fix must clear its problem on re-check", h)
+    assert h["journal"] and h["autorun_after"] == "ok", ("a settings fix goes through the rollback journal", h)
+    assert h["report"], "the report must have the PC health section"
+
+
 def check_66(st: dict) -> None:
     """OptimaX 6.6: бібліотека, простий вигляд, «Чому впав комп?», телефон, перенесення, «Що нового», звіт."""
     lib = st["library"]
@@ -87,6 +101,7 @@ def test_main_window(demo, lang):
     check_66(st)
     check_hwc(st)
     check_612(st)
+    check_616(st)
 
 
 def test_splash_hands_over_to_the_main_window():

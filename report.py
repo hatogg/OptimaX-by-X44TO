@@ -52,6 +52,10 @@ def sections(hw: dict, checks: list, analysis: dict) -> list:
     mark = {"warn": "⚠", "info": "•", "ok": "✓"}
     out.append((tr("home.build_check"), [f"{mark[c['level']]} {c['title']}" for c in
                                          sorted(checks or [], key=lambda c: {"warn": 0, "info": 1, "ok": 2}[c["level"]])]))
+    hc = F.CFG["health_last"]
+    if isinstance(hc, dict) and hc.get("checks"):
+        import healthcheck as HC
+        out.append((f"{tr('hc.title')} — {hc.get('score', 0)}/100", HC.report_lines(hc)))
     applied = [E.entry_title(t) for t in E.JOURNAL.newest_first()]
     out.append((tr("rep.applied", n=len(applied)), applied or [tr("rep.none")]))
     d = F.CFG["diag_last"]

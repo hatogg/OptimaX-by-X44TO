@@ -2,6 +2,31 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [6.16] — 2026-11-15
+
+«Здоров'я ПК»: одна перевірка Windows з оцінкою, поясненнями простими словами й безпечними виправленнями з відкатом.
+
+### Додано
+
+- **«Здоров'я ПК»** — перша картка на сторінці «Діагностика». 14 перевірок за хвилину, лише читання: диски (стан, знос, температура, вільне місце), стабільність (сині екрани, раптові вимкнення, WHEA, перевірка пам'яті — той самий розбір оновлює «Чому впав комп?»), пристрої з кодом помилки в Диспетчері пристроїв, Windows Update (останнє оновлення без урахування оновлень Defender, невдалі з кодом помилки — якщо пізніше не встановилися, очікування перезавантаження, пауза й чи її поставила OptimaX), антивірус (захист у реальному часі, вік сигнатур, швидке сканування, активні загрози; інший антивірус із Центру безпеки — гаразд; вимкнення політикою — з підказкою, якщо це давня зміна OptimaX), брандмауер за профілями, UAC, SMBv1, віддалений робочий стіл без NLA, автовхід із паролем у реєстрі, автозапуск з USB, точність годинника проти time.windows.com і служба часу, служби й пристрої звуку, час без перезавантаження з урахуванням «Швидкого запуску». Оцінка 0–100 і картки «Проблема / Увага / До відома / Гаразд»; на кожній — чому це важливо, що робити і команда PowerShell для самоперевірки. Усі межі — числами в `healthcheck.py` з причиною поруч.
+- **«Виправити все безпечне»**: один план із дій, які нічого не вимикають (оновити сигнатури, увімкнути захист у реальному часі, синхронізувати час, пошук нового обладнання, перезапуск звуку) — з поясненням і командою кожної, будь-що можна зняти, невдала дія не зупиняє наступну. Потім повторна перевірка зачеплених карток і підсумок для кожної дії: «Виправлено», «Досі проблема», «Не вдалося» чи «Після перезавантаження».
+- **Виправлення з вашого рішення** — окремою кнопкою з тим, що може перестати працювати: швидке сканування Defender (5–15 хвилин навантажує диск і процесор), увімкнути брандмауер (лише для вимкнених профілів), UAC, вимкнути SMBv1, NLA для віддаленого робочого столу, вимкнути автовхід і видалити пароль з реєстру, вимкнути автозапуск, увімкнути службу часу, скинути компоненти Windows Update. Зміни налаштувань — через журнал відкату («Резервні копії», `OptimaX-Rescue.cmd`), перед першою — точка відновлення. Не пропонуються, коли налаштування задає групова політика.
+- Підсумок перевірки — у звіті для форуму (без імен ПК, користувача й мереж).
+
+### Безпека й приватність
+
+- Пароль автовходу OptimaX не читає — лише перевіряє, чи такий параметр є; виправлення видаляє його без збереження в журналі.
+- Жодна команда «Здоров'я ПК» не вимикає антивірус і не додає йому виключень (це перевіряє тест). Якщо Defender гальмує ігри, картка пропонує не вимкнути, а обмежити його наявною зміною «Обмежити Defender до 20% процесора» (з відкатом).
+
+<details>
+<summary>English</summary>
+
+**Added:** **PC health** — the first card on the Diagnostics page: 14 read-only checks in about a minute — drives (health, wear, temperature, free space), stability (blue screens, sudden shutdowns, WHEA, memory test; the same read updates Why did the PC crash?), devices with an error code in Device Manager, Windows Update (last update not counting Defender updates, failed ones with their error code unless they installed later, pending restart, pause and whether OptimaX set it), antivirus (real-time protection, signature age, quick scan, active threats; another antivirus from Security Center is OK; turned off by policy — with a hint when an old OptimaX change did it), firewall per profile, UAC, SMBv1, Remote Desktop without NLA, automatic sign-in with a password in the registry, AutoPlay, clock accuracy against time.windows.com and the time service, audio services and devices, uptime (Fast Startup aware). A 0–100 score and Problem / Warning / Info / OK cards, each with why it matters, what to do and a PowerShell command to check it yourself; every limit is a number in `healthcheck.py` with its reason. **Fix all safe issues**: one plan of steps that turn nothing off (update signatures, turn real-time protection on, sync time, scan for hardware changes, restart sound), each with its explanation and command, untick anything, a failed step doesn't stop the next; then a re-check of the affected cards and a result per step: Fixed, Still a problem, Failed or After a restart. **Your-decision fixes** have their own button and say what may stop working: a Defender quick scan (loads the drive and CPU for 5–15 minutes), turn on the firewall (only the profiles that are off), UAC, turn off SMBv1, NLA for Remote Desktop, turn off automatic sign-in and delete the registry password, turn off AutoPlay, turn on the time service, reset Windows Update components. Settings changes go through the rollback journal (Backup page, `OptimaX-Rescue.cmd`) with a restore point before the first; none is offered when a group policy sets the value. The check summary is in the forum report, without PC, user or network names.
+
+**Security & privacy:** OptimaX never reads the automatic sign-in password, only checks that the value exists; the fix deletes it without saving it to the journal. No PC health command turns the antivirus off or adds exclusions (a test checks this). If Defender slows games, the card offers the existing “Limit Defender to 20% CPU” change (with undo) instead of turning it off.
+
+</details>
+
 ## [6.15] — 2026-11-14
 
 Тест затримки системи, кулери й андервольт відеокарти — без драйвера ядра. **Кулери й андервольт працюють у тестовому режимі:** на справжніх картах NVIDIA й AMD їх ще перевіряють, тож розділ вимкнений, доки ви самі його не ввімкнете, і позначений «тест».

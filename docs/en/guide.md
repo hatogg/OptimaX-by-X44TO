@@ -15,6 +15,7 @@ Everything the program can do, from the first analysis to the emergency rollback
 - [Emergency rollback](#emergency-rollback)
 - [Benchmarks](#benchmarks)
 - [Game library](#game-library)
+- [PC health](#pc-health)
 - [Why did the PC crash?](#why-did-the-pc-crash)
 - [Why does it freeze?](#why-does-it-freeze)
 - [Phone monitor](#phone-monitor)
@@ -55,6 +56,7 @@ OptimaX won't let you turn on something that harms your particular hardware. For
 | **Ad blocker like Pi-hole** | A DNS filter right on your PC: statistics, query log, StevenBlack/HaGeZi/OISD lists, encrypted DNS, protection for the whole home network, without a Raspberry Pi or a separate server |
 | **Smart optimization (A/B)** | Measures FPS before and after and keeps only what helps; if things got worse it finds the culprit by splitting the changes in halves and removes it. It can also check changes applied earlier |
 | **Emergency rollback** | Watches for blue screens, crash restarts and graphics driver failures after the changes and offers to roll back exactly that batch. OptimaX-Rescue.cmd rolls everything back from Safe Mode without the program |
+| **PC health** | One Windows check-up with a 0–100 score: drives, stability, devices, updates, antivirus, firewall, security settings, time, sound. Explained in plain words, with the command to check it yourself and safe fixes you can roll back |
 | **Why did the PC crash?** | Blue screens and sudden restarts from the Windows log in plain words: what happened, what is usually to blame, which game was running and what to do |
 | **Why does it freeze?** | A background freeze catcher: when everything hangs for 1–5 seconds, OptimaX shows what the system was doing — a driver, the drive, the graphics card, AMD fTPM or something outside Windows — and deep WPR recording names the exact driver |
 | **Phone monitor** | Temperatures, load and the game's FPS on your phone over the home network — no app, just a QR code |
@@ -69,7 +71,7 @@ OptimaX won't let you turn on something that harms your particular hardware. For
 | **Optimization** | Wizard and Expert menu, 6 profiles, search, 17 sections in two parts — Speed (what shows up in measurements) and Comfort and privacy, “What will change” for every item, colour-coded review before applying, trial mode, smart optimization |
 | **Library** | All games from Steam, Epic, GOG, Ubisoft and My games with covers, launch with game mode, play time, FPS history per game |
 | **Games** | Game mode (services, background apps, memory, power, timer, Do Not Disturb, background balancer, auto mode — also for Steam / Epic / GOG / Ubisoft games; “Lowest latency” and “Stable frametime” profiles, global or per game); per game: priority, discrete GPU, no Fullscreen Optimizations, cores; an ISLC-style memory cleaner; 0.5 ms timer; on a PC with a mining card — “Games on the P106” (Universal GPU Renderer: a render mode per game, a check of which card renders it, driver, PCIe, memory and shader cache analyzers) |
-| **Diagnostics** | Why is it lagging? (with PresentMon frames and stutter causes when it is downloaded, plus a history of runs), before/after FPS test with a graph, forum report; further down — Why did the PC crash? with a memory test, Why does it freeze? (the freeze catcher) and the phone monitor |
+| **Diagnostics** | PC health with a score and fixes, Why is it lagging? (with PresentMon frames and stutter causes when it is downloaded, plus a history of runs), before/after FPS test with a graph, forum report; further down — Why did the PC crash? with a memory test, Why does it freeze? (the freeze catcher) and the phone monitor |
 | **Benchmarks** | Smart optimization (an A/B test of changes on the GPU test or your game), OptimaX GPU test (1080p, 1440p, 4K), 5–60 minute stress test with a stability check and sensors, result history; FurMark 2 with an automatic result, Superposition, Cinebench, OCCT, CrystalDiskMark, 3DMark |
 | **Hardware Center** | Hardware diagnostics and tests: hardware info, CPU, GPU, VRAM, RAM, disks (SMART / NVMe, speed, surface read), display, laptop, peripherals, stress tests with an emergency stop, background processes during games, Windows and dump diagnostics, a build check with fix buttons, MSI Mode and GPU overclocking with MSI Afterburner, a pre-purchase PC check, HTML / JSON / PDF reports and an FPS overlay — [details](hardware-center.md) |
 | **Laptop** | (shown on laptops only) Battery wear, power on AC and battery, cool mode, sleep without drain, classic S3 sleep, refresh rate by power source, charge limit (ASUS and Dell right from the program, for other makers where to find it in their utility) |
@@ -162,6 +164,27 @@ The **Library** section gathers games from Steam, Epic, GOG, Ubisoft and My game
 - **Play time and sessions.** OptimaX notices when a game starts and closes: total time, last played, number of sessions. A session that didn't close because the PC itself went down is marked — that's how Why did the PC crash? knows what was running.
 - **FPS history** (the Record FPS while playing switch; PresentMon is needed — the download button is right there): after 2 minutes of play and then every 15 minutes, 60 seconds of recording while the game is in front. A chart of average FPS and 1% lows per game shows whether FPS dropped after a driver, Windows or game update.
 - On a PC with a **mining card** the game's render mode and its last check are shown, and Mining card mode opens the mode choice.
+
+## PC health
+
+The first card on the **Diagnostics** page. Check (up to a minute, read-only) gives a 0–100 score and Problem / Warning / Info / OK cards; the OK ones are folded. Every card says what was found, **why it matters**, **what to do**, and the PowerShell command to check it yourself.
+
+| Check | What is looked at | Problem when |
+| --- | --- | --- |
+| Drives | SSD health, wear and temperature, free space | < 10 GB free; < 25 GB or < 10 % — warning; health not Healthy, wear from 80 %, over 70 °C |
+| Stability | Blue screens, sudden shutdowns, WHEA, memory test (30 days, as in Why did the PC crash?) | A blue screen in 7 days or two in 30 |
+| Devices | Devices with an error code in Device Manager (turned off by hand is not an error) | Graphics, drive or network — problem; others — warning |
+| Windows Update | Last installed update (Defender updates don't count), failed ones with their error code, pending restart, pause | Over 40 days — warning, over 70 — problem |
+| Antivirus | Real-time protection, signature age, quick scan, active threats; another antivirus is OK | Protection off, signatures older than 14 days, threats |
+| Firewall | Domain, private and public profiles; another firewall is OK | Off on the public network |
+| UAC, SMBv1, Remote Desktop, automatic sign-in, AutoPlay | Windows security settings | UAC off, RDP without NLA; SMBv1 and sign-in with a password in the registry — warning |
+| Time | Difference from time.windows.com, time service | Over 60 s — warning, over 5 min — problem |
+| Sound | Audiosrv and AudioEndpointBuilder services, active devices | A service stopped, no playback device |
+| Uptime | Time since the last restart (Fast Startup aware) | Over 7 days |
+
+**Fixes.** Fix all safe issues builds one plan of steps that turn nothing off: update signatures, turn real-time protection on, sync time, scan for hardware changes, restart sound. Untick anything; a failed step doesn't stop the next one. The rest (a Defender quick scan — it loads the PC for 5–15 minutes, turn the firewall or UAC on, turn SMBv1 off, NLA for RDP, turn off automatic sign-in or AutoPlay, reset Windows Update, turn the time service on) has its own button that says what may stop working. Settings changes go to the rollback journal (Backup page, `OptimaX-Rescue.cmd`), with a restore point before the first one. After a fix OptimaX checks again and says honestly: Fixed, Still a problem, Failed or After a restart.
+
+Privacy: OptimaX never reads the automatic sign-in password — it only checks that the value exists; the fix deletes it without saving it, so undo restores the setting but you'll have to enter the password again. No command turns the antivirus off or adds exclusions to it. The check summary is in the forum report, without PC, user or network names.
 
 ## Why did the PC crash?
 
