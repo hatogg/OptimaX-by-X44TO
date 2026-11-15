@@ -3,8 +3,9 @@ OptimaX Hardware Center — аналіз дампів синіх екранів 
 
 cdb.exe (консольний налагоджувач із Debugging Tools for Windows) у складі OptimaX не постачається — це сотні мегабайтів
 і ліцензія Microsoft на розповсюдження. OptimaX шукає вже встановлений: поруч із програмою (tools\\cdb\\cdb.exe — якщо
-його туди поклали), у Windows SDK (Windows Kits\\10\\Debuggers\\x64) і в PATH. Без cdb лишається розбір за кодом
-помилки з заголовка дампу (crashlog.py), як і раніше.
+його туди поклали), у Windows SDK (Windows Kits\\10\\Debuggers\\x64). 6.17: лише там, куди звичайна програма
+користувача писати не може (Program Files, Windows) — не з PATH і не з портативної папки, бо cdb запускається з правами
+адміністратора. Без cdb лишається розбір за кодом помилки з заголовка дампу (crashlog.py), як і раніше.
 
 З cdb: `cdb -z <дамп> -c "!analyze -v; q"` із символами з офіційного сервера Microsoft
 (srv*<кеш>*https://msdl.microsoft.com/download/symbols). Дамп відкривається лише для читання; мінідампи для певності
@@ -44,9 +45,16 @@ def _app_dir() -> str:
     return os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
 
 
+def _pf_dirs() -> tuple:
+    """(Program Files (x86), Program Files) — з Windows API (secfs), а не зі змінних середовища, які користувач
+    може перевизначити для себе (HKCU\\Environment)."""
+    import secfs as SF
+    known = {n: SF._known_folder(n) for n in ("ProgramFilesX86", "ProgramFiles")}
+    return (known["ProgramFilesX86"] or r"C:\Program Files (x86)", known["ProgramFiles"] or r"C:\Program Files")
+
+
 def cdb_candidates() -> list:
-    pf86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
-    pf = os.environ.get("ProgramFiles", r"C:\Program Files")
+    pf86, pf = _pf_dirs()
     app = _app_dir()
     return [os.path.join(app, "tools", "cdb", "cdb.exe"), os.path.join(app, "cdb", "cdb.exe"),
             os.path.join(app, "cdb.exe"),
@@ -55,19 +63,27 @@ def cdb_candidates() -> list:
             os.path.join(pf86, "Windows Kits", "8.1", "Debuggers", "x64", "cdb.exe")]
 
 
+def _trusted(path: str) -> bool:
+    """Як apps.trusted_tool: файл у Program Files чи Windows, не посилання, власник — SYSTEM/адміністратори/TI."""
+    import secfs as SF
+    return (bool(path) and os.path.isfile(path) and not SF.is_reparse(path) and SF.trusted_location(path)
+            and SF.trusted_owner(path))
+
+
 def find_cdb() -> str:
-    """Шлях до cdb.exe або "" (на Windows: поруч із програмою, Windows SDK, PATH)."""
+    """Шлях до cdb.exe або "" (на Windows: поруч із встановленою програмою, Windows SDK, WinDbg з Microsoft Store).
+    6.17: кожен кандидат — лише з довіреного розташування (_trusted: Program Files чи Windows, власник —
+    адміністратори/SYSTEM/TrustedInstaller). PATH не переглядаємо: туди будь-яка програма користувача може додати
+    свою папку з «cdb.exe», а копія поруч із портативною OptimaX (напр. у «Завантаженнях») так само не захищена."""
     if not E.IS_WIN:
         return ""
     for p in cdb_candidates():
-        if os.path.isfile(p):
+        if _trusted(p):
             return p
-    w = shutil.which("cdb.exe") or shutil.which("cdb")
-    if w:
-        return w
-    for p in glob.glob(os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "WindowsApps",
-                                    "Microsoft.WinDbg_*", "amd64", "cdb.exe")):
-        return p  # WinDbg з Microsoft Store (якщо папка взагалі читається)
+    for p in sorted(glob.glob(os.path.join(_pf_dirs()[1], "WindowsApps", "Microsoft.WinDbg_*", "amd64", "cdb.exe")),
+                    reverse=True):
+        if _trusted(p):
+            return p  # WinDbg з Microsoft Store (якщо папка взагалі читається)
     return ""
 
 
@@ -95,7 +111,9 @@ def _demo_dumps() -> list:
 
 
 def sympath() -> str:
-    cache = os.path.join(tempfile.gettempdir(), "OptimaX-symbols")
+    # 6.17: кеш символів — у захищеній папці (E.admin_dir), а не в %TEMP%: cdb з правами адміністратора читає
+    # звідти .pdb, і підкинутий туди файл (чи посилання замість папки) потрапив би в налагоджувач
+    cache = E.admin_dir("symbols")
     return f"srv*{cache}*{SYMBOLS_URL}"
 
 
@@ -154,7 +172,10 @@ def analyze_dump(path: str, log) -> dict:
         tmp = ""
         try:
             if os.path.getsize(path) < 64 << 20:  # мінідамп — аналізуємо копію, оригінал не відкривається взагалі
-                tmp = os.path.join(tempfile.mkdtemp(prefix="oxdmp_"), os.path.basename(path))
+                # копія — теж у захищеній папці: у %TEMP% її могли б підмінити до запуску cdb, а теку — замінити
+                # посиланням перед rmtree
+                tmp = os.path.join(tempfile.mkdtemp(prefix="oxdmp_", dir=E.admin_dir("dumps", users_read=False)),
+                                   os.path.basename(path))
                 shutil.copy2(path, tmp)
                 src = tmp
             log(f"  cdb -z {os.path.basename(path)} -c \"!analyze -v; q\"")

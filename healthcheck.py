@@ -138,7 +138,9 @@ def uptime_s() -> int:
     if not E.IS_WIN:
         return {"gaming": 9, "laptop": 2, "old": 23}.get(E.DEMO, 1) * 86400 + 3600
     try:
-        return int(ctypes.windll.kernel32.GetTickCount64() // 1000)
+        f = ctypes.windll.kernel32.GetTickCount64
+        f.restype = ctypes.c_ulonglong  # 6.17: без цього — c_int, і після 24,8 доби аптайм ставав від'ємним
+        return int(f() // 1000)
     except Exception:
         return -1
 
@@ -868,12 +870,10 @@ def _act(fid: str, log) -> bool:
         if rc != 0:
             log(f"  ⚠ {E.first_line(out, 90) or rc}")
         return rc == 0
-    if fid == "audio_restart":
-        E.a_fix_audio(E.Ctx(log))
-        return True
-    if fid == "wu_reset":
-        E.a_reset_wu(E.Ctx(log))
-        return True
+    if fid in ("audio_restart", "wu_reset"):
+        ctx = E.Ctx(log)
+        (E.a_fix_audio if fid == "audio_restart" else E.a_reset_wu)(ctx)
+        return not ctx.failed  # 6.17: крок не вдався (папка зайнята) — «не вдалося», а не «виконано»
     return False
 
 

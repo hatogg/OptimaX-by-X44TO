@@ -865,7 +865,10 @@ class HwCenterPage(QWidget):
         if not Ask.ask(self, tr("hwc.db.scan"), tr("hwc.db.scan_q", name=d.get("name") or "?"), tr("hwc.start")):
             return
         dev = f"\\\\.\\PhysicalDrive{d.get('id')}"
-        run = HT.start("disk", dict(mode="scan", device=dev, seconds=30, size=int((d.get("size_gb") or 0) * 1e9)))
+        # 6.17: точний розмір у байтах (size_bytes з IOCTL), а не округлені ГБ × 1e9 — інакше частина випадкових читань
+        # потрапляла за кінець диска й рахувалася помилками. Без нього тест сам візьме менше ціле ГБ мінус 1 ГБ.
+        run = HT.start("disk", dict(mode="scan", device=dev, seconds=30, size=int(d.get("size_bytes") or 0),
+                                    size_gb=d.get("size_gb") or 0))
 
         def describe(states, s):
             st = states.get("disk") or {}

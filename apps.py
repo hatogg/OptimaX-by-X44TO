@@ -4,14 +4,15 @@ OptimaX — програми та місце на диску: оновлення
 """
 from __future__ import annotations
 
+import glob
 import heapq
 import os
 import re
-import shutil
 import stat
 import time
 
 import engine as E
+import secfs as SF
 from i18n import tr
 
 # ───────────────────────── winget ─────────────────────────
@@ -41,14 +42,53 @@ DEMO_UPGRADES = [dict(name="Discord", id="Discord.Discord", version="1.0.9171", 
 DEMO_INSTALLED = {"Valve.Steam", "Discord.Discord", "Google.Chrome", "7zip.7zip", "Microsoft.VCRedist.2015+.x64"}
 
 
+WINGET_PKG = "Microsoft.DesktopAppInstaller"
+_WINGET: dict = {}  # знайдений winget.exe (шукаємо через PowerShell — не щоразу)
+WINGET_PS = (f"$p=@(Get-AppxPackage -Name {WINGET_PKG} -ErrorAction SilentlyContinue);"
+             f"if(-not $p){{$p=@(Get-AppxPackage -AllUsers -Name {WINGET_PKG} -ErrorAction SilentlyContinue)}};"
+             "$p | Sort-Object {[version]$_.Version} -Descending | ForEach-Object { $_.InstallLocation }")
+
+
+def _ver_of(path: str):
+    """Версія пакета з назви папки Microsoft.DesktopAppInstaller_<версія>_x64__… — для вибору найновішої."""
+    m = re.search(r"_(\d+(?:\.\d+)*)_", os.path.basename(os.path.dirname(path)))
+    return tuple(int(x) for x in m.group(1).split(".")) if m else (0,)
+
+
+def winget_candidates() -> list:
+    """Справжній winget.exe із папки пакета «Інсталятор програм» (Program Files\\WindowsApps), найновіша версія
+    першою. Не з PATH: там стоїть псевдонім %LOCALAPPDATA%\\Microsoft\\WindowsApps\\winget.exe, а цю папку (і PATH
+    користувача) може змінити будь-яка програма користувача — OptimaX запустила б її файл з правами адміністратора."""
+    out = []
+    _rc, text = E.ps(WINGET_PS, 30, ro=True)
+    for loc in (text or "").splitlines():
+        loc = loc.strip()
+        if loc and os.path.isabs(loc):
+            out.append(os.path.join(loc, "winget.exe"))
+    found = []
+    for pf in SF.program_files_dirs()[:1]:  # якщо папку WindowsApps узагалі можна прочитати
+        found += glob.glob(os.path.join(pf, "WindowsApps", WINGET_PKG + "_*", "winget.exe"))
+    return out + sorted(found, key=_ver_of, reverse=True)
+
+
+def trusted_tool(path: str) -> bool:
+    """Програму, яку OptimaX запускає з правами адміністратора, приймаємо лише з Program Files чи Windows (туди
+    звичайна програма користувача писати не може), без посилань і з власником SYSTEM/адміністратори/TrustedInstaller."""
+    return (bool(path) and os.path.isfile(path) and not SF.is_reparse(path) and SF.trusted_location(path)
+            and SF.trusted_owner(path))
+
+
 def winget_path():
     if not E.IS_WIN:
         return "winget"
-    p = shutil.which("winget")
-    if p:
+    p = _WINGET.get("path")
+    if p and trusted_tool(p):
         return p
-    cand = os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WindowsApps\winget.exe")
-    return cand if os.path.exists(cand) else None
+    for cand in winget_candidates():
+        if trusted_tool(cand):
+            _WINGET["path"] = cand
+            return cand
+    return None  # як і раніше: «winget не знайдено»
 
 
 def _rows(out: str) -> list:

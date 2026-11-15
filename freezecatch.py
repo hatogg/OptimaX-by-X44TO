@@ -492,10 +492,28 @@ class DeepTrace:
         except OSError as e:
             self.error = str(e)[:200]
             return False
+        # 6.17: ловця вбили з увімкненим глибоким записом — сесія WPR (кільце 64 МБ, DPC/ISR) живе до перезавантаження,
+        # і новий -start відповідає «already running». Як latencytest.stop_leftover(): спершу прибираємо залишок.
+        if self._leftover():
+            self._wpr(["-cancel"], 60)
         rc, out = self._wpr(["-start", f"{self.profile}!{PROFILE_NAME}"])
+        if rc != 0 and _already_running(out):  # залишок без status.json (або від іншого запуску) — одна повторна спроба
+            self._wpr(["-cancel"], 60)
+            rc, out = self._wpr(["-start", f"{self.profile}!{PROFILE_NAME}"])
         self.on = rc == 0
         self.error = "" if self.on else (E.first_line(out, 200) or f"wpr rc={rc}")
         return self.on
+
+    def _leftover(self) -> bool:
+        """status.json каже, що глибокий запис був увімкнений, а ловця, який його вів, уже немає."""
+        st = _read_json(os.path.join(self.folder, "status.json"), {})
+        if not isinstance(st, dict) or not (st.get("deep") or {}).get("on") or st.get("stopped"):
+            return False
+        try:
+            pid = int(st.get("pid") or 0)
+        except (TypeError, ValueError):
+            return False
+        return bool(pid) and pid != os.getpid() and not _alive(pid)
 
     def save(self, path: str) -> bool:
         if not self.on:
@@ -511,6 +529,15 @@ class DeepTrace:
         if self.on:
             self._wpr(["-cancel"], 60)
         self.on = False
+
+
+# «Profiles are already running» (0xc5583001) — WPR уже веде сесію; текст буває локалізований, тож і за кодом
+WPR_RUNNING = ("0xc5583001", "already running", "уже запущен", "вже запущен")
+
+
+def _already_running(out: str) -> bool:
+    low = str(out or "").lower()
+    return any(k in low for k in WPR_RUNNING)
 
 
 def prune_etl(folder: str = DIR, keep: int = KEEP_ETL) -> None:

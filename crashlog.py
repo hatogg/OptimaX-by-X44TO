@@ -51,15 +51,19 @@ CATEGORIES = ("gpu", "memory", "driver", "hardware", "cpu", "disk", "power", "bu
 
 # «Подій не знайдено» і «такого джерела немає» Get-WinEvent видає як EventLogException, яку SilentlyContinue
 # не глушить (на чистій Windows немає nvlddmkm і подій WHEA), — тому кожен запит окремо в try/catch.
+# 6.17: 4101 (Display — скидання драйвера відеокарти) — окремим запитом зі своїм лімітом: буває сотнями, і в спільному
+# запиті з 41/6008/1001 (-MaxEvents 80 на всіх) витісняв події синіх екранів і раптових вимкнень. Тепер кожен запит
+# — пара (фільтр, ліміт), і 41/6008/1001 завжди мають власні 80 подій.
 EVENTS_PS = r"""
 $t=(Get-Date).AddDays(-{days})
 $q=@(
- @{{LogName='System'; Id=41,6008,1001,4101; StartTime=$t}},
- @{{LogName='System'; ProviderName='Microsoft-Windows-WHEA-Logger'; StartTime=$t}},
- @{{LogName='System'; ProviderName='Microsoft-Windows-MemoryDiagnostics-Results'; StartTime=$t}},
- @{{LogName='System'; ProviderName='nvlddmkm'; StartTime=$t}}
+ @(@{{LogName='System'; Id=41,6008,1001; StartTime=$t}}, 80),
+ @(@{{LogName='System'; Id=4101; StartTime=$t}}, 80),
+ @(@{{LogName='System'; ProviderName='Microsoft-Windows-WHEA-Logger'; StartTime=$t}}, 80),
+ @(@{{LogName='System'; ProviderName='Microsoft-Windows-MemoryDiagnostics-Results'; StartTime=$t}}, 80),
+ @(@{{LogName='System'; ProviderName='nvlddmkm'; StartTime=$t}}, 80)
 )
-$ev=foreach($x in $q){{ try {{ Get-WinEvent -FilterHashtable $x -MaxEvents 80 -ErrorAction Stop }} catch {{}} }}
+$ev=foreach($x in $q){{ try {{ Get-WinEvent -FilterHashtable $x[0] -MaxEvents $x[1] -ErrorAction Stop }} catch {{}} }}
 @($ev | ForEach-Object {{
   $m=''; try {{ $m=(($_.Message -split "`n")[0]).Trim() }} catch {{}}
   @{{id=$_.Id; prov=$_.ProviderName; ts=([DateTimeOffset]$_.TimeCreated).ToUnixTimeSeconds();

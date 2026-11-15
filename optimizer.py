@@ -1420,9 +1420,11 @@ class Main(QWidget):
         info = self.update_info
         if not info:
             return
-        if not info.get("url") and E.IS_WIN:
+        # 6.17: дані з кешу (settings.json) адреси файлу не мають — download_job бере реліз з GitHub заново.
+        # Сторінку в браузері відкриваємо лише тоді, коли свіжа перевірка не знайшла файлу для цього ПК.
+        if not info.get("url") and info.get("kind") and E.IS_WIN:
             import webbrowser
-            webbrowser.open(info.get("page") or "")
+            webbrowser.open(U.release_page(info.get("page")))
             return
         text = tr("upd.ask_d", v=info["version"], cur=E.VERSION) + ("\n\n" + info["notes"] if info.get("notes") else "")
         if not Ask.ask(self, tr("upd.ask_t", v=info["version"]), text, tr("upd.install")):
@@ -1551,7 +1553,8 @@ class Main(QWidget):
         for w in running:
             w.wait(3000)
         if F.BOOSTER.active:
-            F.BOOSTER.stop(LOG.write)
+            # 6.17: до 9 × net start по 30 с — не в потоці інтерфейсу (вікно «Не відповідає»), а з видимим ходом
+            RunDialog(self, tr("g.title"), lambda log, p: F.BOOSTER.stop(log)).exec()
         self.balancer.restore_all(LOG.write)
         self.hk.stop()
         try:

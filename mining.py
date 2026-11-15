@@ -427,6 +427,10 @@ def discover() -> list:
     if not E.IS_WIN:
         return demo_games()
     games, seen = [], set()
+    try:
+        services = system_services()  # 6.17: системні драйвери античитів — один раз на весь пошук
+    except Exception:  # noqa: BLE001 — без реєстру лишається пошук по папці гри
+        services = set()
     for src in (my_games, steam_games, epic_games, gog_games, ubisoft_games):
         try:
             items = src()
@@ -447,7 +451,7 @@ def discover() -> list:
                     g["exes"].insert(0, classify(main, engine_dlls(os.path.dirname(main)),
                                                  engine_imports(os.path.dirname(main))))
             g["risk"] = _risky_folder(g["dir"])
-            g["anticheat"] = anticheat(g["dir"])
+            g["anticheat"] = anticheat(g["dir"]) or system_anticheat(g, services)
             if g["exes"]:
                 games.append(g)
     return sorted(games, key=lambda g: g["name"].lower())
@@ -987,7 +991,28 @@ ANTICHEAT = {"easyanticheat": "EasyAntiCheat", "easyanticheat_eos": "EasyAntiChe
              "beservice.exe": "BattlEye", "beservice_x64.exe": "BattlEye", "xigncode": "XIGNCODE3",
              "xigncode3": "XIGNCODE3", "gameguard": "GameGuard", "npgamemon.des": "GameGuard",
              "pnkbstra.exe": "PunkBuster", "pnkbstrb.exe": "PunkBuster", "eac_launcher.exe": "EasyAntiCheat",
-             "start_protected_game.exe": "EasyAntiCheat", "vgc.exe": "Vanguard"}
+             "start_protected_game.exe": "EasyAntiCheat", "vgc.exe": "Vanguard", "vgk.sys": "Vanguard",
+             "faceitclient": "FACEIT", "anticheatexpert": "ACE"}
+# 6.17: античити, яких немає в ANTICHEAT дослівно, — за початком імені файлу чи теки (EA Javelin, Tencent ACE,
+# NetEase, FACEIT, Denuvo Anti-Cheat). DXVK / Mesa кладуть dxgi.dll / d3d11.dll / opengl32.dll поруч з exe — для цих
+# античитів це «стороння бібліотека в процесі гри», тобто ризик бану, а не лише «гра не запуститься».
+ANTICHEAT_RE = (
+    (re.compile(r"^(eaanticheat|eaac)", re.I), "EA Javelin"),
+    (re.compile(r"^(anticheatexpert|ace-[a-z0-9]+\.(sys|dll|exe)$)", re.I), "ACE"),
+    (re.compile(r"^neac(safe|client)", re.I), "NetEase"),
+    (re.compile(r"^faceit", re.I), "FACEIT"),
+    (re.compile(r"^denuvo[ _-]?anti[ _-]?cheat", re.I), "Denuvo Anti-Cheat"),
+)
+
+
+def _ac_name(n: str) -> str:
+    hit = ANTICHEAT.get(n.lower())
+    if hit:
+        return hit
+    for rx, name in ANTICHEAT_RE:
+        if rx.match(n):
+            return name
+    return ""
 
 
 def anticheat(folder: str) -> str:
@@ -998,13 +1023,60 @@ def anticheat(folder: str) -> str:
         for dp, dns, fns in os.walk(folder):
             depth = dp.rstrip("\\/").count(os.sep) - root_depth
             for n in list(dns) + list(fns):
-                hit = ANTICHEAT.get(n.lower())
+                hit = _ac_name(n)
                 if hit:
                     return hit
             if depth >= 2:
                 dns[:] = []
     except OSError:
         pass
+    return ""
+
+
+# 6.17: драйвери / служби античитів, встановлені в систему, а не в папку гри (Vanguard — у Program Files\Riot Vanguard,
+# FACEIT AC — у Program Files\FACEIT AC тощо). Служба сама по собі не каже, яку гру вона захищає, тому це лише
+# ДОДАТКОВА ознака: спрацьовує тільки для гри, чия папка / exe явно належать до цього античиту (owner — регулярний
+# вираз по шляху в нижньому регістрі). Так системний Vanguard блокує шари лише для ігор Riot, а не для всіх.
+SYSTEM_ANTICHEAT = (
+    (("vgk", "vgc"), "Vanguard", re.compile(r"\\riot games\\|valorant|leagueclient|league of legends|riotclient")),
+    (("EAAntiCheatService",), "EA Javelin",
+     re.compile(r"\\ea games\\|\\electronic arts\\|\\origin games\\|\\ea app\\|bf2042|battlefield|fc2[4-9]|"
+                r"madden|nhl2[4-9]|ea sports")),
+    (("FACEIT",), "FACEIT", re.compile(r"\\(cs2|csgo)\.exe$|counter-strike global offensive")),
+    (("ACE-BASE",), "ACE", re.compile(r"\\tencent\\|wegame|delta ?force|deltaforce")),
+    (("NeacSafe64",), "NetEase", re.compile(r"\\netease\\|marvel ?rivals|marvel-win64")),
+    (("BEService",), "BattlEye", re.compile(r"\\(gta5|gta5_enhanced|tslgame|rainbowsix_be|dayz_be|arma3_be)\.exe$|"
+                                            r"pubg|rainbow six siege")),
+    (("EasyAntiCheat", "EasyAntiCheat_EOS"), "EasyAntiCheat",
+     re.compile(r"\\(fortniteclient-win64-shipping|r5apex|r5apex_dx12)\.exe$|\\fortnite\\|apex legends")),
+)
+SERVICES_KEY = r"HKLM\SYSTEM\CurrentControlSet\Services"
+
+
+def system_services() -> set:
+    """Які зі служб SYSTEM_ANTICHEAT встановлено (назви в нижньому регістрі). Поза Windows — порожньо."""
+    if not E.IS_WIN:
+        return set()
+    out = set()
+    for svcs, _n, _rx in SYSTEM_ANTICHEAT:
+        for s in svcs:
+            if E.reg_get(f"{SERVICES_KEY}\\{s}", "Start") is not None or E.reg_get(f"{SERVICES_KEY}\\{s}",
+                                                                                     "ImagePath") is not None:
+                out.add(s.lower())
+    return out
+
+
+def system_anticheat(g: dict, services: set = None) -> str:
+    """Античит із системної служби, якщо ця гра явно його (папка, exe) — або ""."""
+    services = system_services() if services is None else services
+    if not services:
+        return ""
+    paths = [str(g.get("dir") or "")] + [str(x.get("path") if isinstance(x, dict) else x or "")
+                                          for x in g.get("exes") or []] + [str(g.get("main") or "")]
+    paths = [p.lower().replace("/", "\\") for p in paths if p]
+    for svcs, name, owner in SYSTEM_ANTICHEAT:
+        if any(s.lower() in services for s in svcs) and any(owner.search(p) for p in paths):
+            return name
     return ""
 
 

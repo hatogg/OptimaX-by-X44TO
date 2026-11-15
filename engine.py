@@ -31,7 +31,7 @@ from i18n import tr, tweak_text
 APP_NAME = "OptimaX"
 AUTHOR = "X44TO"
 APP_TITLE = f"{APP_NAME} by {AUTHOR}"
-VERSION = "6.16"
+VERSION = "6.17"
 IS_WIN = sys.platform == "win32"
 DRY_RUN = (not IS_WIN) or ("--dry-run" in sys.argv)
 DEMO = os.environ.get("OPTIMAX_DEMO", "gaming")  # демо-залізо поза Windows: gaming/laptop/old/x3d/xeon
@@ -264,15 +264,18 @@ PS_PREFIX = ("$ProgressPreference='SilentlyContinue';[Console]::OutputEncoding=[
              "[Environment]::GetFolderPath('ProgramFiles')+'\\WindowsPowerShell\\Modules';")
 
 
-def ps(script: str, timeout: int = 30, log: Optional[Callable] = None, ro: bool = False):
+def ps(script: str, timeout: int = 30, log: Optional[Callable] = None, ro: bool = False,
+       stoppable: Optional[bool] = None):
     if not IS_WIN or (DRY_RUN and not ro):
         if log and not ro:
             head = (script.strip().splitlines() or [""])[0]
             log(f"  [dry-run] powershell: {head[:90]}")
         return (1, "") if (ro and not IS_WIN) else (0, "")
     b64 = base64.b64encode((PS_PREFIX + script).encode("utf-16-le")).decode("ascii")
+    if stoppable is None:
+        stoppable = ro or timeout >= 60
     return run(["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-                "-EncodedCommand", b64], timeout, None, enc="utf-8-sig", ro=True, stoppable=ro or timeout >= 60)
+                "-EncodedCommand", b64], timeout, None, enc="utf-8-sig", ro=True, stoppable=stoppable)
 
 
 def ps_json(script: str, timeout: int = 40):
@@ -536,6 +539,22 @@ def ensure_ultimate(log: Optional[Callable] = None):
 
 
 # ───────────────────────── журнал відкату ─────────────────────────
+# 6.17: зміни системи й відкати — строго по одному. Журнал має один попередній запис (WAL) і одну позначку пакета:
+# два паралельні застосування (швидко перемкнули два перемикачі) затирали WAL одне одного, а відкат міг повернути
+# той самий запис двічі. RLock — бо застосування всередині викликає відкат конфліктних змін, і навпаки.
+CHANGE_LOCK = threading.RLock()
+
+
+def _serial(fn):
+    import functools
+
+    @functools.wraps(fn)
+    def wrapper(*a, **kw):
+        with CHANGE_LOCK:
+            return fn(*a, **kw)
+    return wrapper
+
+
 class JournalError(RuntimeError):
     """Журнал відкату не вдалося записати на диск. Без запису зміну потім не буде як повернути — тож її не робимо."""
 
@@ -583,6 +602,7 @@ class Journal:
         self.problem = None  # None | "restored" — відновлено з копії | "lost" — журнал пошкоджено, копії немає
         self.save_error = None
         self._wal = None
+        self.unreadable = False
         self._load()
 
     # ── читання й запис ──
@@ -600,15 +620,24 @@ class Journal:
     def _load(self) -> None:
         broken = False
         if os.path.exists(self.path):
-            try:
-                self.data = self._read(self.path)
-                return
-            except Exception:
-                broken = True
-                try:  # пошкоджений файл не перезаписуємо — відкладаємо поруч, щоб його можна було дослідити
-                    os.replace(self.path, f"{self.path}.corrupt-{int(time.time())}")
+            for i in range(5):
+                try:
+                    self.data = self._read(self.path)
+                    return
                 except OSError:
-                    pass
+                    # 6.17: файл тимчасово заблокований (антивірус, резервне копіювання, друга копія OptimaX) — це не
+                    # пошкодження. Раніше добрий журнал ішов у карантин, а відновлювався з .bak на запис старішим.
+                    time.sleep(0.2 * (i + 1))
+                except Exception:
+                    broken = True
+                    break
+            if not broken:  # так і не прочитався: журнал не чіпаємо й нічого не змінюємо, доки він недоступний
+                self.unreadable = True
+                return
+            try:  # пошкоджений файл не перезаписуємо — відкладаємо поруч, щоб його можна було дослідити
+                os.replace(self.path, f"{self.path}.corrupt-{int(time.time())}")
+            except OSError:
+                pass
         # основного файлу немає або він зіпсований: аварія між кроками запису — новіша копія в .tmp, інакше .bak
         for p in (self.path + ".tmp", self.bak):
             if not os.path.exists(p):
@@ -624,6 +653,9 @@ class Journal:
             self.problem = "lost"
 
     def _save(self, notify: bool = True) -> bool:
+        if self.unreadable:  # порожній журнал у пам'яті не має затерти справжній на диску
+            self.save_error = JOURNAL_PROBLEM or "the rollback journal is locked by another program"
+            return False
         ok = True
         try:
             if os.path.exists(self.path):  # попередня версія — резервна копія
@@ -651,9 +683,28 @@ class Journal:
     def get(self, tid: str):
         return self.data["applied"].get(tid)
 
+    @staticmethod
+    def _rec_key(r: dict) -> tuple:
+        """Що саме повертає запис: той самий параметр, службу, задачу, файл чи команду."""
+        return (r.get("t"), r.get("p"), r.get("n"), r.get("kv"), r.get("g"), r.get("s"), r.get("st"), r.get("m"),
+                r.get("c"), r.get("k"))
+
     def put(self, tid: str, undo: list, title: str = None, group: str = None) -> None:
         with self.lock:
-            if tid in self.data["applied"]:  # повторне застосування: зберігаємо найперший знімок
+            old = self.data["applied"].get(tid)
+            if old is not None and old.get("partial"):
+                # 6.17: після часткового відкату в записі лишилися лише кроки, що не повернулися. Повторне
+                # застосування знову змінило й решту — дописуємо їхні записи (найперший знімок кожного параметра
+                # лишається), інакше ці зміни вже ніщо не поверне.
+                have = {self._rec_key(r) for r in old["undo"]}
+                extra = [r for r in undo if self._rec_key(r) not in have]
+                if extra:
+                    old["undo"] = list(old["undo"]) + extra
+                    if not self._save():
+                        old["undo"] = old["undo"][:-len(extra)]
+                        raise JournalError(self.save_error)
+                return
+            if old is not None:  # повторне застосування: зберігаємо найперший знімок
                 return
             entry = {"ts": int(time.time()), "undo": list(undo)}
             if title:
@@ -779,9 +830,14 @@ def _journal_path() -> str:
         path = os.path.join(admin_dir("state"), "back.json")
         _migrate_journal(LEGACY_JOURNAL, path)
         return path
-    except Exception as e:  # noqa: BLE001 — краще журнал на старому місці, ніж зміни без можливості відкату
+    except Exception as e:  # noqa: BLE001
+        # 6.17: не назад у %APPDATA% — той файл може підмінити будь-яка програма, а відкат виконує його з правами
+        # адміністратора. Захищена папка є, лише перенести не вдалося — журнал там, без старих записів.
         JOURNAL_PROBLEM = f"{type(e).__name__}: {e}"
-        return LEGACY_JOURNAL
+        try:
+            return os.path.join(admin_dir("state"), "back.json")
+        except Exception:  # noqa: BLE001 — захищеної папки немає зовсім: журнал недоступний (див. нижче)
+            return os.path.join(DATA_DIR, "back.admin.json")
 
 
 def _migrate_journal(old: str, new: str) -> None:
@@ -794,7 +850,7 @@ def _migrate_journal(old: str, new: str) -> None:
         data = Journal._read(old)
         dropped = []
         for tid, e in list(data["applied"].items()):
-            good = [r for r in e["undo"] if valid_undo(r)]
+            good = [r for r in e["undo"] if migratable_undo(r)]
             if len(good) != len(e["undo"]):
                 dropped.append(tid)
                 e["undo"] = good
@@ -811,11 +867,51 @@ def _migrate_journal(old: str, new: str) -> None:
             with open(old_wal, encoding="utf-8") as f:
                 wal = json.load(f)
             if isinstance(wal, dict) and isinstance(wal.get("undo"), list):
-                wal["undo"] = [r for r in wal["undo"] if valid_undo(r)]
+                wal["undo"] = [r for r in wal["undo"] if migratable_undo(r)]
                 _write_atomic(new_wal, wal, durable=True)
         except (OSError, ValueError):
             pass
         os.replace(old_wal, f"{old_wal}.moved-{stamp}")
+
+
+# 6.17: старий журнал у %APPDATA% міг переписати будь-яка програма користувача, а записи cmd / ps / file відкат
+# виконує з правами адміністратора. Під час перенесення в захищену папку беремо лише ті команди, які OptimaX сама
+# могла записати (каталог і відомі шаблони), а файлові записи — з контрольною сумою і не в системних папках.
+_KNOWN_UNDO_RE = [re.compile(p, re.I) for p in (
+    r"powercfg -(setactive|delete) \{?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}?",
+    r"powercfg -h on",
+    r"Set-MpPreference -DisableRealtimeMonitoring \$false",
+    r"Set-MpPreference -ScanAvgCPULoadFactor \d{1,3} -EnableLowCpuPriority \$(true|false) "
+    r"-ScanOnlyIfIdleEnabled \$(true|false)",
+    r"(Enable|Disable)-MMAgent -MemoryCompression",
+    r"winget install -e --id Microsoft\.OneDrive --silent --accept-package-agreements --accept-source-agreements",
+    r"#[^\r\n]{0,80}",  # порожній крок режиму перегляду
+)]
+
+
+def _catalog_undo() -> set:
+    known = {PF_UNDO.strip()}
+    for t in TWEAKS:
+        for op in list(t.ops) + list(t.off):
+            if op and op[0] == "cmd":
+                for c in (op[1], op[2]):  # «off» — команда стану за замовчуванням, теж із каталогу
+                    if isinstance(c, str):
+                        known.add(c.strip())
+    return known
+
+
+def migratable_undo(rec) -> bool:
+    """Запис зі старого (незахищеного) журналу можна переносити: форма правильна, команда — з каталогу OptimaX,
+    файловий запис має контрольну суму й не вказує в системну папку."""
+    if not valid_undo(rec):
+        return False
+    t = rec["t"]
+    if t in ("cmd", "ps"):
+        c = rec["c"].strip()
+        return c in _catalog_undo() or any(r.fullmatch(c) for r in _KNOWN_UNDO_RE)
+    if t == "file":
+        return bool(rec.get("sha")) and not SF.system_target(rec["p"])
+    return True
 
 
 # ── перевірка записів відкату ──
@@ -870,6 +966,11 @@ def valid_undo(rec) -> bool:
 
 JOURNAL_PATH = _journal_path()
 JOURNAL = Journal(JOURNAL_PATH)
+if JOURNAL_PATH.endswith("back.admin.json"):
+    # 6.17: захищену папку створити не вдалося, а файл у %APPDATA% може підмінити будь-яка програма — не читаємо
+    # його й не змінюємо систему, доки причину (JOURNAL_PROBLEM) не усунуто: зміна без надійного запису відкату гірша
+    JOURNAL.data = {"applied": {}}
+    JOURNAL.unreadable = True
 
 
 class UndoLog(list):
@@ -900,6 +1001,14 @@ class UndoLog(list):
         super().extend(recs)
         self._changed()
         return self
+
+    def discard(self, rec) -> None:
+        """Прибрати запис, доданий наперед, якщо зміна точно не відбулася."""
+        for i in range(len(self) - 1, -1, -1):
+            if self[i] is rec:
+                super().pop(i)
+                self._changed()
+                return
 
 
 class Ctx:
@@ -1105,16 +1214,24 @@ def exec_op(op, ctx: Ctx) -> None:
         for tn in op[1]:
             if en is not None and tn.lower() not in en:
                 continue
+            rec = {"t": "task", "n": tn}
+            ctx.undo.append(rec)  # 6.17: запис відкату — до зміни (аварія посередині не лишить задачу без запису)
             rc, _ = run(f'schtasks /Change /Disable /TN "{tn}"', 15, log)
             if rc == 0:
-                ctx.undo.append({"t": "task", "n": tn})
                 n += 1
-            elif en is not None:  # задача точно є й увімкнена, але вимкнути не вдалося
-                ctx.fail(f"task {tn}")
+            else:
+                ctx.undo.discard(rec)
+                if en is not None:  # задача точно є й увімкнена, але вимкнути не вдалося
+                    ctx.fail(f"task {tn}")
         log(tr("e.tasks_disabled", n=n))
     elif k == "cmd":
         _, cmd, undo, to = op
-        rc, out = run(cmd, to, log)
+        # 6.17: запис відкату — до зміни: тайм-аут чи аварія посеред команди (DISM, bcdedit) інакше лишали зміну
+        # без запису. Команду, що змінює систему, «Зупинити» не обриває на півдорозі — лише тайм-аут.
+        rec = {"t": "cmd", "c": undo} if undo else None
+        if rec:
+            ctx.undo.append(rec)
+        rc, out = run(cmd, to, log, stoppable=False)
         if rc == 3010:  # DISM/MSI: успіх, потрібне перезавантаження
             rc = 0
         if rc == TIMEOUT_RC:
@@ -1123,8 +1240,8 @@ def exec_op(op, ctx: Ctx) -> None:
             log(tr("e.skipped", why=first_line(out, 60) or tr("e.code", rc=rc), cmd=cmd[:55]))
         if rc != 0:
             ctx.fail(cmd[:60])
-        if undo and rc == 0:
-            ctx.undo.append({"t": "cmd", "c": undo})
+        if rec and rc not in (0, TIMEOUT_RC):  # команда відмовила — нічого не змінено, повертати нічого
+            ctx.undo.discard(rec)
     elif k == "pw":
         _, sub, setting, value, mode = op
         g = active_scheme()
@@ -1216,11 +1333,12 @@ def _undo_record(rec: dict, log: Callable, deferred: set = None) -> None:
         rc, out = run(["schtasks", "/Change", "/Enable", "/TN", rec["n"]], 15, log)
         if rc != 0:
             gone, _ = run(["schtasks", "/Query", "/TN", rec["n"]], 15, ro=True)
-            if gone == 0:  # задача є, але не ввімкнулася; якщо її вже немає — повертати нічого
+            if gone != 1:  # задача є (0) чи запит не вдався (тайм-аут) — не вважаємо, що повертати нічого
                 raise RuntimeError(f"schtasks /Enable {rec['n']}: {first_line(out, 70) or rc}")
     elif t == "cmd":
         rc, out = run(rec["c"], 1800, log)
-        if rc not in (0, 3010) and not rec["c"].lower().startswith(UNDO_GONE_OK):
+        gone_ok = rec["c"].lower().startswith(UNDO_GONE_OK) and rc != TIMEOUT_RC  # 6.17: тайм-аут — не «вже немає»
+        if rc not in (0, 3010) and not gone_ok:
             raise RuntimeError(f"{rec['c'][:60]}: {first_line(out, 70) or rc}")
     elif t == "ps":
         code = rec["c"]
@@ -1264,6 +1382,8 @@ def _undo_kv(rec: dict) -> None:
 
 def _undo_file(rec: dict, log: Callable) -> None:
     path, bak = rec["p"], rec.get("bak")
+    if SF.system_target(path):  # 6.17: OptimaX кладе файли лише в папки ігор — системний шлях означає підкинутий запис
+        raise ValueError(tr("e.undo_bad", what=path[:80]))
     tmp = path + ".optimax-tmp"
     if os.path.exists(tmp):
         os.remove(tmp)
@@ -1292,6 +1412,7 @@ def _rollback(records: list, log: Callable, deferred: set = None) -> list:
     return list(reversed(failed))
 
 
+@_serial
 def undo_one(tid: str, log: Callable, deferred: set = None):
     """-> True — повернуто; "partial" — частину кроків повернути не вдалося (вони лишаються в журналі, щоб
     повторити відкат пізніше або через OptimaX-Rescue.cmd); False — у журналі немає такого запису."""
@@ -1452,6 +1573,7 @@ def mem_status() -> MEMSTAT:
 
 
 _PRIV_DONE = set()
+_PRIV_FAILED = set()
 
 
 def enable_privilege(name: str) -> bool:
@@ -1465,17 +1587,24 @@ def enable_privilege(name: str) -> bool:
     adv.OpenProcessToken.argtypes = [h, ctypes.c_ulong, ctypes.POINTER(h)]
     adv.AdjustTokenPrivileges.argtypes = [h, ctypes.c_int, ctypes.c_void_p, ctypes.c_ulong, ctypes.c_void_p,
                                           ctypes.c_void_p]
+    if name in _PRIV_FAILED:  # 6.17: без прав адміністратора не вийде й надалі — не відкриваємо токен щосекунди
+        return False
+    k32.CloseHandle.argtypes = [h]
     token = h()
     if not adv.OpenProcessToken(k32.GetCurrentProcess(), 0x28, ctypes.byref(token)):
+        _PRIV_FAILED.add(name)
         return False
-    luid = LUID()
-    if not adv.LookupPrivilegeValueW(None, name, ctypes.byref(luid)):
-        return False
-    tp = TOKEN_PRIVILEGES(1, (LUID_AND_ATTRIBUTES * 1)(LUID_AND_ATTRIBUTES(luid, 2)))
-    adv.AdjustTokenPrivileges(token, 0, ctypes.byref(tp), 0, None, None)
-    ok = k32.GetLastError() == 0
-    if ok:
-        _PRIV_DONE.add(name)
+    try:  # 6.17: дескриптор токена закриваємо (раніше витікав на кожен виклик, коли привілею не було)
+        luid = LUID()
+        if not adv.LookupPrivilegeValueW(None, name, ctypes.byref(luid)):
+            _PRIV_FAILED.add(name)
+            return False
+        tp = TOKEN_PRIVILEGES(1, (LUID_AND_ATTRIBUTES * 1)(LUID_AND_ATTRIBUTES(luid, 2)))
+        adv.AdjustTokenPrivileges(token, 0, ctypes.byref(tp), 0, None, None)
+        ok = k32.GetLastError() == 0
+    finally:
+        k32.CloseHandle(token)
+    (_PRIV_DONE if ok else _PRIV_FAILED).add(name)
     return ok
 
 
@@ -1560,10 +1689,30 @@ def _env(p: str) -> str:
     return os.path.expandvars(p)
 
 
+class _PowerThrottling(ctypes.Structure):
+    _fields_ = [("Version", ctypes.c_ulong), ("ControlMask", ctypes.c_ulong), ("StateMask", ctypes.c_ulong)]
+
+
+def _keep_timer_when_hidden() -> None:
+    """Windows 11 не гарантує підвищену точність таймера процесу, чиє вікно згорнуте чи невидиме, — а OptimaX
+    зазвичай у треї. PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION у ControlMask з 0 у StateMask каже Windows
+    не ігнорувати наш запит (SetProcessInformation, ProcessPowerThrottling)."""
+    try:
+        k32 = ctypes.WinDLL("kernel32")
+        k32.GetCurrentProcess.restype = ctypes.c_void_p
+        k32.SetProcessInformation.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_ulong]
+        st = _PowerThrottling(1, 0x4, 0)
+        k32.SetProcessInformation(k32.GetCurrentProcess(), 4, ctypes.byref(st), ctypes.sizeof(st))
+    except (AttributeError, OSError):  # Windows 10 до 1709 цього не знає
+        pass
+
+
 def set_timer_resolution(on: bool) -> bool:
     """Точність системного таймера 0.5 мс, поки процес OptimaX працює."""
     if not IS_WIN or DRY_RUN:
         return True
+    if on:
+        _keep_timer_when_hidden()
     cur = ctypes.c_ulong(0)
     return ctypes.windll.ntdll.NtSetTimerResolution(5000, 1 if on else 0, ctypes.byref(cur)) == 0
 
@@ -1644,6 +1793,7 @@ def f_pagefile(ctx: Ctx) -> None:
     rc, out = ps(PF_APPLY, 45)
     if rc != 0:
         ctx.log(f"  ⚠ pagefile: {first_line(out)}")
+        ctx.fail("pagefile")  # 6.17: не «готово», якщо розмір не змінився
 
 
 @cmd_doc("Set-MpPreference -DisableRealtimeMonitoring $true")
@@ -1666,10 +1816,10 @@ def f_defender_limit(ctx: Ctx) -> None:
     a = int(old.get("a") or 50)
     b = "$true" if old.get("b") else "$false"
     c = "$false" if old.get("c") is False else "$true"
+    ctx.undo.append({"t": "ps", "c": f"Set-MpPreference -ScanAvgCPULoadFactor {a} -EnableLowCpuPriority {b} "
+                                     f"-ScanOnlyIfIdleEnabled {c}"})  # 6.17: запис — до зміни
     ps("Set-MpPreference -ScanAvgCPULoadFactor 20 -EnableLowCpuPriority $true -ScanOnlyIfIdleEnabled $true",
        30, ctx.log)
-    ctx.undo.append({"t": "ps", "c": f"Set-MpPreference -ScanAvgCPULoadFactor {a} -EnableLowCpuPriority {b} "
-                                     f"-ScanOnlyIfIdleEnabled {c}"})
 
 
 @cmd_doc("winget uninstall Microsoft.OneDrive / OneDriveSetup.exe /uninstall")
@@ -1727,6 +1877,7 @@ def legacy_to_repair() -> list:
     return out
 
 
+@_serial
 def repair_legacy(log: Callable) -> dict:
     """Повертає ці записи до початкового стану з журналу і прибирає їх із нього — решта змін користувача лишається."""
     todo, done = legacy_to_repair(), []
@@ -1846,6 +1997,50 @@ def _psq(s: str) -> str:
     return "'" + str(s).replace("'", "''") + "'"
 
 
+def _nic_plan_lines(plan: list, undo: bool) -> list:
+    """Команди за планом змін адаптерів: undo=False — нові значення, True — попередні. Адаптер шукаємо за описом
+    (InterfaceDescription): ім'я «Ethernet» після перевстановлення драйвера стає «Ethernet 2», а опис — ні. Якщо
+    адаптера вже немає, повертати нічого; інакше помилка — це помилка (запис лишиться для повторної спроби)."""
+    out = []
+    for s in plan:
+        if not isinstance(s, dict) or not s.get("k") or not s.get("d"):
+            continue
+        val = s["v"] if undo else s["to"]
+        if s["k"] == "__pm":
+            cmd = (f"Set-NetAdapterPowerManagement -InterfaceDescription {_psq(s['d'])} "
+                   f"-AllowComputerToTurnOffDevice {_psq(val)} -NoRestart")
+        else:
+            cmd = (f"Set-NetAdapterAdvancedProperty -InterfaceDescription {_psq(s['d'])} "
+                   f"-RegistryKeyword {_psq(s['k'])} -RegistryValue {_psq(val)} -NoRestart")
+        if undo:
+            out.append(f"if (Get-NetAdapter -InterfaceDescription {_psq(s['d'])} -ErrorAction SilentlyContinue) "
+                       f"{{ {cmd} -ErrorAction Stop }}")
+        else:
+            out.append(cmd + " -ErrorAction SilentlyContinue")
+    return out
+
+
+def _nic_run(ctx: Ctx, read_script: str, dry_note: str) -> None:
+    """6.17: спершу лише читання — що й на що зміниться; запис відкату йде в журнал (WAL) до зміни; потім окремий
+    скрипт змін, який «Зупинити» не обриває на півдорозі. Раніше старі значення збиралися тим самим скриптом, що
+    й змінював, тож тайм-аут чи аварія лишали змінені адаптери без запису."""
+    if DRY_RUN:
+        ps(read_script, 60, ctx.log)
+        ctx.undo.append({"t": "ps", "c": dry_note})
+        return
+    _rc, out = ps(read_script, 60, ro=True)
+    plan = [s for s in as_list(parse_json_out(out)) if isinstance(s, dict) and s.get("k") and s.get("d")]
+    if not plan:
+        ctx.log(tr("e.nic_done", n=0))
+        return
+    rec = {"t": "ps", "c": "; ".join(_nic_plan_lines(plan, undo=True))}
+    ctx.undo.append(rec)
+    rc, out = ps("; ".join(_nic_plan_lines(plan, undo=False)), 90, stoppable=False)
+    if rc != 0:
+        ctx.log(f"  ⚠ {first_line(out, 90) or rc}")
+    ctx.log(tr("e.nic_done", n=len(plan)))
+
+
 @cmd_doc("Set-NetAdapterPowerManagement -AllowComputerToTurnOffDevice Disabled; "
          "Set-NetAdapterAdvancedProperty *EEE / GreenEthernet / PowerSavingMode = 0")
 def f_nic_power(ctx: Ctx) -> None:
@@ -1853,36 +2048,15 @@ def f_nic_power(ctx: Ctx) -> None:
     script = (
         "$r=@(); foreach ($a in Get-NetAdapter -Physical -ErrorAction SilentlyContinue) {"
         " $pm = Get-NetAdapterPowerManagement -Name $a.Name -ErrorAction SilentlyContinue;"
-        " if ($pm -and [string]$pm.AllowComputerToTurnOffDevice -ne 'Unsupported') {"
-        "  $r += @{n=$a.Name; k='__pm'; v=[string]$pm.AllowComputerToTurnOffDevice};"
-        "  Set-NetAdapterPowerManagement -Name $a.Name -AllowComputerToTurnOffDevice Disabled -NoRestart "
-        "-ErrorAction SilentlyContinue }"
+        " if ($pm -and [string]$pm.AllowComputerToTurnOffDevice -notin @('Unsupported','Disabled')) {"
+        "  $r += @{d=$a.InterfaceDescription; n=$a.Name; k='__pm'; v=[string]$pm.AllowComputerToTurnOffDevice;"
+        " to='Disabled'} }"
         f" foreach ($kw in @({kws})) {{"
         "  $p = Get-NetAdapterAdvancedProperty -Name $a.Name -RegistryKeyword $kw -ErrorAction SilentlyContinue;"
-        "  if ($p) { $r += @{n=$a.Name; k=$kw; v=($p.RegistryValue -join ',')};"
-        "   Set-NetAdapterAdvancedProperty -Name $a.Name -RegistryKeyword $kw -RegistryValue 0 -NoRestart "
-        "-ErrorAction SilentlyContinue } } }; $r | ConvertTo-Json -Compress")
-    if DRY_RUN:
-        ps(script, 60, ctx.log)
-        ctx.undo.append({"t": "ps", "c": "# restore adapter power settings"})
-        return
-    rc, out = ps(script, 90)
-    # 6.14: parse_json_out, а не json.loads — попередження PowerShell перед JSON інакше лишало вже зроблені зміни
-    # без жодного запису відкату
-    saved = as_list(parse_json_out(out))
-    lines = []
-    for s in saved:
-        if not isinstance(s, dict):
-            continue
-        if s.get("k") == "__pm":
-            lines.append(f"Set-NetAdapterPowerManagement -Name {_psq(s['n'])} -AllowComputerToTurnOffDevice "
-                         f"{_psq(s['v'])} -NoRestart -ErrorAction SilentlyContinue")
-        else:
-            lines.append(f"Set-NetAdapterAdvancedProperty -Name {_psq(s['n'])} -RegistryKeyword {_psq(s['k'])} "
-                         f"-RegistryValue {_psq(s['v'])} -NoRestart -ErrorAction SilentlyContinue")
-    ctx.log(tr("e.nic_done", n=len(saved)))
-    if lines:
-        ctx.undo.append({"t": "ps", "c": "; ".join(lines)})
+        "  if ($p -and ($p.RegistryValue -join ',') -ne '0') {"
+        "   $r += @{d=$a.InterfaceDescription; n=$a.Name; k=$kw; v=($p.RegistryValue -join ','); to='0'} } } };"
+        " $r | ConvertTo-Json -Compress")
+    _nic_run(ctx, script, "# restore adapter power settings")
 
 
 WIFI_FILTER = ("$_.NdisPhysicalMedium -eq 9 -or $_.InterfaceDescription -match "
@@ -1900,21 +2074,9 @@ def _nic_props(ctx: Ctx, media_filter: str, prop_filter: str, target: str) -> No
         f"  Where-Object {{ {prop_filter} }}) {{"
         f"  $v = {target};"
         "  if ($v -ne $null -and [string]$v -ne ($p.RegistryValue -join ',')) {"
-        "   $r += @{n=$a.Name; k=$p.RegistryKeyword; v=($p.RegistryValue -join ',')};"
-        "   Set-NetAdapterAdvancedProperty -Name $a.Name -RegistryKeyword $p.RegistryKeyword -RegistryValue $v "
-        "-NoRestart -ErrorAction SilentlyContinue } } }; $r | ConvertTo-Json -Compress")
-    if DRY_RUN:
-        ps(script, 60, ctx.log)
-        ctx.undo.append({"t": "ps", "c": "# restore adapter properties"})
-        return
-    rc, out = ps(script, 90)
-    saved = as_list(parse_json_out(out))  # як у f_nic_power: попередження перед JSON не гублять записи відкату
-    lines = [f"Set-NetAdapterAdvancedProperty -Name {_psq(s['n'])} -RegistryKeyword {_psq(s['k'])} "
-             f"-RegistryValue {_psq(s['v'])} -NoRestart -ErrorAction SilentlyContinue"
-             for s in saved if isinstance(s, dict) and s.get("k")]
-    ctx.log(tr("e.nic_done", n=len(lines)))
-    if lines:
-        ctx.undo.append({"t": "ps", "c": "; ".join(lines)})
+        "   $r += @{d=$a.InterfaceDescription; n=$a.Name; k=$p.RegistryKeyword; v=($p.RegistryValue -join ',');"
+        " to=[string]$v} } } }; $r | ConvertTo-Json -Compress")
+    _nic_run(ctx, script, "# restore adapter properties")
 
 
 @cmd_doc("Wi-Fi: Roaming Aggressiveness → найнижче значення (адаптер менше шукає інші точки доступу)")
@@ -2052,8 +2214,13 @@ def f_memory_compression(ctx: Ctx) -> None:
             ctx.log(tr("e.mc_already", state=tr("e.on" if want else "e.off")))
             return
     verb, back = ("Enable", "Disable") if want else ("Disable", "Enable")
-    ps(f"{verb}-MMAgent -MemoryCompression", 40, ctx.log)
-    ctx.undo.append({"t": "ps", "c": f"{back}-MMAgent -MemoryCompression"})
+    rec = {"t": "ps", "c": f"{back}-MMAgent -MemoryCompression"}
+    ctx.undo.append(rec)  # 6.17: запис — до зміни
+    rc, _ = ps(f"{verb}-MMAgent -MemoryCompression", 40, ctx.log)
+    if rc != 0 and not DRY_RUN:
+        ctx.undo.discard(rec)
+        ctx.fail("MMAgent")
+        return
     ctx.log(tr("e.mc_set", gb=f"{ram:.0f}", state=tr("e.on" if want else "e.off")))
 
 
@@ -2419,7 +2586,8 @@ LAP = ("laptop",)
 # ── Продуктивність процесора і пам'яті ──
 tw("ultimate_power", "perf", [F(f_ultimate)], off=[C(f"powercfg -setactive {BALANCED}")], p="FMX",
    warn_on=LAP, block_on=X3D, min_build=17134)
-tw("processor_idle", "perf", [P("IDLEDISABLE", 1)], p="FX", impact="medium", warn_on=LAP, block_on=X3D)
+# 6.17: не в профілях — на CPU з Turbo / PBO і SMT заборона простою знижує частоту під навантаженням
+tw("processor_idle", "perf", [P("IDLEDISABLE", 1)], impact="medium", warn_on=LAP, block_on=X3D)
 tw("core_parking", "perf", [P("CPMINCORES", 100), P("CPMAXCORES", 100)], p="FMX", warn_on=LAP + ("hybrid",),
    block_on=X3D)
 tw("power_throttling", "perf", [R(r"HKLM\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling",
@@ -2430,11 +2598,14 @@ tw("lock_power", "perf", [R(r"HKLM\SOFTWARE\Policies\Microsoft\Power\PowerSettin
                             active_scheme, "sz")], p="FMX", block_on=LAP)
 tw("cpu_scheduling", "perf", [R(PRIO, "Win32PrioritySeparation", 38)], p="FMX")
 # 6.9: те саме, що cpu_scheduling + system_responsiveness разом, — дві зміни одного значення плутали відкат
-tw("rt_boost", "perf", [R(SP, "SystemResponsiveness", 0), R(PRIO, "Win32PrioritySeparation", 0x26)], retired="dup")
-tw("system_responsiveness", "perf", [R(SP, "SystemResponsiveness", 0), R(SP + r"\Tasks\Games", "GPU Priority", 8),
+tw("rt_boost", "perf", [R(SP, "SystemResponsiveness", 0), R(PRIO, "Win32PrioritySeparation", 0x26)], retired="dup",
+   conflicts=("system_responsiveness",))
+# 6.17: 10, а не 0 — Windows значення менше 10 замінює на 20 (стандарт), тож 0 нічого не змінював
+tw("system_responsiveness", "perf", [R(SP, "SystemResponsiveness", 10), R(SP + r"\Tasks\Games", "GPU Priority", 8),
                                      R(SP + r"\Tasks\Games", "Priority", 6),
                                      R(SP + r"\Tasks\Games", "Scheduling Category", "High", "sz"),
-                                     R(SP + r"\Tasks\Games", "SFIO Priority", "High", "sz")], p="FMX")
+                                     R(SP + r"\Tasks\Games", "SFIO Priority", "High", "sz")], p="FMX",
+   conflicts=("rt_boost",))
 # 6.9: IoPageLockLimit — параметр часів Windows XP, сучасна Windows його не читає
 tw("registry_boost", "perf", [R(MM, "IoPageLockLimit", 0xFFFFFFFF), R(MM, "DisablePagingExecutive", 1)],
    reboot=True, retired="legacy")
@@ -2460,9 +2631,10 @@ tw("fso_global", "gaming", [R(GCS, "GameDVR_FSEBehaviorMode", 2), R(GCS, "GameDV
    p="FX", impact="medium", block_on=("mining_display",))  # справжній повноекранний режим — лише на карті з монітором
 tw("windowed_opt", "gaming", [KV(DX_PREF, DX_GLOBAL, "SwapEffectUpgradeEnable", "1")], p="FMX", win11=True)
 tw("timer_resolution", "gaming", [R(r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\kernel",
-                                    "GlobalTimerResolutionRequests", 1), F(f_hold_timer)], p="FMX", reboot=True)
+                                    "GlobalTimerResolutionRequests", 1), F(f_hold_timer)], p="FMX", reboot=True,
+   win11=True)  # 6.17: GlobalTimerResolutionRequests є лише з Windows 11 / Server 2022
 tw("dynamic_tick", "gaming", [C("bcdedit /set disabledynamictick yes", "bcdedit /deletevalue disabledynamictick")],
-   p="FMX", reboot=True)
+   reboot=True, impact="medium")  # 6.17: лише вручну — Microsoft: «only for debugging», замірів користі немає
 tw("hpet_tsc", "gaming", [C("bcdedit /set useplatformclock true", "bcdedit /deletevalue useplatformclock"),
                           C("bcdedit /set tscsyncpolicy Enhanced", "bcdedit /deletevalue tscsyncpolicy")],
    reboot=True, impact="medium", risky="fps", retired="hpet")
@@ -3238,8 +3410,10 @@ def a_reset_wu(ctx: Ctx) -> None:
     for s in ("wuauserv", "bits", "cryptsvc", "msiserver"):
         run(f"net stop {s}", 30, log)
     stamp = time.strftime("%Y%m%d%H%M%S")
-    run(rf'ren "%SystemRoot%\SoftwareDistribution" SoftwareDistribution.old{stamp}', 30, log)
-    run(rf'ren "%SystemRoot%\System32\catroot2" catroot2.old{stamp}', 30, log)
+    for folder in (r"%SystemRoot%\SoftwareDistribution", r"%SystemRoot%\System32\catroot2"):
+        rc, _ = run(f'ren "{folder}" {folder.rsplit(chr(92), 1)[-1]}.old{stamp}', 30, log)
+        if rc != 0:  # 6.17: служба ще тримає папку (чи немає прав) — скидання не відбулося, не пишемо «готово»
+            ctx.fail(f"ren {folder}")
     for s in ("wuauserv", "bits", "cryptsvc", "msiserver"):
         run(f"net start {s}", 30, log)
 
@@ -3306,10 +3480,13 @@ def run_action(a: Action, log: Callable, hw: dict = None):
     log(f"[►] {a.title}")
     try:
         a.fn(ctx)
-        log(tr("e.done"))
     except Exception as e:
         log(tr("e.err", err=f"{type(e).__name__}: {e}"))
         return {"error": str(e)}
+    if ctx.failed:  # 6.17: дія, крок якої не вдався, — «частково», а не «готово»
+        log(tr("e.done_partial", n=len(ctx.failed)))
+        return {"ok": False, "partial": len(ctx.failed)}
+    log(tr("e.done"))
     return {"ok": True}
 
 
@@ -3443,6 +3620,7 @@ def create_restore_point(log: Callable) -> dict:
 BEFORE_APPLY: list = []
 
 
+@_serial
 def apply_tweaks(items, log: Callable, progress: Optional[Callable] = None, sfc: bool = False,
                  header: bool = True, hw: dict = None, restore_point: bool = False, by: str = "") -> dict:
     ctx = Ctx(log, hw=hw)
@@ -3567,6 +3745,7 @@ def entry_title(tid: str) -> str:
     return e.get("title") or tid
 
 
+@_serial
 def undo_ids(ids, log: Callable, progress: Optional[Callable] = None, by: str = "") -> dict:
     # Завжди від найновішого до найстарішого, хоч би в якому порядку прийшли id (пробний режим, «зміни між
     # тестами FPS», аварійний відкат…): якщо два твіки змінили одне значення, лише так воно стане початковим.
@@ -3612,6 +3791,7 @@ def undo_ids(ids, log: Callable, progress: Optional[Callable] = None, by: str = 
     return {"undone": n, "partial": partial, "reboot": reboot}
 
 
+@_serial
 def recover_interrupted(log: Callable = lambda *_: None) -> dict:
     """Після аварійного завершення OptimaX (виліт, зняли процес, синій екран, зникло світло):
 
@@ -3648,6 +3828,7 @@ def recover_interrupted(log: Callable = lambda *_: None) -> dict:
     return res
 
 
+@_serial
 def undo_or_default(t: Tweak, log: Callable) -> dict:
     log(f"\n[↩] {t.title}")
     invalidate_live()

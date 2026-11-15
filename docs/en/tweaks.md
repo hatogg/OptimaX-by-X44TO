@@ -2,7 +2,7 @@
 
 [← Back to the main page](../../README.en.md) · [Українська](../uk/tweaks.md)
 
-Generated from the program code (129 optimizations in 17 sections, version 6.16). Marks: 🔴 affects everyday habits, 🟡 moderate impact, 🔵 safe. “Rollback” tells whether OptimaX restores the change to your own original value.
+Generated from the program code (129 optimizations in 17 sections, version 6.17). Marks: 🔴 affects everyday habits, 🟡 moderate impact, 🔵 safe. “Rollback” tells whether OptimaX restores the change to your own original value.
 
 Before applying, OptimaX checks compatibility with your hardware and Windows version: irrelevant items are disabled, items harmful to your PC (for example, turning off Game Bar on AMD X3D) are blocked, and the reason is shown under the item.
 
@@ -17,14 +17,14 @@ Power plan, core parking, priorities, page file, memory compression.
 | | Optimization | What it does | Profiles | Rollback |
 | --- | --- | --- | --- | --- |
 | 🔵 | Ultimate Performance power plan | Hidden Windows plan: turns off CPU power saving and keeps clocks at maximum. | Full, Medium, Xeon / X99 | yes |
-| 🟡 | Disable processor idle (C-states) | The CPU never naps between tasks — lower DPC latency, but more heat. | Full, Xeon / X99 | yes |
+| 🟡 | Disable processor idle (C-states) | The CPU never naps between tasks — faster wake-up from idle, but more heat. On CPUs with Turbo Boost / PBO and SMT it can lower clocks under load, so manual only, with a before/after check. | — | yes |
 | 🔵 | Disable core parking | All cores stay awake and never waste time waking up. | Full, Medium, Xeon / X99 | yes |
 | 🔵 | Disable Power Throttling | Windows stops capping CPU speed for background apps. | Full, Medium, Xeon / X99 | yes |
 | 🔵 | Aggressive Turbo Boost | The CPU ramps up to its top clocks faster and more often. | Full, Xeon / X99 | yes |
 | 🟡 | 100% minimum processor state | Clocks never drop below base — server Xeons stop dozing off in games. | Xeon / X99 | yes |
 | 🔵 | Lock the power plan | Drivers and Windows updates can't quietly switch your power plan. | Full, Medium, Xeon / X99 | yes |
-| 🔵 | Foreground window priority | The app in front gets a bigger slice of CPU time. | Full, Medium, Xeon / X99 | yes |
-| 🔵 | Give resources to games (System Responsiveness) | The multimedia scheduler hands games as much CPU and GPU as possible. | Full, Medium, Xeon / X99 | yes |
+| 🔵 | Foreground window priority | Restores the standard Windows boost for the app in front (same as “Programs” in Performance Options) if another optimizer changed it. On a clean Windows there's almost no difference. | Full, Medium, Xeon / X99 | yes |
+| 🔵 | Give resources to games (System Responsiveness) | The multimedia scheduler (MMCSS) reserves 10% of the CPU for background tasks instead of 20% and gives game threads registered with it a higher priority. It affects only such threads (audio, some games), not the whole game. | Full, Medium, Xeon / X99 | yes |
 | 🔵 | Fixed page file (4–8 GB) <sub>(restart)</sub> | No fragmentation or resize stalls. Only for PCs with 32 GB or more: with less, a heavy game can run out of memory. | — | yes |
 | 🔵 | Memory compression by RAM size <sub>(restart)</sub> | 32+ GB — compression off (plenty of RAM, less CPU work); up to 12 GB — on, so Windows pages to disk less. | Full, Medium, Laptop, Old PC, Xeon / X99 | yes |
 | 🔴 | Turn off Spectre and Meltdown mitigations <sub>(restart, lowers security)</sub> | A noticeable boost on old Intel CPUs (up to 8th–9th gen), but the PC becomes more exposed to malicious sites and apps. Only if you accept the risk. | — | yes |
@@ -40,8 +40,8 @@ Game Bar, fullscreen, timers, mouse and keyboard, VRR, Auto HDR, GPU scheduling.
 | 🔴 | Turn off Xbox Game Bar and recording | Removes the background overlay and DVR capture — less input lag. Win+G will stop working. | Full, Medium, Xeon / X99 | yes |
 | 🟡 | Disable fullscreen optimizations for all games | True exclusive fullscreen instead of the hybrid mode — lower latency in some games. | Full, Xeon / X99 | yes |
 | 🔵 | Optimizations for windowed games <sub>(Windows 11)</sub> | Modern flip model for windowed and borderless games: lower latency and VRR support. | Full, Medium, Xeon / X99 | yes |
-| 🔵 | Precise 0.5 ms timer <sub>(restart)</sub> | 0.5 ms system timer instead of 15.6 ms — lower DPC latency, smoother frame times. | Full, Medium, Xeon / X99 | yes |
-| 🔵 | Disable Dynamic Tick <sub>(restart)</sub> | The timer ticks steadily instead of changing rate — less jitter. | Full, Medium, Xeon / X99 | yes |
+| 🔵 | Precise 0.5 ms timer <sub>(restart, Windows 11)</sub> | Windows 11: a 0.5 ms timer for the whole system while OptimaX runs — more precise Sleep and frame limiters, smoother frame times with an FPS cap. It does not lower DPC latency. On Windows 10 (2004+) a timer request only affects the app that made it, so this change isn't offered there. | Full, Medium, Xeon / X99 | yes |
+| 🟡 | Disable Dynamic Tick <sub>(restart)</sub> | The timer ticks steadily instead of skipping ticks when idle. Microsoft documents this setting for debugging, there are no reproducible measurements of a benefit, and an idle laptop uses more power. Manual only, with a before/after check. | — | yes |
 | 🟡 | Turn off mouse acceleration | Linear cursor movement: every millimeter of motion covers the same distance on screen. | — | yes |
 | 🔵 | Variable refresh rate (VRR) in windowed games <sub>(Windows 11)</sub> | G-Sync and FreeSync also work in games without their own VRR support — less tearing and judder. | Full, Medium, Xeon / X99 | yes |
 | 🟡 | Auto HDR <sub>(Windows 11)</sub> | Windows adds HDR to older DirectX 11/12 games. HDR monitors only. | — | yes |
@@ -59,7 +59,7 @@ For your CPU and GPU: P/E-cores, MSI Mode, NVIDIA, AMD, VBS, PCIe, USB.
 | 🔵 | Turn off AMD ULPS <sub>(restart)</sub> | Radeon ultra-low power state sometimes causes stutter and black screens — turning it off. | Full, Medium, Xeon / X99 | yes |
 | 🔴 | Turn off core isolation (VBS / HVCI) <sub>(restart, lowers security)</sub> | +5–15% FPS on some systems. Protection against vulnerable drivers will be off. | — | yes |
 | 🔵 | Turn off PCIe power saving | The GPU and NVMe drives never enter power saving — fewer micro-stutters. | Full, Medium, Xeon / X99 | yes |
-| 🔵 | Turn off USB selective suspend | Mice, keyboards and headsets stop dropping out or going to sleep. | Full, Medium, Laptop, Xeon / X99 | yes |
+| 🔵 | Turn off USB selective suspend | USB headsets, DACs, hubs and other devices stop sleeping and dropping out. Windows never suspends mice and keyboards anyway. | Full, Medium, Laptop, Xeon / X99 | yes |
 
 ### Network
 

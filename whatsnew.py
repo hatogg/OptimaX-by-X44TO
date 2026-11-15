@@ -9,6 +9,7 @@ import features as F
 
 # версія -> ключі рядків (lang_life.py); у вікні — у такому порядку
 NOTES = {
+    "6.17": ["wn.617.safety", "wn.617.honest", "wn.617.tweaks"],
     "6.16": ["wn.616.health", "wn.616.fix"],
     "6.15": ["wn.615.latency", "wn.615.gpu"],
     "6.14": ["wn.614.honest", "wn.614.stop", "wn.614.state", "wn.614.fast"],

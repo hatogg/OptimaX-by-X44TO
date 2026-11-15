@@ -2,6 +2,34 @@
 (українська, російська, англійська)."""
 
 STRINGS = {
+    # ── «Що нового» 6.17 ──
+    "wn.617.safety": ("Захист і відкат: незалежний аудит коду знайшов місця, де стороння програма могла б підсунути "
+                      "OptimaX чуже «оновлення» чи команду для аварійного відкату. Усе закрито; OptimaX-Rescue.cmd більше "
+                      "не позначає відкат виконаним, якщо якийсь крок не вдався.",
+                      "Защита и откат: независимый аудит кода нашёл места, где посторонняя программа могла бы подсунуть "
+                      "OptimaX чужое «обновление» или команду для аварийного отката. Всё закрыто; OptimaX-Rescue.cmd "
+                      "больше не отмечает откат выполненным, если какой-то шаг не удался.",
+                      "Safety and rollback: an independent code audit found places where another program could slip "
+                      "OptimaX a fake “update” or a command for the emergency rollback. All closed; OptimaX-Rescue.cmd "
+                      "no longer marks a rollback done when a step failed."),
+    "wn.617.honest": ("Надійніший відкат: зміни застосовуються строго по одній, запис для відкату з'являється до зміни, "
+                      "а «Зупинити» не обриває команду посередині. Скидання Windows Update, файл підкачки й DNS кажуть "
+                      "«частково», якщо щось не вдалося.",
+                      "Надёжнее откат: изменения применяются строго по одному, запись для отката появляется до "
+                      "изменения, а «Остановить» не обрывает команду посередине. Сброс Windows Update, файл подкачки и "
+                      "DNS говорят «частично», если что-то не удалось.",
+                      "Sturdier rollback: changes apply strictly one at a time, the undo record exists before the "
+                      "change, and Stop never cuts a command in half. Windows Update reset, page file and DNS say "
+                      "“partial” when something failed."),
+    "wn.617.tweaks": ("Чесніші оптимізації: «Точний таймер» — лише на Windows 11 (на Windows 10 він не діє), Dynamic "
+                      "Tick і заборона простою процесора — лише вручну, System Responsiveness тепер справді діє (10 "
+                      "замість 0, яке Windows ігнорувала).",
+                      "Честнее оптимизации: «Точный таймер» — только на Windows 11 (на Windows 10 он не действует), "
+                      "Dynamic Tick и запрет простоя процессора — только вручную, System Responsiveness теперь "
+                      "действительно работает (10 вместо 0, которое Windows игнорировала).",
+                      "More honest optimizations: Precise timer is Windows 11 only (it has no effect on Windows 10), "
+                      "Dynamic Tick and disabling CPU idle are manual only, and System Responsiveness now actually works "
+                      "(10 instead of 0, which Windows ignored)."),
     # ── «Що нового» 6.16 ──
     "wn.616.health": ("«Здоров'я ПК» (Діагностика): одна перевірка Windows з оцінкою 0–100 — диски, збої, драйвери, "
                       "оновлення, антивірус, брандмауер, UAC, SMBv1, час і звук. Кожна картка пояснює, чому це важливо "

@@ -334,6 +334,7 @@ GENERIC_NONE, SHARE_RW, OPEN_EXISTING = 0, 3, 3
 IOCTL_STORAGE_QUERY_PROPERTY = 0x2D1400
 IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS = 0x560000
 IOCTL_DISK_GET_DRIVE_GEOMETRY_EX = 0x700A0
+IOCTL_DISK_GET_LENGTH_INFO = 0x7405C  # потребує доступу на читання (GENERIC_READ)
 
 
 def _k32():
@@ -388,8 +389,20 @@ def disk_name(vendor: str, product: str) -> str:
     return f"{vendor} {product}".strip()
 
 
+def disk_length(h) -> int:
+    """6.17: точний розмір диска в байтах за відкритим дескриптором: GET_LENGTH_INFO (дескриптор з правом читання),
+    інакше DiskSize з GET_DRIVE_GEOMETRY_EX (працює й без прав доступу). 0 — невідомо."""
+    b = _ioctl(h, IOCTL_DISK_GET_LENGTH_INFO, b"", 8)
+    if len(b) >= 8:
+        n = struct.unpack_from("<q", b, 0)[0]
+        if n > 0:
+            return n
+    geo = _ioctl(h, IOCTL_DISK_GET_DRIVE_GEOMETRY_EX, b"", 256)
+    return max(0, struct.unpack_from("<q", geo, 24)[0]) if len(geo) >= 32 else 0
+
+
 def disk_props(num: int) -> dict:
-    """Фізичний диск N -> {bus, name, seek (True — HDD), size_gb}."""
+    """Фізичний диск N -> {bus, name, seek (True — HDD), size_gb, size_bytes (точний розмір)}."""
     h = _open(rf"\\.\PhysicalDrive{num}")
     if h is None:
         return {}
@@ -398,9 +411,10 @@ def disk_props(num: int) -> dict:
         sp = _ioctl(h, IOCTL_STORAGE_QUERY_PROPERTY, struct.pack("<II4x", 7, 0), 64)  # StorageDeviceSeekPenaltyProperty
         if len(sp) >= 9:
             res["seek"] = bool(sp[8])
-        geo = _ioctl(h, IOCTL_DISK_GET_DRIVE_GEOMETRY_EX, b"", 256)
-        if len(geo) >= 32:
-            res["size_gb"] = round(struct.unpack_from("<q", geo, 24)[0] / 1e9)
+        size = disk_length(h)
+        if size:
+            res["size_gb"] = round(size / 1e9)  # для показу; для читання поверхні — size_bytes (size_gb округлений)
+            res["size_bytes"] = size
         res["name"] = disk_name(res.pop("vendor", ""), res.pop("product", ""))
         return res
     finally:
@@ -433,7 +447,7 @@ def media_of(p: dict) -> str:
 
 
 def disks() -> list:
-    """-> [{id, name, media, bus, size_gb, letters}] для дисків 0…15."""
+    """-> [{id, name, media, bus, size_gb, size_bytes, letters}] для дисків 0…15."""
     import string
     letters = {}
     drives = ctypes.windll.kernel32.GetLogicalDrives()
@@ -448,7 +462,8 @@ def disks() -> list:
         if not p:
             continue
         out.append(dict(id=str(n), name=p.get("name", ""), media=media_of(p), bus=p.get("bus", ""), health="",
-                        size_gb=p.get("size_gb", 0), wear=None, temp=None, letters=sorted(letters.get(n, []))))
+                        size_gb=p.get("size_gb", 0), size_bytes=p.get("size_bytes", 0),
+                        wear=None, temp=None, letters=sorted(letters.get(n, []))))
     return out
 
 

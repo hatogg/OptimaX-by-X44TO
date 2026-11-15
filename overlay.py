@@ -147,8 +147,9 @@ class Stream:
                 if mode:
                     self.mode = mode
                     self.modes[mode] += 1
-                if self.recording is not None and len(self.recording) < 2_000_000:
-                    self.recording.append((round(now, 4), ms))
+                rec = self.recording  # 6.17: один раз — інтерфейс може вимкнути запис між перевіркою й записом
+                if rec is not None and len(rec) < 2_000_000:
+                    rec.append((round(now, 4), ms))
 
     def stats(self) -> dict:
         with self.lock:

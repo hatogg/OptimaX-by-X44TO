@@ -15,6 +15,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.error
@@ -26,13 +27,29 @@ import lifecycle as L
 from i18n import tr
 
 # Репозиторій із релізами у форматі "власник/репозиторій". Порожньо — перевірка оновлень вимкнена.
-# Збірка з CI записує його в buildinfo.py (packaging/release.py buildinfo); змінна середовища важливіша.
+# Збірка з CI записує його в buildinfo.py (packaging/release.py buildinfo); змінна середовища важливіша — але лише
+# під час розробки (див. _configured_repo).
 try:
     import buildinfo as _bi
     _BUILT_REPO = getattr(_bi, "UPDATE_REPO", "") or ""
 except ImportError:
     _BUILT_REPO = ""
-UPDATE_REPO = os.environ.get("OPTIMAX_UPDATE_REPO", "") or _BUILT_REPO
+DEFAULT_REPO = "hatogg/OptimaX-by-X44TO"  # офіційний репозиторій (як packaging/release.py DEFAULT_REPO)
+REPO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}$")
+
+
+def _configured_repo() -> str:
+    """Звідки брати оновлення. 6.17: у зібраній програмі (frozen) змінну OPTIMAX_UPDATE_REPO не читаємо — будь-яка
+    програма користувача може задати її в HKCU\\Environment, і OptimaX з правами адміністратора завантажила б
+    «оновлення» з чужого репозиторію. Змінна лишається для розробки (запуск із вихідного коду)."""
+    env = "" if getattr(sys, "frozen", False) else (os.environ.get("OPTIMAX_UPDATE_REPO", "") or "").strip()
+    for repo in (env, (_BUILT_REPO or "").strip()):
+        if repo and REPO_RE.match(repo) and repo.split("/")[1] not in (".", ".."):
+            return repo
+    return ""
+
+
+UPDATE_REPO = _configured_repo()
 SUMS_NAME = "SHA256SUMS.txt"
 SETUP_RE = re.compile(r"^OptimaX-Setup-[\d.]+\.exe$", re.I)
 PORTABLE_RE = re.compile(r"^OptimaX-[\d.]+-portable\.exe$", re.I)
@@ -40,6 +57,7 @@ CHECK_EVERY = 6 * 3600   # автоматична перевірка не час
 RETRY_AFTER = 30 * 60    # після невдалої спроби (немає мережі, GitHub недоступний)
 SNOOZE = 24 * 3600       # «Пізніше» ховає повідомлення про цю версію на добу
 UA = f"{E.APP_NAME}/{E.VERSION}"
+_FRESH: dict = {}  # (версія, kind) -> дані релізу, отримані з GitHub у цьому процесі (from_release)
 
 
 def enabled() -> bool:
@@ -60,12 +78,34 @@ def due(cfg: dict, now: float = None) -> bool:
     return now - (cfg.get("last_check") or 0) >= CHECK_EVERY
 
 
+def _trusted_repo() -> str:
+    return UPDATE_REPO or DEFAULT_REPO
+
+
+def release_page(url) -> str:
+    """Сторінка релізу для браузера: лише github.com нашого репозиторію, інакше — сторінка останнього релізу.
+    (webbrowser.open передає рядок у ShellExecute, тож шлях до програми замість адреси запустив би її.)"""
+    base = f"https://github.com/{_trusted_repo()}/"
+    if isinstance(url, str) and url[:len(base)].lower() == base.lower() and not re.search(r"[\s\\\"'<>]", url):
+        return url
+    return base + "releases/latest"
+
+
 def cached(cfg: dict):
-    """Остання знайдена новіша версія — щоб банер не зникав, якщо програму перезапустили до наступної перевірки."""
+    """Остання знайдена новіша версія — щоб банер не зникав, якщо програму перезапустили до наступної перевірки.
+    6.17: settings.json може переписати будь-яка програма користувача, тож звідси беремо лише те, що показується
+    (версія, нотатки, сторінка релізу), — без адреси файлу, суми й імені. Завантаження (download) все одно бере
+    дані релізу заново з GitHub."""
     info = (cfg or {}).get("latest")
-    if isinstance(info, dict) and info.get("version") and vtuple(info["version"]) > vtuple(E.VERSION):
-        return info
-    return None
+    ver = info.get("version") if isinstance(info, dict) else None
+    if not isinstance(ver, str) or not re.fullmatch(r"\d[\w.+-]{0,31}", ver) or vtuple(ver) <= vtuple(E.VERSION):
+        return None
+    out = {"version": ver}
+    if "notes" in info:
+        out["notes"] = clean_notes(str(info.get("notes") or ""))
+    if "page" in info:
+        out["page"] = release_page(info.get("page"))
+    return out
 
 
 def snoozed(cfg: dict, version: str, now: float = None) -> bool:
@@ -155,10 +195,14 @@ def from_release(rel: dict, installed: bool):
     asset = next((a for a in assets if pattern.match(a.get("name", ""))), None)
     sums = next((a for a in assets if a.get("name", "").lower() == SUMS_NAME.lower()), None)
     import verify as V
-    return dict(version=ver, notes=clean_notes(rel.get("body") or ""), page=rel.get("html_url", ""),
+    info = dict(version=ver, notes=clean_notes(rel.get("body") or ""), page=rel.get("html_url", ""),
                 url=asset["browser_download_url"] if asset else "", size=asset.get("size", 0) if asset else 0,
                 kind="setup" if installed else "portable", name=asset.get("name", "") if asset else "",
                 sha256=V.digest_of(asset), sums_url=sums["browser_download_url"] if sums else "")
+    # 6.17: download() бере адресу й суму лише звідси (дані, щойно отримані з GitHub у цьому процесі), а не з того,
+    # що йому передали, — передане могло прийти з settings.json
+    _FRESH[(info["version"], info["kind"])] = dict(info)
+    return info
 
 
 def check(log=lambda *_: None):
@@ -213,6 +257,8 @@ def expected_sha256(info: dict, log=lambda *_: None) -> str:
     sums_url = info.get("sums_url") or ""
     if not sums_url and "/releases/download/" in (info.get("url") or ""):  # той самий реліз, поруч із файлом
         sums_url = info["url"].rsplit("/", 1)[0] + "/" + SUMS_NAME
+    if sums_url and not release_url(sums_url):  # 6.17: файл сум — лише з релізу нашого репозиторію
+        sums_url = ""
     if sums_url:
         try:
             sums = fetch_text(sums_url)
@@ -222,6 +268,57 @@ def expected_sha256(info: dict, log=lambda *_: None) -> str:
 
 
 _VERIFIED: dict = {}  # шлях -> перевірена сума: launch() звіряє файл ще раз безпосередньо перед запуском
+SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,150}$")  # інші файли релізу (архіви шарів mining.py)
+
+
+def release_url(url, name: str = None) -> bool:
+    """Адреса файлу з релізу нашого репозиторію: https://github.com/<репо>/releases/download/<тег>/<файл>.
+    name — яким має бути останній сегмент (ім'я файлу)."""
+    prefix = f"https://github.com/{_trusted_repo()}/releases/download/"
+    if not isinstance(url, str) or url[:len(prefix)].lower() != prefix.lower() or re.search(r"[\s\\?#]", url):
+        return False
+    parts = [urllib.parse.unquote(p) for p in url[len(prefix):].split("/")]
+    if len(parts) < 2 or any(not p or p in (".", "..") or re.search(r"[\\/:]", p) for p in parts):
+        return False  # ..%5C, %2F та інші способи вийти з папки релізу
+    return name is None or parts[-1] == name
+
+
+def asset_name_ok(name, kind: str = None) -> bool:
+    """Ім'я файлу, з якого складається шлях у папці завантажень: інсталятор/портативна OptimaX — лише за шаблоном
+    SETUP_RE / PORTABLE_RE, інше — просте ім'я без папок і «..»."""
+    if not isinstance(name, str) or not name:
+        return False
+    if kind == "setup":
+        return bool(SETUP_RE.fullmatch(name))
+    if kind == "portable":
+        return bool(PORTABLE_RE.fullmatch(name))
+    return bool(SAFE_NAME_RE.fullmatch(name)) and ".." not in name
+
+
+def _trusted_info(info: dict, log) -> dict:
+    """Дані для завантаження. Оновлення самої OptimaX (kind setup/portable або дані з cached() без адреси) — лише
+    з релізу, отриманого з GitHub у цьому процесі; якщо такого немає — перевіряємо GitHub заново (check)."""
+    import verify as V
+    info = info if isinstance(info, dict) else {}
+    kind = info.get("kind")
+    if kind in ("setup", "portable") or not info.get("url"):
+        own = kind if kind in ("setup", "portable") else "setup" if L.is_installed() else "portable"
+        fresh = _FRESH.get((str(info.get("version") or ""), own))
+        if fresh is None:
+            new = check(log)
+            fresh = _FRESH.get((new["version"], new["kind"])) if isinstance(new, dict) and new.get("url") else None
+        if not fresh or not fresh.get("url"):
+            raise V.VerifyError("vf.no_hash", name=f"{E.APP_NAME} {info.get('version') or ''}".strip())
+        info = dict(fresh)
+    kind = info.get("kind") if info.get("kind") in ("setup", "portable") else None
+    name = info.get("name") or urllib.parse.unquote(str(info.get("url") or "").rsplit("/", 1)[-1])
+    if not asset_name_ok(name, kind) or not release_url(info.get("url"), name):
+        raise V.VerifyError("vf.no_hash", name=re.sub(r"[^\w.+-]", "_", str(name))[:80] or "?")
+    sums_url = info.get("sums_url") or ""
+    if sums_url and not release_url(sums_url):
+        log(f"  · {SUMS_NAME}: ignored ({sums_url[:80]})")
+        sums_url = ""
+    return dict(info, name=name, sums_url=sums_url)
 
 
 def download(info: dict, log, progress=None, publisher=None) -> str:
@@ -235,9 +332,15 @@ def download(info: dict, log, progress=None, publisher=None) -> str:
         log("  [dry-run] " + tr("upd.downloaded"))
         log("  [dry-run] " + tr("vf.ok", sig=tr("vf.sig.unknown")))
         return ""
+    # 6.17: адреса, ім'я й сума — лише з перевірених даних релізу (не з settings.json); ім'я — за шаблоном, без
+    # «..%5C», щоб файл (і видалення старого нижче) не вийшов за межі папки завантажень
+    info = _trusted_info(info, log)
+    name = info["name"]
     expected = expected_sha256(info, log)  # до завантаження: без суми файл однаково не запустимо
-    name = urllib.parse.unquote(info["url"].rsplit("/", 1)[-1])
-    dest = os.path.join(download_dir(), name)
+    ddir = download_dir()
+    dest = os.path.join(ddir, name)
+    if os.path.dirname(os.path.abspath(dest)) != os.path.abspath(ddir):
+        raise V.VerifyError("vf.no_hash", name=os.path.basename(name) or "?")
     total = info.get("size") or 0
     for old in (dest, dest + ".part"):  # чужий файл із таким ім'ям (створений заздалегідь) не дописуємо — видаляємо
         try:
@@ -333,6 +436,8 @@ def launch(path: str, kind: str) -> bool:
     LAST_ERROR = ""
     if not path or not E.IS_WIN or E.DRY_RUN:
         return False
+    # 6.17: kind приходить разом із даними про версію; тихий запуск — лише для перевіреного файлу з ім'ям інсталятора
+    kind = "setup" if kind == "setup" and SETUP_RE.fullmatch(os.path.basename(path)) else "portable"
     import verify as V
     try:
         if path not in _VERIFIED:

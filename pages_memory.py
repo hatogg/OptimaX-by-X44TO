@@ -534,7 +534,10 @@ class MemoryPage(QWidget):
             self.main._workers.discard(self._worker)
         self.running = False
         self.btn.setEnabled(True)
-        self.timer.start(1000)
+        if self.isVisible():  # 6.17: пішли зі сторінки під час звільнення — таймер не лишаємо працювати у фоні
+            self.timer.start(1000)
+        else:
+            self.timer.stop()
         if not isinstance(res, dict) or "freed" not in res:
             if self.sheet:
                 self.sheet.close_sheet()

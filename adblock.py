@@ -738,6 +738,22 @@ def _client_ok(ip: str) -> bool:
         return False
 
 
+# 6.17: адреси, на яких можна СЛУХАТИ в режимі «для домашньої мережі»: лише приватні діапазони домашніх мереж (RFC1918),
+# IPv6 ULA і link-local. _client_ok пропускає ще й 100.64.0.0/10 (CGNAT) — це адреси Tailscale-клієнтів, але так само
+# провайдер видає їх на БІК ІНТЕРНЕТУ: слухати на такій адресі — відкритий резолвер для сусідів по провайдеру.
+# Інтерфейси Tailscale ми не розрізняємо (adapters() бере лише фізичні адаптери), тож 100.64/10 для слухання — ніколи.
+BIND_NETS = tuple(ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7",
+                                                     "fe80::/10", "169.254.0.0/16"))
+
+
+def _bind_ok(ip: str) -> bool:
+    try:
+        a = ipaddress.ip_address(ip.split("%")[0])
+    except ValueError:
+        return False
+    return any(a.version == n.version and a in n for n in BIND_NETS)
+
+
 class DnsServer:
     def __init__(self, filt: Filter, resolver: Resolver, stats: Stats, cfg: dict):
         self.filter = filt
@@ -1142,7 +1158,8 @@ class Service:
         if self.cfg.get("lan"):
             for a in self.info.get("adapters", []):
                 for ip in a.get("ips", []):
-                    if _client_ok(ip) and not ip.startswith("169.254.") and self.server.bind(ip, self.port):
+                    # 6.17: _bind_ok, а не _client_ok — без 100.64/10 (CGNAT з боку провайдера)
+                    if _bind_ok(ip) and not ip.startswith("169.254.") and self.server.bind(ip, self.port):
                         self.lan_ips.append(ip)
         return ok
 

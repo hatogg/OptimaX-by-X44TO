@@ -216,7 +216,11 @@ class OverlayController(QObject):
             self.last_s = self.sensors.sample(1.0) if self.sensors else {}
             if self.rec is not None:
                 self.rec["samples"].append(dict(self.last_s, t=round(time.time() - self.rec["t0"], 1)))
-                if self.rec.get("recorder"):
+                # 6.17: запис фону — раз на PM.INTERVAL (2 с), як вважає procmon.analyze; щосекундні заміри
+                # подвоювали час і обсяг диска в сесії
+                if self.rec.get("recorder") and time.time() >= self.rec.get("next_pm", 0.0):
+                    import procmon as PM
+                    self.rec["next_pm"] = time.time() + PM.INTERVAL
                     self.rec["recorder"].sample()
             pct, self.cpu_state = OV.self_cpu_percent(self.cpu_state)
             if pct is not None:
@@ -313,13 +317,17 @@ class OverlayController(QObject):
                 return
             self.rec = dict(t0=time.time(), samples=[], game=self.game.get("exe", ""),
                             recorder=PM.Recorder(self.game.get("exe", ""), manual=True))
-            self.stream.recording = []
+            with self.stream.lock:  # 6.17: потік кадрів читає recording під цим же замком
+                self.stream.recording = []
+            self.rec["next_pm"] = 0.0
             self.notify.emit(tr("ov.rec_on"), "ok")
             return
         rec, self.rec = self.rec, None
-        frames = list(self.stream.recording or []) if self.stream else []
+        frames = []
         if self.stream:
-            self.stream.recording = None
+            with self.stream.lock:
+                frames = list(self.stream.recording or [])
+                self.stream.recording = None
         procs = rec["recorder"].finish(None) if rec.get("recorder") else {}
         if len(frames) < 30:
             self.notify.emit(tr("ov.rec_short"), "warn")

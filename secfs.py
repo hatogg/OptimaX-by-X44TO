@@ -357,8 +357,13 @@ def secure_dir(path: str, users_read: bool = True, log=None) -> str:
                 os.mkdir(p)
             if not _marked(p) or (leaf and not trusted_owner(p)):
                 # корінь — без вмісту: у ньому є папки з власними, суворішими дозволами (фільтр реклами, шари)
-                harden(p, users_read=users_read or not leaf, children=leaf and p != chain[0])
-                _mark(p)
+                ok = harden(p, users_read=users_read or not leaf, children=leaf and p != chain[0])
+                if ok:
+                    _mark(p)
+                elif leaf:
+                    # 6.17: дозволи не стали — папку, куди можуть писати користувачі, не віддаємо як захищену
+                    # (раніше мітка ставилась і після невдалого icacls, і повторної спроби вже не було)
+                    raise PermissionError(f"icacls failed for {p}")
         _DONE.add(key)
     return path
 

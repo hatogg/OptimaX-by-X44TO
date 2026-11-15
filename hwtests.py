@@ -880,12 +880,67 @@ def _remove_own(path: str, folder: str) -> None:
             pass
 
 
+SCAN_BLOCK = 1 << 20
+SCAN_UNKNOWN = 1 << 38  # розмір невідомий: 256 ГіБ, а справжній кінець диска з'ясовується під час читання
+EOF_ERRORS = (38, 87, 27)  # ERROR_HANDLE_EOF, ERROR_INVALID_PARAMETER, ERROR_SECTOR_NOT_FOUND — читання за кінцем
+
+
+def scan_limit(exact: int = 0, size=0, size_gb=0) -> int:
+    """6.17: скільки байтів від початку диска можна читати. exact — точний розмір з IOCTL на відкритому диску, size —
+    точний розмір від сторінки (size_bytes). Інакше лише округлений size_gb (62.54 ГБ → 63): беремо меншу цілу
+    частину і не чіпаємо останній 1 ГБ — інакше випадкові читання за кінцем диска рахувалися б помилками.
+    0 — невідомо зовсім."""
+    for v in (exact, size):
+        try:
+            v = int(float(v or 0))
+        except (TypeError, ValueError):
+            v = 0
+        if v > 0:
+            return v
+    try:
+        gb = math.floor(float(size_gb or 0))
+    except (TypeError, ValueError):
+        gb = 0
+    return int((gb - 1) * 1e9) if gb >= 2 else 0
+
+
+def _scan_loop(read_at, size: int, seconds: float, out: str, state: dict, lat: list) -> None:
+    """Випадкові читання по SCAN_BLOCK у межах size байтів (0 — невідомо). read_at(off) -> True / False (помилка) /
+    None (за кінцем диска — 6.17: не помилка; діапазон звужується, щоб далі читати лише до знайденого кінця)."""
+    rnd = random.Random(11)
+    # блоки лише ЦІЛКОМ у межах диска: останнє читання закінчується не далі за size
+    blocks = max(1, size // SCAN_BLOCK) if size else SCAN_UNKNOWN // SCAN_BLOCK
+    t0 = time.perf_counter()
+    while time.perf_counter() - t0 < seconds:
+        off = rnd.randrange(blocks) * SCAN_BLOCK
+        s = time.perf_counter()
+        ok = read_at(off)
+        dt = time.perf_counter() - s
+        if ok is None and off:  # за кінцем: не рахуємо ні читанням, ні помилкою
+            blocks = max(1, min(blocks, off // SCAN_BLOCK))
+            continue
+        state["reads"] += 1
+        if not ok:  # None на нульовому зміщенні — диск не читається зовсім: це помилка
+            state["read_errors"] += 1
+        elif dt > 0.5:
+            state["slow"] += 1
+        lat.append(dt)
+        if state["reads"] % 32 == 0:
+            state["t"] = round(time.perf_counter() - t0, 1)
+            if _stop_requested(out):
+                state["state"] = "cancelled"
+                break
+            _write(out, state)
+    else:
+        state["state"] = "done"
+
+
 def _surface_scan(a: dict, out: str, state: dict) -> None:
     """Вибіркове читання поверхні фізичного диска (лише читання): 1 МБ у випадкових місцях за seconds секунд.
     Помилки читання й дуже повільні сектори (> 500 мс) — ознака проблем з поверхнею HDD чи контролером SSD."""
     dev = a.get("device") or ""
     seconds = float(a.get("seconds") or 30)
-    size = int(a.get("size") or 0)
+    exact = 0
     state.update(phase="scan", reads=0, read_errors=0, slow=0)
     if E.IS_WIN:
         import ctypes
@@ -903,44 +958,35 @@ def _surface_scan(a: dict, out: str, state: dict) -> None:
                                  ctypes.c_void_p]
         k32.SetFilePointerEx.argtypes = [wintypes.HANDLE, ctypes.c_longlong, ctypes.c_void_p, wintypes.DWORD]
         k32.CloseHandle.argtypes = [wintypes.HANDLE]
-        mm = mmap.mmap(-1, 1 << 20)
+        try:  # 6.17: точний розмір — з самого відкритого диска, а не з округлених ГБ
+            import hwnative as HN
+            exact = HN.disk_length(h)
+        except Exception:  # noqa: BLE001
+            exact = 0
+        mm = mmap.mmap(-1, SCAN_BLOCK)
         addr = ctypes.addressof(ctypes.c_char.from_buffer(mm))
 
-        def read_at(off: int) -> bool:
+        def read_at(off: int):
+            """True — прочитано, False — помилка читання, None — за кінцем диска (не помилка)."""
             n = wintypes.DWORD(0)
-            return bool(k32.SetFilePointerEx(h, off, None, 0) and k32.ReadFile(h, addr, 1 << 20, ctypes.byref(n), None))
+            ok = bool(k32.SetFilePointerEx(h, off, None, 0)
+                      and k32.ReadFile(h, addr, SCAN_BLOCK, ctypes.byref(n), None))
+            if ok:
+                return True if n.value else None  # 0 байтів — кінець диска
+            return None if not limit_known and ctypes.get_last_error() in EOF_ERRORS else False
     else:
         h = None
         rnd_fail = random.Random(3)
 
-        def read_at(off: int) -> bool:
+        def read_at(off: int):
             time.sleep(0.002)
             return rnd_fail.random() > 0.0
 
-    rnd = random.Random(11)
-    blocks = max(1, size // (1 << 20)) if size else 1 << 18
+    size = scan_limit(exact, a.get("size"), a.get("size_gb"))
+    limit_known = size > 0
     lat = []
-    t0 = time.perf_counter()
     try:
-        while time.perf_counter() - t0 < seconds:
-            off = rnd.randrange(blocks) * (1 << 20)
-            s = time.perf_counter()
-            ok = read_at(off)
-            dt = time.perf_counter() - s
-            state["reads"] += 1
-            if not ok:
-                state["read_errors"] += 1
-            elif dt > 0.5:
-                state["slow"] += 1
-            lat.append(dt)
-            if state["reads"] % 32 == 0:
-                state["t"] = round(time.perf_counter() - t0, 1)
-                if _stop_requested(out):
-                    state["state"] = "cancelled"
-                    break
-                _write(out, state)
-        else:
-            state["state"] = "done"
+        _scan_loop(read_at, size, seconds, out, state, lat)
     finally:
         if h is not None:
             k32.CloseHandle(h)

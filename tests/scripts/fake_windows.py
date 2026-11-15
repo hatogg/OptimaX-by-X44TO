@@ -449,6 +449,9 @@ _orig_run = subprocess.run
 
 
 def sub_run(args, *a, **k):
+    if isinstance(args, list) and args and os.path.basename(str(args[0])).lower() in ("icacls", "icacls.exe"):
+        # дозволи папок на фальшивій Windows не моделюємо: icacls «вдається», як на справжній (secfs.harden)
+        return subprocess.CompletedProcess(args, 0, b"", b"")
     if isinstance(args, list) and args[:2] == ["cmd", "/c"]:
         rc = run_rescue(args[2], args[3])
         return subprocess.CompletedProcess(args, rc, b"done", b"")

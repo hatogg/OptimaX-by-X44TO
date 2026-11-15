@@ -128,23 +128,36 @@ def dns_tweak(provider: dict, doh: bool) -> E.Tweak:
         for c in ifaces:
             if c["static"] and c["servers"]:
                 old = ",".join(f"'{s}'" for s in c["servers"])
-                undo.append(f"Set-DnsClientServerAddress -InterfaceIndex {c['idx']} -ServerAddresses ({old})")
+                back = f"Set-DnsClientServerAddress -InterfaceIndex {c['idx']} -ServerAddresses ({old})"
             else:
-                undo.append(f"Set-DnsClientServerAddress -InterfaceIndex {c['idx']} -ResetServerAddresses")
+                back = f"Set-DnsClientServerAddress -InterfaceIndex {c['idx']} -ResetServerAddresses"
             new = ",".join(f"'{s}'" for s in ips)
-            E.ps(f"Set-DnsClientServerAddress -InterfaceIndex {c['idx']} -ServerAddresses ({new})", 30, ctx.log)
+            rc, _out = E.ps(f"Set-DnsClientServerAddress -InterfaceIndex {c['idx']} -ServerAddresses ({new})", 30,
+                            ctx.log)
+            if rc != 0:  # 6.17: політика чи адаптер відмовили — не «готово» і не записуємо цей адаптер як змінений
+                ctx.fail(f"dns {c['alias']}")
+                continue
+            undo.append(back)
             ctx.log(tr("net.dns.set_iface", alias=c["alias"], ips=", ".join(ips)))
         if undo:
             ctx.undo.append({"t": "ps", "c": "; ".join(undo) + "; ipconfig /flushdns"})
         if doh and provider.get("doh") and E.win_build() >= 22000:
+            doh_ok = 0
             for ip in ips:
-                E.ps(f"if (Get-DnsClientDohServerAddress -ServerAddress '{ip}' -ErrorAction SilentlyContinue) "
-                     f"{{ Set-DnsClientDohServerAddress -ServerAddress '{ip}' -DohTemplate '{provider['doh']}' "
-                     f"-AllowFallbackToUdp $true -AutoUpgrade $true }} else {{ Add-DnsClientDohServerAddress "
-                     f"-ServerAddress '{ip}' -DohTemplate '{provider['doh']}' -AllowFallbackToUdp $true "
-                     f"-AutoUpgrade $true }}", 30, ctx.log)
-            E.exec_op(E.R(r"HKLM\SYSTEM\CurrentControlSet\Services\Dnscache\Parameters", "EnableAutoDoh", 2), ctx)
-            ctx.log(tr("net.dns.doh_on"))
+                rc, _out = E.ps(
+                    f"if (Get-DnsClientDohServerAddress -ServerAddress '{ip}' -ErrorAction SilentlyContinue) "
+                    f"{{ Set-DnsClientDohServerAddress -ServerAddress '{ip}' -DohTemplate '{provider['doh']}' "
+                    f"-AllowFallbackToUdp $true -AutoUpgrade $true }} else {{ Add-DnsClientDohServerAddress "
+                    f"-ServerAddress '{ip}' -DohTemplate '{provider['doh']}' -AllowFallbackToUdp $true "
+                    f"-AutoUpgrade $true }}", 30, ctx.log)
+                if rc != 0:  # 6.17: шаблон DoH не прийнято — крок не вдався
+                    ctx.fail(f"doh {ip}")
+                else:
+                    doh_ok += 1
+            if doh_ok:  # жоден сервер не отримав шаблон — не вмикаємо автоперехід і не кажемо «DoH увімкнено»
+                E.exec_op(E.R(r"HKLM\SYSTEM\CurrentControlSet\Services\Dnscache\Parameters", "EnableAutoDoh", 2),
+                          ctx)
+                ctx.log(tr("net.dns.doh_on"))
         E.run("ipconfig /flushdns", 15, ctx.log)
 
     t = E.Tweak("dns", "net", [E.F(apply)])

@@ -2,6 +2,45 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [6.17] — 2026-11-15
+
+Виправлення за незалежним аудитом коду: безпека, гарантія відкату, чесні результати й чесніші описи оптимізацій.
+
+### Безпека
+
+- **Оновлення.** Збережена знайдена версія (settings.json, куди може писати будь-яка програма користувача) більше не дає адреси, імені чи суми файлу: завантаження завжди бере реліз з GitHub заново. Ім'я файлу — лише за шаблоном інсталятора чи портативної версії, адреса — лише з релізів репозиторію OptimaX; шлях не може вийти з папки завантажень. У зібраній програмі змінна `OPTIMAX_UPDATE_REPO` не читається. Перевірка підпису не приймає файл, якщо видавця не вдалося прочитати.
+- **OptimaX-Rescue.cmd.** Старі рядкові значення реєстру з лапками, `&` чи переносами рядка більше не стають командами: такі значення відновлює PowerShell із base64. Ідентифікатори з `&`, `%`, `^` екрануються.
+- **Старий журнал відкату** з `%APPDATA%` переноситься лише з командами каталогу OptimaX; файлові записи — з контрольною сумою і не в системні папки. Якщо захищену папку створити не вдалося, OptimaX не змінює систему, замість того щоб писати журнал туди, де його можна підмінити.
+- **winget і cdb** запускаються лише з Program Files / пакета «Інсталятор програм», не з PATH; кеш символів і копія дампу — у захищеній папці.
+- **DNS-фільтр** у режимі «Домашня мережа» не слухає на адресах провайдерського CGNAT (100.64.0.0/10).
+- **Ігри на майнінговій карті:** розпізнаються EA Javelin, Tencent ACE, NetEase, FACEIT, Denuvo Anti-Cheat, а Vanguard / EAC / BattlEye / FACEIT, встановлені в системі, блокують DXVK і OpenGL для своїх ігор.
+
+### Виправлено
+
+- **Відкат.** Зміни й відкати виконуються строго по одній (дві паралельні дії затирали попередній запис одна одної). Запис відкату команд, задач, мережевих адаптерів, ліміту Defender і стиснення пам'яті з'являється до зміни; команду, що змінює систему, «Зупинити» не обриває посередині. Після часткового відкату повторне застосування знову записує те, що змінило. Тайм-аут відкату більше не вважається «вже повернуто». Тимчасово заблокований антивірусом журнал не йде в карантин. Мережеві адаптери повертаються за описом, а не за ім'ям (після перевстановлення драйвера «Ethernet» стає «Ethernet 2»).
+- **Rescue.cmd** не позначає запис виконаним, якщо хоч один крок не вдався (раніше такий запис зникав із журналу), і активує план живлення лише тоді, коли він був активним.
+- **Чесні результати:** скидання Windows Update, файл підкачки, зміна DNS і DoH кажуть «частково» чи «не вдалося», якщо крок не вдався.
+- Перевірка поверхні диска рахує точний розмір диска (раніше читання за кінцем eMMC чи віртуального диска ставало «помилками читання»). Глибокий запис фризів прибирає залишок сесії WPR після аварійного завершення ловця. Сині екрани більше не губляться серед сотень скидань відеодрайвера. Запис фону з оверлея не подвоює час і обсяг диска; оверлей не падає, коли запис вимикають. Не витікає дескриптор токена без прав адміністратора; таймер сторінки «Пам'ять» не працює у фоні; вихід із програми з увімкненим режимом гри не заморожує вікно. «Здоров'я ПК» правильно рахує час роботи понад 24 доби.
+
+### Змінено
+
+- **«Точний таймер 0.5 мс»** — лише Windows 11 (на Windows 10 2004+ запит таймера діє тільки на саму OptimaX), і запит не скасовується, коли OptimaX у треї. Опис більше не обіцяє нижчої DPC-затримки.
+- **Dynamic Tick** і **«Заборонити простій процесора»** — більше не в профілях, лише вручну з перевіркою «до/після».
+- **System Responsiveness** = 10 замість 0 (Windows значення менше 10 замінює на 20, тож 0 нічого не змінював); описи «Пріоритет активного вікна» й «Вимкнути призупинення USB» чесніші.
+
+<details>
+<summary>English</summary>
+
+Fixes from an independent code audit: security, the rollback guarantee, honest results and more honest optimization texts.
+
+**Security:** the cached newer version (settings.json, writable by any user program) no longer supplies a file URL, name or hash — downloads always re-fetch the release from GitHub; the file name must match the installer/portable pattern, the URL must come from OptimaX's own releases, and the path can't leave the downloads folder; `OPTIMAX_UPDATE_REPO` is ignored in built apps; signature checks fail closed when the publisher can't be read. OptimaX-Rescue.cmd no longer turns old registry strings with quotes, `&` or line breaks into commands (they are restored through base64 PowerShell) and escapes ids with `&`, `%`, `^`. The old journal in `%APPDATA%` migrates only catalog commands and file records with a checksum outside system folders; if the protected folder can't be created OptimaX changes nothing. winget and cdb run only from Program Files / the App Installer package, never from PATH; the symbol cache and dump copy live in the protected folder. The LAN DNS filter no longer listens on carrier-grade NAT addresses (100.64.0.0/10). Mining-card games detect EA Javelin, Tencent ACE, NetEase, FACEIT and Denuvo Anti-Cheat, and installed Vanguard / EAC / BattlEye / FACEIT block DXVK and OpenGL for their games.
+
+**Fixed:** changes and rollbacks run strictly one at a time; undo records for commands, tasks, network adapters, the Defender limit and memory compression exist before the change, and Stop never cuts a system-changing command in half; re-applying after a partial rollback records the steps again; a rollback timeout is no longer “already undone”; a journal briefly locked by an antivirus is not quarantined; adapters are restored by description, not name. Rescue.cmd no longer marks an entry done when a step failed and re-activates a power plan only if it was active. Windows Update reset, page file, DNS and DoH report partial/failed honestly. The surface scan uses the exact disk size; a leftover WPR session is cancelled; blue screens are no longer crowded out by GPU driver resets; overlay recordings don't double time and disk I/O and the overlay doesn't crash when recording stops; no token handle leak without admin rights; the Memory page timer stops in the background; quitting with Game Mode on no longer freezes the window; PC health counts uptime over 24 days correctly.
+
+**Changed:** Precise 0.5 ms timer is Windows 11 only and stays in effect while OptimaX is in the tray; Dynamic Tick and Disable processor idle are manual only; System Responsiveness = 10 instead of 0 (Windows replaces values below 10 with 20); clearer texts for Foreground window priority and USB selective suspend.
+
+</details>
+
 ## [6.16] — 2026-11-15
 
 «Здоров'я ПК»: одна перевірка Windows з оцінкою, поясненнями простими словами й безпечними виправленнями з відкатом.

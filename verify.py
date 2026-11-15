@@ -183,6 +183,11 @@ def check_file(path: str, expected_sha256: str, publisher: str = None, name: str
         if sig["status"] != "valid":
             raise VerifyError("vf.sig_missing", name=name)
         who = signer(path)
-        if publisher != "*" and who and _cn(who) != _cn(publisher):
-            raise VerifyError("vf.sig_other", name=name, who=_cn(who), want=_cn(publisher))
+        if publisher == "*":
+            # 6.17: «*» — OptimaX підписана, але її видавця не вдалося прочитати. Пробуємо ще раз: без видавця
+            # порівнювати нема з чим, а «будь-який дійсний підпис» пропустив би файл, підписаний ким завгодно
+            publisher = signer(sys.executable) if E.IS_WIN and getattr(sys, "frozen", False) else ""
+        # 6.17: видавця вимагаємо, а його (у файлі чи в самої OptimaX) не прочитано — не приймаємо (fail closed)
+        if not who or not publisher or _cn(who) != _cn(publisher):
+            raise VerifyError("vf.sig_other", name=name, who=_cn(who) or "?", want=_cn(publisher) or "?")
     return {"sha256": got, "signature": sig["status"], "signer": who}

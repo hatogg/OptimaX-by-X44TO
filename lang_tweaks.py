@@ -11,11 +11,14 @@ TEXTS = {
         "Hidden Windows plan: turns off CPU power saving and keeps clocks at maximum."),
     "processor_idle": (
         "Заборонити простій процесора (C-states)",
-        "Процесор не засинає між завданнями — нижча DPC-затримка, але більше тепла.",
+        "Процесор не засинає між завданнями — швидший вихід із простою, але більше тепла. На процесорах із Turbo "
+        "Boost / PBO та SMT це може знизити частоту під навантаженням, тож лише вручну й з перевіркою «до/після».",
         "Запретить простой процессора (C-states)",
-        "Процессор не засыпает между задачами — ниже DPC-задержка, но больше тепла.",
+        "Процессор не засыпает между задачами — быстрее выход из простоя, но больше тепла. На процессорах с Turbo "
+        "Boost / PBO и SMT это может снизить частоту под нагрузкой, поэтому только вручную и с проверкой «до/после».",
         "Disable processor idle (C-states)",
-        "The CPU never naps between tasks — lower DPC latency, but more heat."),
+        "The CPU never naps between tasks — faster wake-up from idle, but more heat. On CPUs with Turbo Boost / PBO "
+        "and SMT it can lower clocks under load, so manual only, with a before/after check."),
     "core_parking": (
         "Вимкнути паркування ядер",
         "Усі ядра завжди активні й не витрачають час на «пробудження».",
@@ -53,11 +56,14 @@ TEXTS = {
         "Drivers and Windows updates can't quietly switch your power plan."),
     "cpu_scheduling": (
         "Пріоритет активного вікна",
-        "Програма на передньому плані отримує більший квант процесорного часу.",
+        "Повертає стандартну для Windows перевагу програмі на передньому плані (те саме, що «Програми» в "
+        "параметрах швидкодії), якщо її змінили інші оптимізатори. На чистій Windows різниці майже немає.",
         "Приоритет активного окна",
-        "Программа на переднем плане получает больший квант процессорного времени.",
+        "Возвращает стандартное для Windows преимущество программе на переднем плане (то же, что «Программы» в "
+        "параметрах быстродействия), если его изменили другие оптимизаторы. На чистой Windows разницы почти нет.",
         "Foreground window priority",
-        "The app in front gets a bigger slice of CPU time."),
+        "Restores the standard Windows boost for the app in front (same as “Programs” in Performance Options) if "
+        "another optimizer changed it. On a clean Windows there's almost no difference."),
     "rt_boost": (
         "Real-Time Thread Boost",
         "Активна програма отримує максимальний пріоритет без витіснення фоновими задачами.",
@@ -67,11 +73,16 @@ TEXTS = {
         "The active app gets top priority and isn't pushed aside by background tasks."),
     "system_responsiveness": (
         "Віддати ресурси іграм (System Responsiveness)",
-        "Мультимедійний планувальник віддає іграм максимум процесора й GPU.",
+        "Мультимедійний планувальник (MMCSS) резервує фоновим задачам 10% процесора замість 20% і дає потокам ігор, "
+        "що реєструються в ньому, вищий пріоритет. Діє лише на такі потоки (звук, частина ігор), а не на всю гру.",
         "Отдать ресурсы играм (System Responsiveness)",
-        "Мультимедийный планировщик отдаёт играм максимум процессора и GPU.",
+        "Мультимедийный планировщик (MMCSS) резервирует фоновым задачам 10% процессора вместо 20% и даёт потокам "
+        "игр, которые в нём регистрируются, более высокий приоритет. Действует только на такие потоки (звук, часть "
+        "игр), а не на всю игру.",
         "Give resources to games (System Responsiveness)",
-        "The multimedia scheduler hands games as much CPU and GPU as possible."),
+        "The multimedia scheduler (MMCSS) reserves 10% of the CPU for background tasks instead of 20% and gives game "
+        "threads registered with it a higher priority. It affects only such threads (audio, some games), not the "
+        "whole game."),
     "registry_boost": (
         "Ядро Windows завжди в пам'яті",
         "Код ядра й драйверів не вивантажується на диск — менші затримки.",
@@ -128,18 +139,30 @@ TEXTS = {
         "Modern flip model for windowed and borderless games: lower latency and VRR support."),
     "timer_resolution": (
         "Точний таймер 0.5 мс",
-        "Системний таймер 0.5 мс замість 15.6 мс — нижча DPC-затримка, рівніший frametime.",
+        "Windows 11: таймер 0.5 мс для всієї системи, поки працює OptimaX — точніші Sleep і обмежувачі кадрів, "
+        "рівніший frametime у грі з лімітом FPS. DPC-затримку не зменшує. На Windows 10 (2004+) запит таймера діє "
+        "лише на програму, що його зробила, тож там цієї зміни немає.",
         "Точный таймер 0.5 мс",
-        "Системный таймер 0.5 мс вместо 15.6 мс — ниже DPC-задержка, ровнее frametime.",
+        "Windows 11: таймер 0.5 мс для всей системы, пока работает OptimaX — точнее Sleep и ограничители кадров, "
+        "ровнее frametime в игре с лимитом FPS. DPC-задержку не уменьшает. На Windows 10 (2004+) запрос таймера "
+        "действует только на программу, которая его сделала, поэтому там этого изменения нет.",
         "Precise 0.5 ms timer",
-        "0.5 ms system timer instead of 15.6 ms — lower DPC latency, smoother frame times."),
+        "Windows 11: a 0.5 ms timer for the whole system while OptimaX runs — more precise Sleep and frame limiters, "
+        "smoother frame times with an FPS cap. It does not lower DPC latency. On Windows 10 (2004+) a timer request "
+        "only affects the app that made it, so this change isn't offered there."),
     "dynamic_tick": (
         "Вимкнути Dynamic Tick",
-        "Таймер тікає рівно, без динамічної зміни частоти — менше джитера.",
+        "Таймер тікає рівно, без пропусків тіків у простої. Microsoft описує цей параметр як налагоджувальний, "
+        "відтворюваних замірів користі немає, а ноутбук у простої витрачає більше енергії. Лише вручну й з "
+        "перевіркою «до/після».",
         "Отключить Dynamic Tick",
-        "Таймер тикает ровно, без динамического изменения частоты — меньше джиттера.",
+        "Таймер тикает ровно, без пропуска тиков в простое. Microsoft описывает этот параметр как отладочный, "
+        "воспроизводимых замеров пользы нет, а ноутбук в простое тратит больше энергии. Только вручную и с "
+        "проверкой «до/после».",
         "Disable Dynamic Tick",
-        "The timer ticks steadily instead of changing rate — less jitter."),
+        "The timer ticks steadily instead of skipping ticks when idle. Microsoft documents this setting for "
+        "debugging, there are no reproducible measurements of a benefit, and an idle laptop uses more power. Manual "
+        "only, with a before/after check."),
     "hpet_tsc": (
         "Примусовий HPET + синхронізація TSC",
         "Апаратний лічильник часу. На одних ПК стабілізує frametime, на інших знижує FPS — перевірте у своїх іграх.",
@@ -201,11 +224,14 @@ TEXTS = {
         "The GPU and NVMe drives never enter power saving — fewer micro-stutters."),
     "usb_suspend": (
         "Вимкнути призупинення USB",
-        "Миша, клавіатура й гарнітура більше не відвалюються й не «засинають».",
+        "USB-гарнітури, ЦАП, хаби й інші пристрої не «засинають» і не відвалюються. Мишу й клавіатуру Windows і так "
+        "не призупиняє.",
         "Отключить приостановку USB",
-        "Мышь, клавиатура и гарнитура больше не отваливаются и не «засыпают».",
+        "USB-гарнитуры, ЦАП, хабы и другие устройства не «засыпают» и не отваливаются. Мышь и клавиатуру Windows и "
+        "так не приостанавливает.",
         "Turn off USB selective suspend",
-        "Mice, keyboards and headsets stop dropping out or going to sleep."),
+        "USB headsets, DACs, hubs and other devices stop sleeping and dropping out. Windows never suspends mice and "
+        "keyboards anyway."),
 
     # ── Мережа ──
     "optimize_network": (

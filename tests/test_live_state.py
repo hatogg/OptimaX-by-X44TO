@@ -63,7 +63,8 @@ def test_ethernet_latency_already_off_shows_applied_and_changes_nothing():
         assert calls == [] and not j.has(t.id), "nothing may be changed or journaled"
         ctx.live = live(nics=[eth()])
         assert E.run_tweak(t, ctx) != "already"  # не той стан — застосовується як звичайно
-        assert any("Set-NetAdapterAdvancedProperty" in c for c in calls)
+        # 6.17: спершу читання плану змін (Get-…), а скрипт змін — лише якщо є що змінювати
+        assert any("Get-NetAdapterAdvancedProperty" in c for c in calls)
 
 
 def test_probe_uses_the_real_state_not_only_the_journal():

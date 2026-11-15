@@ -208,15 +208,25 @@ def test_automatic_page_file_is_recorded_before_it_changes():
 
 # ───────────────────────── OX-007: мережеві адаптери ─────────────────────────
 def test_adapter_changes_keep_their_undo_despite_powershell_warnings():
-    out = 'WARNING: The network adapter is restarting.\n[{"n":"Ethernet","k":"*EEE","v":"1"},' \
-          '{"n":"Ethernet","k":"__pm","v":"Enabled"}]'
+    """6.17: спершу лише читання (план), запис відкату — до скрипту змін; адаптер — за описом, а не за ім'ям, яке
+    після перевстановлення драйвера змінюється («Ethernet 2»)."""
+    out = 'WARNING: The network adapter is restarting.\n[{"d":"Intel(R) I225-V","n":"Ethernet","k":"*EEE","v":"1",' \
+          '"to":"0"},{"d":"Intel(R) I225-V","n":"Ethernet","k":"__pm","v":"Enabled","to":"Disabled"}]'
     for fn in (E.f_nic_power, E.f_eth_latency):
         ctx = E.Ctx(LOG.append)
-        with patched(ps=lambda code, *a, **k: (0, out), DRY_RUN=False):
+        seen = []
+
+        def fake_ps(code, *a, **k):
+            seen.append((k.get("ro", False), len(ctx.undo)))  # скільки записів відкату було на момент виклику
+            return 0, out
+        with patched(ps=fake_ps, DRY_RUN=False):
             fn(ctx)
         assert len(ctx.undo) == 1 and ctx.undo[0]["t"] == "ps", fn.__name__
-        assert "-Name 'Ethernet'" in ctx.undo[0]["c"] and "'*EEE'" in ctx.undo[0]["c"]
+        assert "-InterfaceDescription 'Intel(R) I225-V'" in ctx.undo[0]["c"] and "'*EEE'" in ctx.undo[0]["c"]
+        assert "-ErrorAction Stop" in ctx.undo[0]["c"], "a failed restore must stay in the journal"
         assert E.valid_undo(ctx.undo[0])
+        assert seen[0] == (True, 0) and seen[1][0] is False and seen[1][1] == 1, \
+            ("read first, then the undo record, then the change", seen)
 
 
 # ───────────────────────── OX-002 / OX-003: режим гри ─────────────────────────

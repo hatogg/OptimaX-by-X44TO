@@ -166,42 +166,150 @@ def describe(kinds) -> str:
 
 # ───────────────────────── OptimaX-Rescue.cmd ─────────────────────────
 def _q(s: str) -> str:
-    """Рядок усередині лапок для reg/sc у .cmd: % подвоюємо, лапки екрануємо."""
+    """Рядок усередині лапок для reg/sc у .cmd: % подвоюємо, лапки екрануємо (лише для аргументів програми — cmd.exe
+    \\" не розуміє, тож текст із лапками сюди не потрапляє: див. _cmd_safe)."""
     return str(s).replace("%", "%%").replace('"', '\\"')
+
+
+def _cmd_safe(s) -> bool:
+    """Текст можна покласти в лапки рядка .cmd: лише друковані ASCII без лапок. У лапках cmd.exe не розбирає
+    & | < > ^ ( ), % подвоює _q, а затримане розгортання (!) вимкнене в setlocal. Лапка ж закрила б лапки,
+    а CR/LF почали б новий рядок — і решта значення виконалася б окремою командою з правами адміністратора."""
+    return isinstance(s, str) and all(" " <= c <= "~" for c in s) and '"' not in s
+
+
+def _qa(s: str) -> str:
+    """_q для аргументу в лапках: \\ перед закриваючою лапкою програма прочитала б як лапку — подвоюємо."""
+    s = _q(s)
+    return s + "\\" if s.endswith("\\") else s
+
+
+def _ctl(s: str) -> str:
+    """Керівні символи -> пробіл: CR/LF (і Ctrl-Z, який cmd.exe теж читає як кінець рядка) почали б новий рядок."""
+    return "".join(" " if c < " " or c == "\x7f" else c for c in str(s))
 
 
 def _echo(s: str) -> str:
     for a, b in (("^", "^^"), ("&", "^&"), ("|", "^|"), ("<", "^<"), (">", "^>"), ("%", "%%")):
         s = str(s).replace(a, b)
-    return s.replace("\r", " ").replace("\n", " ")
+    return _ctl(s)
 
 
 def _echo_block(s: str) -> str:
     """Підпис кроку для echo всередині ( … ). Лапки прибираємо (у лапках ^ не екранує, а дужки й & тоді треба
     було б лишати як є), а все інше екрануємо — разом із дужками, інакше «Program Files (x86)» закриє блок.
     % не подвоюємо: команда вже записана з %% там, де відсоток буквальний."""
-    s = str(s).replace('"', "").replace("\r", " ").replace("\n", " ")
+    s = _ctl(str(s).replace('"', ""))
     for a, b in (("^", "^^"), ("&", "^&"), ("|", "^|"), ("<", "^<"), (">", "^>"), ("(", "^("), (")", "^)")):
         s = s.replace(a, b)
     return s
 
 
+def _echo_id(tid: str) -> str:
+    """id запису для echo в done.txt / failed.txt так, щоб cmd.exe надрукував його дослівно: msi:PCI\\VEN_10DE&DEV_…
+    без екранування & виконав би решту як команду. Те, що echo дослівно не надрукує (лапки — у них ^ не екранує;
+    керівні символи, пробіли з країв, «on»/«off», «/?»), пишемо як b64:… — sync() декодує."""
+    tid = str(tid)
+    if (tid and tid == tid.strip() and '"' not in tid and tid[0] != "/" and not tid.startswith("b64:")
+            and tid.lower() not in ("on", "off") and all(c >= " " and c != "\x7f" for c in tid)):
+        return _echo(tid).replace("(", "^(").replace(")", "^)")
+    return "b64:" + base64.b64encode(tid.encode("utf-8", "surrogatepass")).decode("ascii")
+
+
+def _unecho_id(s: str) -> str:
+    """Зворотне до _echo_id: що записав echo (або сам рядок скрипта, якщо його прочитали без cmd.exe) -> id."""
+    if s.startswith("b64:"):
+        try:
+            return base64.b64decode(s[4:], validate=True).decode("utf-8", "surrogatepass")
+        except (ValueError, UnicodeDecodeError):
+            return s
+    out, i = [], 0
+    while i < len(s):
+        if s[i] == "^" and i + 1 < len(s):
+            out.append(s[i + 1])
+            i += 2
+        elif s.startswith("%%", i):
+            out.append("%")
+            i += 2
+        else:
+            out.append(s[i])
+            i += 1
+    return "".join(out)
+
+
+_REG_HIVE_NET = {"HKLM": "LocalMachine", "HKCU": "CurrentUser", "HKCR": "ClassesRoot", "HKU": "Users"}
+_REG_KIND_NET = {1: "String", 2: "ExpandString", 7: "MultiString"}  # рядкові типи: у reg add — лише _reg_exe_ok
+_REG_NUM_NET = {3: "Binary", 4: "DWord", 11: "QWord"}  # для шляху чи імені, яких не можна лишити в лапках .cmd
+
+
+def _ps_text(s) -> str:
+    """Рядок для PowerShell без жодного символу самого рядка в коді: base64 (UTF-8 — коротше, а рядок .cmd
+    обмежений 8191 символом) і декодування на місці. Так значення не закриє лапки ні в cmd.exe, ні в PowerShell."""
+    b64 = base64.b64encode(str(s).encode("utf-8", "surrogatepass")).decode("ascii")
+    return f"[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{b64}'))"
+
+
+def _reg_ps(rec: dict) -> str:
+    """Те саме, що engine.reg_set / reg_del_value (64-розрядне подання реєстру), але через .NET у PowerShell: так
+    повертаються рядкові значення (і шляхи з лапками чи не-ASCII), які в рядку reg add стали б командою cmd.exe.
+    '' — тип, якого не підтримуємо."""
+    hive, _, sub = rec["p"].partition("\\")
+    old = rec.get("old")
+    head = ("$ErrorActionPreference='Stop';try {"
+            "$h=[Microsoft.Win32.RegistryKey]::OpenBaseKey("
+            f"[Microsoft.Win32.RegistryHive]::{_REG_HIVE_NET[hive.upper()]},[Microsoft.Win32.RegistryView]::Registry64);"
+            f"$s={_ps_text(sub)};$n={_ps_text(rec['n'])};")
+    if old is None:  # як reg delete: значення вже немає — мети досягнуто
+        return head + "$k=$h.OpenSubKey($s,$true);if ($k) { $k.DeleteValue($n,$false);$k.Close() }} catch { exit 1 };exit 0"
+    rtype, val = old[0], E._dec(old[1])
+    if rtype == 7:
+        v = "[string[]]@(" + ",".join(_ps_text(x) for x in (val or [])) + ")"
+    elif rtype in (1, 2):
+        v = _ps_text(val)
+    elif rtype == 4:  # .NET приймає DWORD/QWORD як знакове число з тими самими бітами
+        x = int(val) & 0xFFFFFFFF
+        v = f"[int]({x - (1 << 32) if x >> 31 else x})"
+    elif rtype == 11:
+        x = int(val) & 0xFFFFFFFFFFFFFFFF
+        v = f"[long]({x - (1 << 64) if x >> 63 else x})"
+    elif rtype == 3 and isinstance(val, (bytes, bytearray)):
+        v = f"[byte[]][Convert]::FromBase64String('{base64.b64encode(bytes(val)).decode('ascii')}')"
+    else:
+        return ""
+    kind = _REG_KIND_NET.get(rtype) or _REG_NUM_NET[rtype]
+    return head + (f"$k=$h.CreateSubKey($s);$k.SetValue($n,{v},[Microsoft.Win32.RegistryValueKind]::{kind});"
+                   "$k.Close()} catch { exit 1 };exit 0")
+
+
+def _reg_exe_ok(rtype, val) -> bool:
+    """Рядкове значення можна лишити в reg add: усі символи — _cmd_safe; у REG_MULTI_SZ ще й без \\ і порожніх
+    рядків (роздільник \\0 і \\ перед лапкою reg прочитав би інакше). Усе інше — через _reg_ps."""
+    if rtype in (1, 2):
+        return _cmd_safe(val)
+    return isinstance(val, list) and all(_cmd_safe(x) and x and "\\" not in x for x in val)
+
+
 def _reg_lines(rec: dict) -> list:
     path, name, old = rec["p"], rec["n"], rec.get("old")
-    vflag = "/ve" if name == "" else f'/v "{_q(name)}"'
+    rtype, val = (old[0], E._dec(old[1])) if old is not None else (None, None)
+    # Рядкові значення (і шлях чи ім'я, які не можна безпечно лишити в лапках) — лише через PowerShell у base64:
+    # жоден символ значення не проходить розбір cmd.exe. Інакше «a" & whoami & rem "» чи «\r\ncalc.exe» у старому
+    # значенні стали б окремою командою з правами адміністратора.
+    if not (_cmd_safe(path) and _cmd_safe(name)) or (rtype in _REG_KIND_NET and not _reg_exe_ok(rtype, val)):
+        code = _reg_ps(rec)
+        if code:
+            return [_ps_line(code)]
+        return [f"rem {_echo(path)}\\{_echo(name)}: type {rtype} is not supported"]
+    vflag = "/ve" if name == "" else f'/v "{_qa(name)}"'
     if old is None:
-        return [f'reg delete "{_q(path)}" {vflag} /f']
-    rtype, val = old[0], E._dec(old[1])
+        return [f'reg delete "{_qa(path)}" {vflag} /f']
     if rtype in (1, 2):
-        s = _q(val)
-        if s.endswith("\\"):
-            s += "\\"  # інакше \" перед закриваючою лапкою reg прочитає як лапку
-        data = f'/t {"REG_SZ" if rtype == 1 else "REG_EXPAND_SZ"} /d "{s}"'
-    elif rtype == 4:
+        data = f'/t {"REG_SZ" if rtype == 1 else "REG_EXPAND_SZ"} /d "{_qa(val)}"'
+    elif rtype == 4:  # int(): лише цифри — метасимволів cmd.exe тут бути не може
         data = f"/t REG_DWORD /d {int(val) & 0xFFFFFFFF}"
     elif rtype == 11:
         data = f"/t REG_QWORD /d {int(val) & 0xFFFFFFFFFFFFFFFF}"
-    elif rtype == 3:
+    elif rtype == 3 and isinstance(val, (bytes, bytearray)):  # .hex(): лише 0-9a-f
         hx = bytes(val).hex()
         data = "/t REG_BINARY" + (f" /d {hx}" if hx else "")
     elif rtype == 7:
@@ -209,7 +317,7 @@ def _reg_lines(rec: dict) -> list:
         data = '/t REG_MULTI_SZ /d "' + "\\0".join(items) + '"' if items else "/t REG_MULTI_SZ"
     else:
         return [f"rem {_echo(path)}\\{_echo(name)}: type {rtype} is not supported"]
-    return [f'reg add "{_q(path)}" {vflag} {data} /f']
+    return [f'reg add "{_qa(path)}" {vflag} {data} /f']
 
 
 # Видалення, яке «не знайшло що видаляти», — не збій: значення вже таке, як до OptimaX
@@ -217,11 +325,15 @@ GONE_OK = ("reg delete ", "bcdedit /deletevalue ")
 
 
 def _psq(s: str) -> str:
-    return "'" + str(s).replace("'", "''") + "'"
+    """Рядок PowerShell в одинарних лапках. Лапкою PowerShell вважає й ‘ ’ ‚ ‛ (папка «Assassin’s Creed» закрила б
+    рядок, а решта шляху стала б кодом) — подвоюємо кожну."""
+    for c in "'‘’‚‛":
+        s = str(s).replace(c, c + c)
+    return "'" + str(s) + "'"
 
 
 def _ps_line(code: str) -> str:
-    b64 = base64.b64encode((E.PS_PREFIX + code).encode("utf-16-le")).decode("ascii")
+    b64 = base64.b64encode((E.PS_PREFIX + code).encode("utf-16-le", "surrogatepass")).decode("ascii")
     return f"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {b64}"
 
 
@@ -266,8 +378,19 @@ def _kv_undo_ps(rec: dict) -> str:
             "exit 0")
 
 
+class _When(str):
+    """Крок, який виконується лише за умови cond (команда cmd.exe з кодом 0, коли крок потрібен). Сам рядок — команда
+    кроку: невдача рахується як і в інших кроках, а невиконана умова — не збій."""
+
+    def __new__(cls, cmd: str, cond: str):
+        s = super().__new__(cls, cmd)
+        s.cond = cond
+        return s
+
+
 def undo_lines(rec: dict) -> list:
-    """Команди .cmd для одного запису відкату з журналу."""
+    """Команди .cmd для одного запису відкату з журналу. Рядок «rem …» — крок, який виконати не можна: запис
+    лишиться в журналі (див. build_script)."""
     if not E.valid_undo(rec):
         return [f"rem {_echo(tr('e.undo_bad', what=str(rec)[:60]))}"]
     t = rec.get("t")
@@ -278,9 +401,14 @@ def undo_lines(rec: dict) -> list:
     if t == "svc":
         return [f'sc config "{_q(rec["n"])}" start= {rec["old"]}']
     if t == "task":
-        return [f'schtasks /Change /Enable /TN "{_q(rec["n"])}"']
+        if _ctl(rec["n"]) != rec["n"]:  # ім'я з керівним символом розірвало б рядок скрипта
+            return [f"rem {_echo(tr('e.undo_bad', what=rec['n'][:60]))}"]
+        return [f'schtasks /Change /Enable /TN "{_qa(rec["n"])}"']
     if t == "cmd":
-        return [str(rec["c"]).replace("%", "%%")]
+        c = str(rec["c"])
+        if _ctl(c.replace("\t", " ")) != c.replace("\t", " "):  # CR/LF почали б новий рядок скрипта поза обліком кроку
+            return [f"rem {_echo(tr('e.undo_bad', what=c[:60]))}"]
+        return [c.replace("%", "%%")]
     if t == "ps":
         code = str(rec.get("c") or "")
         if not code.strip() or code.lstrip().startswith("#"):
@@ -291,10 +419,22 @@ def undo_lines(rec: dict) -> list:
         if rec.get("old") is None:
             return []
         verb = "-setdcvalueindex" if rec.get("m") == "dc" else "-setacvalueindex"
-        return [f"powercfg {verb} {rec['g']} {rec['s']} {rec['st']} {rec['old']}", f"powercfg -setactive {rec['g']}"]
+        # Як engine._undo_record: схему знову активуємо, лише якщо вона й зараз активна — інакше Rescue перемкнув би
+        # на неї ПК, який після OptimaX уже перейшов на іншу схему
+        return [f"powercfg {verb} {rec['g']} {rec['s']} {rec['st']} {rec['old']}",
+                _When(f"powercfg -setactive {rec['g']}",
+                      f'powercfg /getactivescheme 2>nul | "%SystemRoot%\\System32\\find.exe" /i "{rec["g"]}" >nul')]
     if t == "file":  # копія, яку OptimaX поклала поруч із грою (Mesa), і файл, що лежав там раніше
         return [_ps_line(_file_undo_ps(rec))]
     return []  # live: оновлення Провідника — в кінці; решта діє після перезавантаження
+
+
+def _cut(cmd: str, n: int = 150) -> str:
+    """Початок команди для failed.txt. Відсотки в ній уже подвоєні — обрізаний навпіл %% лишив би одинокий %."""
+    s = cmd[:n]
+    if (len(s) - len(s.rstrip("%"))) % 2:
+        s = s[:-1]
+    return s
 
 
 def build_script(journal: E.Journal = None) -> str:
@@ -303,7 +443,8 @@ def build_script(journal: E.Journal = None) -> str:
     newest = j.newest_first()
     last = groups[0] if groups else []
     when = time.strftime("%d.%m.%Y %H:%M", time.localtime(j.get(last[0]).get("ts", 0))) if last else "—"
-    L = ["@echo off", "setlocal", "chcp 65001 >nul",
+    # DisableDelayedExpansion: інакше (параметр DelayedExpansion у реєстрі) «!» у шляхах і значеннях розгорталися б
+    L = ["@echo off", "setlocal EnableExtensions DisableDelayedExpansion", "chcp 65001 >nul",
          f"rem {E.APP_TITLE} {E.VERSION}: emergency rollback, generated {time.strftime('%Y-%m-%d %H:%M')}.",
          "rem Reverts changes from the OptimaX journal without starting the program (also in Safe Mode).",
          "rem Without a menu: OptimaX-Rescue.cmd /last (last batch) or /all (everything); exit code = failed steps.",
@@ -341,17 +482,21 @@ def build_script(journal: E.Journal = None) -> str:
           f"echo   {_echo(tr('rs.cmd_reboot'))}", "echo.", "if not defined QUIET pause", "exit /b %FAIL%"]
     for tid in newest:
         e = j.get(tid) or {}
-        L += ["", f":x{index[tid]}", f"echo   - {_echo(E.entry_title(tid))}"]
+        # XF — скільки збоїв було до цього запису: done.txt лише тоді, коли всі його кроки повернулися. Інакше sync()
+        # прибрав би з журналу й ті кроки, що не відкотилися, — і повернути їх уже не було б як.
+        L += ["", f":x{index[tid]}", "set XF=%FAIL%", f"echo   - {_echo(E.entry_title(tid))}"]
+        note = _echo_block(tid).replace("%", "%%")  # id — не команда: відсоток у ньому буквальний
         for rec in reversed(e.get("undo", [])):
             for cmd in undo_lines(rec):
-                if cmd.startswith("rem "):
-                    L.append(cmd)
+                if cmd.startswith("rem "):  # крок, який виконати не можна, — теж не повернувся
+                    L += [cmd, f'set /a FAIL+=1 & >>"%~dp0failed.txt" echo {note}: {_echo_block(_cut(cmd[4:]))}']
                 elif cmd.lower().startswith(GONE_OK):  # уже видалено (наприклад, іншим твіком) — мети досягнуто
                     L.append(f"{cmd} >nul 2>&1")
                 else:  # невдалий крок — у failed.txt поруч зі скриптом: видно, що саме не повернулося
-                    L.append(f'{cmd} >nul 2>&1 || (set /a FAIL+=1 & >>"%~dp0failed.txt" echo '
-                             f'{_echo_block(tid)}: {_echo_block(cmd[:150])})')
-        L += [f'>>"%~dp0done.txt" echo {tid}', "exit /b 0"]
+                    step = (f'{cmd} >nul 2>&1 || (set /a FAIL+=1 & >>"%~dp0failed.txt" echo '
+                            f'{note}: {_echo_block(_cut(cmd))})')
+                    L.append(f"{cmd.cond} && ({step})" if isinstance(cmd, _When) else step)
+        L += ["if not %FAIL%==%XF% exit /b 0", f'>>"%~dp0done.txt" echo {_echo_id(tid)}', "exit /b 0"]
     return "\r\n".join(L) + "\r\n"
 
 
@@ -380,6 +525,9 @@ def sync(journal: E.Journal = None) -> list:
         os.remove(done)
     except OSError:
         return []
+    # cmd.exe друкує id дослівно; рядок, записаний без cmd.exe, лишається в екранованому вигляді (^&, %%) чи b64:… —
+    # тож порівнюємо точний id: спершу рядок як є, тоді розекранований
+    ids = [i if j.has(i) else _unecho_id(i) for i in ids]
     gone = [i for i in dict.fromkeys(ids) if j.has(i)]
     for tid in gone:
         j.pop(tid)
