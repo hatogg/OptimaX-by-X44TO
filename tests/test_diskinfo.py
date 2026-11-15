@@ -115,7 +115,7 @@ def test_pcie_link_text():
 
 
 def test_demo_disks_details_and_report():
-    with patched(E, DEMO="gaming"):
+    with patched(E, DEMO="gaming", IS_WIN=False):  # на справжній Windows демо-дисків немає
         hw = H._from_demo("gaming")
         disks = SH.check_all(hw)
     assert len(disks) == 2
@@ -126,7 +126,7 @@ def test_demo_disks_details_and_report():
     assert SH.smart_table(hdd)[0][2] == "Read Error Rate" and dict(SH.details(hdd))["di.rotation"] == "7200 RPM"
     text = SH.report_text(disks)
     assert "Samsung SSD 980 1TB" in text and "Reallocated Sectors Count" in text and "Critical Warning" in text
-    with patched(E, DEMO="old"):
+    with patched(E, DEMO="old", IS_WIN=False):
         old = SH.check_all(H._from_demo("old"))
     assert SH.health_label(old[0])[0] == SH.CAUTION, "8 перепризначених секторів — увага, як у CrystalDiskInfo"
     assert any(r[0] == SH.CAUTION and r[1] == 0x05 for r in SH.smart_table(old[0]))
