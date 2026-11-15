@@ -108,6 +108,7 @@ def smbios_details(raw: bytes) -> dict:
             import hardware as H
             out["modules"].append(dict(
                 slot=HN._str(strings, HN._byte(fmt, 0x10)) or HN._str(strings, HN._byte(fmt, 0x11)), mb=mb,
+                bank=HN._str(strings, HN._byte(fmt, 0x11)),
                 type=HN.MEM_TYPES.get(HN._byte(fmt, 0x12) or 0, "") if mb else "",
                 form=MEM_FORM.get(HN._byte(fmt, 0x0E) or 0, "") if mb else "",
                 # SMBIOS до 3.1 пише «налаштовану швидкість» у МГц — половину МТ/с (DDR3-1333 -> 667)
@@ -329,7 +330,8 @@ def _demo_smbios(hw: dict) -> dict:
     per = int((hw.get("ram_gb") or 8) * 1024 / max(1, n))
     return dict(board=dict(vendor="ASUSTeK COMPUTER INC.", model="ROG STRIX B760-F GAMING WIFI", version="Rev 1.xx"),
                 bios=dict(vendor="American Megatrends Inc.", version="1663", date="09/12/2024"), slots=max(2, n * 2),
-                modules=[dict(slot=f"DIMM {i + 1}", mb=per, type=hw.get("ram_type") or "DDR5", form="DIMM",
+                modules=[dict(slot=f"Controller0-Channel{'AB'[i % 2]}-DIMM{i // 2}", bank=f"BANK {i}", mb=per,
+                              type=hw.get("ram_type") or "DDR5", form="DIMM",
                               speed=hw.get("ram_max_speed") or 0, conf=hw.get("ram_speed") or 0, vendor="Kingston",
                               part="KF552C40-16") for i in range(n)])
 

@@ -161,6 +161,24 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: requirements.txt
+      # 7.1: офіційні підписані модулі PawnIO (LGPL 2.1) — у збірку, для множника, напруги й таймінгів SPD.
+      # Драйвер PawnIO сам перевіряє підпис модуля, тож змінений файл він просто не завантажить.
+      - name: PawnIO modules
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tmp = Join-Path $env:RUNNER_TEMP "pawnio-modules"
+          gh release download --repo namazso/PawnIO.Modules --pattern "*" --dir $tmp
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Get-ChildItem $tmp -Filter *.zip | ForEach-Object {
+            Expand-Archive $_.FullName -DestinationPath (Join-Path $tmp $_.BaseName) -Force }
+          foreach ($m in "IntelMSR", "AMDFamily17", "SmbusI801", "SmbusPIIX4") {
+            $f = Get-ChildItem $tmp -Recurse -Filter "$m.bin" | Select-Object -First 1
+            if (-not $f -or $f.Length -lt 64) { throw "PawnIO module $m.bin is missing in the latest release" }
+            Copy-Item $f.FullName pawnio/
+            "$m.bin  $($f.Length) B  sha256 $((Get-FileHash $f.FullName).Hash)"
+          }
       - name: Inno Setup
         shell: pwsh
         run: |

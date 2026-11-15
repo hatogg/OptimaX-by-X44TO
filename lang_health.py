@@ -3,6 +3,12 @@
 
 STRINGS = {
     # ── «Що нового» 7.1.0 ──
+    "wn.710.cpuz": ("«Процесор» у Hardware Center — як CPU-Z: кодове ім'я, техпроцес, інструкції, кеш, плата, "
+                    "пам'ять і слоти. З безкоштовним драйвером PawnIO — ще множник, напруга й таймінги з SPD.",
+                    "«Процессор» в Hardware Center — как CPU-Z: кодовое имя, техпроцесс, инструкции, кэш, плата, "
+                    "память и слоты. С бесплатным драйвером PawnIO — ещё множитель, напряжение и тайминги из SPD.",
+                    "CPU in Hardware Center, like CPU-Z: code name, process node, instructions, caches, mainboard, "
+                    "memory and slots. With the free PawnIO driver — multiplier, voltage and SPD timings too."),
     "wn.710.disks": ("«Диски» в Hardware Center — як CrystalDiskInfo: стан і залишок ресурсу, температура, прошивка, "
                      "режим, функції, записано й прочитано, повна таблиця SMART і журнал NVMe, звіт одним кліком.",
                      "«Диски» в Hardware Center — как CrystalDiskInfo: состояние и остаток ресурса, температура, "

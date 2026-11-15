@@ -14,3 +14,6 @@ buildinfo.py
 *.zip
 MSI/
 _site/
+
+# модулі PawnIO — з офіційного релізу під час збірки (pawnio/README.md)
+pawnio/*.bin

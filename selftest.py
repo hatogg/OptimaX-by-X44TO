@@ -30,7 +30,7 @@ MODULES = ("engine", "features", "guard", "hardware", "hwnative", "hotkeys", "li
            "gpubench", "ui_kit", "pages_optimize", "pages_tools", "pages_extra", "pages_lab", "smart_ui",
            "sharecard", "verify", "baseline", "modes", "gpuselect", "hwtests", "storagehealth", "vramtest", "hwinfo",
            "dumpanalyzer", "procmon", "overlay", "overlay_ui", "perfdiag", "inspection", "hwreport", "lang_hwc",
-           "lang_hwc2", "pages_hwcenter", "pages_hwc2")
+           "lang_hwc2", "pages_hwcenter", "pages_hwc2", "pages_diskinfo", "cpuz", "pages_cpuz", "pawnio")
 UI_TIMEOUT = 120  # секунд на визначення заліза у вікні
 _PROGRESS = None  # <звіт>-progress.txt: що робилося перед аварійним завершенням
 _CRASH = None     # <звіт>-crash.txt: стек Python у момент нативного збою (faulthandler)
@@ -392,7 +392,10 @@ def check_adblock():
 def check_buildinfo():
     import engine as E
     import updater as U
-    info = {"version": E.VERSION, "update_repo": U.UPDATE_REPO or None, "frozen": bool(getattr(sys, "frozen", False))}
+    import pawnio as PIO
+    info = {"version": E.VERSION, "update_repo": U.UPDATE_REPO or None, "frozen": bool(getattr(sys, "frozen", False)),
+            # 7.1: чи є в збірці модулі PawnIO (без них «Процесор» не прочитає множник і SPD)
+            "pawnio_modules": [m for m in PIO.MODULES if os.path.isfile(PIO.module_path(m))]}
     try:
         import buildinfo
         info.update(build=getattr(buildinfo, "BUILD", None), built=getattr(buildinfo, "BUILT", None))

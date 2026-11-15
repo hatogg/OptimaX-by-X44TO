@@ -509,6 +509,11 @@ class HwCenterPage(QWidget):
         self.buildcheck.on_show()
 
     def _build_cpu(self, v):
+        # 7.1: паспорт процесора, кешу, плати, пам'яті й відеокарт, як у CPU-Z — над тестом процесора
+        from pages_cpuz import CpuzPanel
+        self.cpuz = CpuzPanel(self)
+        v.addWidget(self.cpuz)
+        QTimer.singleShot(0, self.cpuz.load)
         c, cv = self.section(v, tr("hwc.cpu.title"), tr("hwc.cpu.sub"))
         r1 = hbox(margins=(14, 4, 14, 4), spacing=10)
         r1.addWidget(label(tr("gb.mode"), "desc"))
