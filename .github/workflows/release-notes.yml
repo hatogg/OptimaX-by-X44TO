@@ -1,0 +1,37 @@
+# Сторінка релізу: оновити опис уже створеного релізу з docs/releases/<версія>.md (банер, скріншоти, файли, хеші).
+# Кнопка Actions → Release notes → Run workflow; версія за замовчуванням — VERSION з engine.py.
+# Файли релізу, тег і назва не змінюються — лише текст опису.
+name: Release notes
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Версія (порожньо — з engine.py)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  notes:
+    name: Update release notes
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Edit the release description
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          v="${INPUT_VERSION:-$(python3 packaging/release.py version)}"
+          # версія — лише цифри й крапки: вона йде в шлях до файлу й у тег
+          if ! [[ "$v" =~ ^[0-9]+(\.[0-9]+){1,3}$ ]]; then echo "::error::Bad version: $v"; exit 1; fi
+          f="docs/releases/$v.md"
+          [ -s "$f" ] || { echo "::error::$f not found"; exit 1; }
+          gh release view "v$v" --repo "$GITHUB_REPOSITORY" > /dev/null || { echo "::error::Release v$v not found"; exit 1; }
+          gh release edit "v$v" --repo "$GITHUB_REPOSITORY" --notes-file "$f"
+          echo "Release v$v notes updated from $f" >> "$GITHUB_STEP_SUMMARY"

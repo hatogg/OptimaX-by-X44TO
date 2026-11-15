@@ -208,11 +208,14 @@ jobs:
           fi
           v="${TAG#v}"
           (cd dist && zip -qr "../OptimaX-$v-winget-manifests.zip" winget)
-          # нотатки — розділ цієї версії з CHANGELOG.md, далі список файлів
+          # нотатки — docs/releases/<версія>.md (повна сторінка релізу), інакше розділ цієї версії з CHANGELOG.md
+          # і список файлів
+          if [ -s "docs/releases/$v.md" ]; then cp "docs/releases/$v.md" notes.md; else
           awk -v v="$v" '/^## /{ if (p) exit; if (index($0, "## [" v "]") == 1 || index($0, "## " v) == 1) { p = 1; next } }
                          /^\[[0-9]/{ if (p) exit } p' CHANGELOG.md > notes.md
           [ -s notes.md ] || echo "OptimaX $v" > notes.md
           printf '\n---\n\n**Файли · Files:** `OptimaX-Setup-%s.exe` — інсталятор · installer, `OptimaX-%s-portable.exe` — без встановлення · portable, `OptimaX-Rescue.cmd` — аварійний відкат · emergency rollback. Контрольні суми · checksums: `SHA256SUMS.txt`.\n' "$v" "$v" >> notes.md
+          fi
           # з тегу — реліз саме з нього; з кнопки — тег створюється тут, на перевіреному коміті
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then where=(--verify-tag); else where=(--target "$GITHUB_SHA"); fi
           # Mesa і DXVK для майнінгових карт (mining.py): програма завантажує їх з релізу лише на ПК з такою картою
