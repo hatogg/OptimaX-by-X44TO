@@ -249,7 +249,8 @@ def test_verify_fails_closed_on_unknown_signer():
 
 # ───────────────────────── winget і cdb ─────────────────────────
 def _fs():
-    root = tempfile.mkdtemp(prefix="oxtp_")
+    # realpath: на Windows тимчасова папка має коротке ім'я (RUNNER~1), а перевірка розташування порівнює повні шляхи
+    root = os.path.realpath(tempfile.mkdtemp(prefix="oxtp_"))
     pf = os.path.join(root, "Program Files")
     user = os.path.join(root, "Users", "u", "AppData", "Local", "Microsoft", "WindowsApps")
     return root, pf, user
