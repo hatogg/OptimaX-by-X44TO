@@ -12,6 +12,7 @@ import tempfile
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime
+from typing import Optional
 
 import engine as E
 import hwnative as HN
@@ -163,7 +164,7 @@ $e=@(Get-CimInstance Win32_SystemEnclosure | ForEach-Object { $_.ChassisTypes })
 $vbs=$null
 try { $dg=Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\Microsoft\Windows\DeviceGuard -ErrorAction Stop; $vbs=[int]$dg.VirtualizationBasedSecurityStatus } catch {}
 $cs=Get-CimInstance Win32_ComputerSystem | Select-Object Manufacturer,Model
-$na=@(Get-NetAdapter -Physical | Select-Object InterfaceDescription,NdisPhysicalMedium)
+$na=@(Get-NetAdapter -Physical | Select-Object InterfaceDescription,NdisPhysicalMedium,MediaType)
 @{cpu=$c;ram=$m;os=$o;gpu=$g;chassis=$e;vbs=$vbs;cs=$cs;net=$na} | ConvertTo-Json -Depth 4 -Compress
 """
 
@@ -174,18 +175,32 @@ $pd=@(); foreach ($d in @(Get-PhysicalDisk)) {
            health=[string]$d.HealthStatus; size=[double]$d.Size; wear=$(if($rc){$rc.Wear}); temp=$(if($rc){$rc.Temperature})}
 }
 $pt=@(Get-Partition | Where-Object { $_.DriveLetter } | ForEach-Object { @{l=[string]$_.DriveLetter; d=[string]$_.DiskNumber} })
-@{disks=$pd;parts=$pt} | ConvertTo-Json -Depth 4 -Compress
+$sm=@(); try {
+  $dd=@{}; foreach ($x in @(Get-CimInstance Win32_DiskDrive -ErrorAction Stop)) {
+    $dd[[string]$x.PNPDeviceID]=[string]$x.Index }
+  $w='root\wmi'; $th=@{}; $pf=@{}
+  foreach ($x in @(Get-CimInstance -Namespace $w -ClassName MSStorageDriver_FailurePredictThresholds -EA SilentlyContinue)) {
+    $th[[string]$x.InstanceName]=$x.VendorSpecific }
+  foreach ($x in @(Get-CimInstance -Namespace $w -ClassName MSStorageDriver_FailurePredictStatus -EA SilentlyContinue)) {
+    $pf[[string]$x.InstanceName]=[bool]$x.PredictFailure }
+  foreach ($x in @(Get-CimInstance -Namespace $w -ClassName MSStorageDriver_FailurePredictData -ErrorAction Stop)) {
+    $n=[string]$x.InstanceName; $id=$dd[($n -replace '_\d+$','')]
+    if ($id -ne $null) { $sm += @{id=$id; v=[Convert]::ToBase64String([byte[]]$x.VendorSpecific); pf=$pf[$n];
+      t=$(if ($th[$n]) { [Convert]::ToBase64String([byte[]]$th[$n]) })} } }
+} catch {}
+@{disks=$pd;parts=$pt;smart=$sm} | ConvertTo-Json -Depth 4 -Compress
 """
 
 GPU_PCI_SCRIPT = PS_QUIET + r"""
 $r=@(); foreach ($d in Get-PnpDevice -PresentOnly -Class Display -ErrorAction SilentlyContinue | Where-Object { $_.InstanceId -like 'PCI\*' }) {
-  $h=@{}; foreach ($x in (Get-PnpDeviceProperty -InstanceId $d.InstanceId -KeyName DEVPKEY_PciDevice_CurrentLinkWidth,DEVPKEY_PciDevice_MaxLinkWidth,DEVPKEY_PciDevice_CurrentLinkSpeed,DEVPKEY_PciDevice_MaxLinkSpeed -ErrorAction SilentlyContinue)) { $h[$x.KeyName]=$x.Data }
+  $h=@{}; foreach ($x in (Get-PnpDeviceProperty -InstanceId $d.InstanceId -KeyName DEVPKEY_PciDevice_CurrentLinkWidth,DEVPKEY_PciDevice_MaxLinkWidth,DEVPKEY_PciDevice_CurrentLinkSpeed,DEVPKEY_PciDevice_MaxLinkSpeed,DEVPKEY_Device_PDOName -ErrorAction SilentlyContinue)) { $h[$x.KeyName]=$x.Data }
   $bar=0
   try { $e=Get-CimInstance Win32_PnPEntity -Filter ("DeviceID='" + ($d.InstanceId -replace '\\','\\') + "'") -ErrorAction Stop
         foreach ($m in ($e | Get-CimAssociatedInstance -ResultClassName Win32_DeviceMemoryAddress -ErrorAction Stop)) {
           $z=[double]$m.EndingAddress - [double]$m.StartingAddress + 1; if ($z -gt $bar) { $bar=$z } } } catch {}
   $r += @{name=$d.FriendlyName; cw=$h['DEVPKEY_PciDevice_CurrentLinkWidth']; mw=$h['DEVPKEY_PciDevice_MaxLinkWidth'];
-          cs=$h['DEVPKEY_PciDevice_CurrentLinkSpeed']; ms=$h['DEVPKEY_PciDevice_MaxLinkSpeed']; bar=$bar}
+          cs=$h['DEVPKEY_PciDevice_CurrentLinkSpeed']; ms=$h['DEVPKEY_PciDevice_MaxLinkSpeed']; bar=$bar;
+          pdo=[string]$h['DEVPKEY_Device_PDOName']}
 }; $r | ConvertTo-Json -Compress
 """
 
@@ -346,6 +361,68 @@ def ram_speed_fix(speed: int, conf: int) -> int:
     if speed and conf and abs(conf * 2 - speed) <= speed * 0.03:
         return speed
     return conf or speed
+
+
+# 7.0.1 (скарга: CrystalDiskInfo — «Bad 0%», а OptimaX — «диски в порядку»): SATA-диски часто не віддають знос
+# у Get-StorageReliabilityCounter, а Windows пише «Healthy», доки диск не відмовив. Читаємо самі атрибути SMART.
+# Залишок ресурсу записів — перший наявний атрибут: (id, звідки брати відсоток залишку).
+SMART_LIFE = ((0xE7, "cur"),       # SSD Life Left: Kingston, Seagate, Phison/SandForce, ADATA
+              (0xA9, "raw_used"),  # Remaining Lifetime: WD/SanDisk — у raw відсоток використаного
+              (0xCA, "raw_used"),  # Percent Lifetime Used: Crucial/Micron
+              (0xB1, "cur"),       # Wear Leveling Count: Samsung
+              (0xE9, "cur"))       # Media Wearout Indicator: Intel
+
+
+def smart_attrs(blob: bytes) -> dict:
+    """VendorSpecific з MSStorageDriver_FailurePredictData -> {id: (поточне, raw)}."""
+    out = {}
+    for off in range(2, min(len(blob), 2 + 30 * 12) - 11, 12):
+        i = blob[off]
+        if i:
+            out[i] = (blob[off + 3], int.from_bytes(blob[off + 5:off + 11], "little"))
+    return out
+
+
+def smart_summary(data: bytes, thresholds: bytes = b"", predict_fail=False) -> dict:
+    """{life: % залишку ресурсу або None, fail: [атрибути на порозі чи нижче]}. Не розібрати — порожній словник."""
+    attrs = smart_attrs(data or b"")
+    if not attrs:
+        return {}
+    life = None
+    for aid, how in SMART_LIFE:
+        if aid not in attrs:
+            continue
+        cur, raw = attrs[aid]
+        if how == "raw_used":
+            life = 100 - raw if raw <= 100 else None
+        elif cur <= 100:
+            life = min(cur, raw) if raw <= 100 else cur  # у частини Kingston відсоток — і в raw
+        if life is not None:
+            break
+    thr = {}
+    for off in range(2, min(len(thresholds or b""), 2 + 30 * 12) - 11, 12):
+        if thresholds[off]:
+            thr[thresholds[off]] = thresholds[off + 1]
+    fail = sorted(aid for aid, (cur, _raw) in attrs.items() if 0 < thr.get(aid, 0) < 0xFE and cur <= thr[aid])
+    return dict(life=life, fail=fail, predict=bool(predict_fail))
+
+
+def apply_smart(disks: list, smart: list) -> None:
+    """Дописати до дисків знос і збої з SMART (лише посилює оцінку: знос — більший із двох джерел)."""
+    import base64
+    by_id = {str(d.get("id")): d for d in disks}
+    for s in smart or []:
+        d = by_id.get(str((s or {}).get("id")))
+        if d is None:
+            continue
+        try:
+            sm = smart_summary(base64.b64decode(s.get("v") or ""), base64.b64decode(s.get("t") or ""), s.get("pf"))
+        except (ValueError, TypeError):
+            continue
+        if sm.get("life") is not None:
+            d["wear"] = max(d.get("wear") or 0, 100 - sm["life"])
+        if sm.get("fail") or sm.get("predict"):
+            d["smart_fail"] = [f"{a:02X}" for a in sm.get("fail") or []] or ["predict"]
 
 
 def merge_disks(ps_disks: list, parts: list, native: list) -> list:
@@ -560,6 +637,7 @@ def detect_hw(cache: bool = False) -> dict:
 
     # диски
     hw["disks"] = merge_disks(E.as_list(st.get("disks")), E.as_list(st.get("parts")), nat.get("disks") or [])
+    apply_smart(hw["disks"], [s for s in E.as_list(st.get("smart")) if isinstance(s, dict)])
     sys_letter = (os.environ.get("SystemDrive") or "C:")[0].upper()
     sysd = next((d for d in hw["disks"] if sys_letter in d.get("letters", [])), None)
     if sysd is None and len(hw["disks"]) == 1:
@@ -590,7 +668,8 @@ def detect_hw(cache: bool = False) -> dict:
         wifi_re = re.compile(r"Wi-?Fi|Wireless|WLAN|802\.11", re.I)
         hw["wifi"] = any(n.get("NdisPhysicalMedium") == 9 or wifi_re.search(str(n.get("InterfaceDescription") or ""))
                          for n in nets)
-        hw["ethernet"] = any(n.get("NdisPhysicalMedium") == 14 and
+        hw["ethernet"] = any((n.get("NdisPhysicalMedium") == 14 or  # 7.0.1: або «не вказано», але MediaType 802.3
+                              (n.get("NdisPhysicalMedium") == 0 and n.get("MediaType") == "802.3")) and
                              not wifi_re.search(str(n.get("InterfaceDescription") or "")) for n in nets)
     else:
         hw["wifi"], hw["ethernet"] = bool(nat.get("wifi")), bool(nat.get("ethernet"))
@@ -605,8 +684,11 @@ def detect_hw(cache: bool = False) -> dict:
     hw["gpu_pci"] = []
     for g in E.as_list(got.get("pci")):
         if isinstance(g, dict) and g.get("name"):
+            # 7.0.1: розмір BAR — з карти ресурсів PnP (там і 64-бітні «великі» вікна); WMI їх не показує
+            big = resource_map_max_mem(g.get("pdo"))
+            bar = max(big or 0, g.get("bar") or 0)
             hw["gpu_pci"].append(dict(name=g["name"], cw=g.get("cw"), mw=g.get("mw"), cs=g.get("cs"), ms=g.get("ms"),
-                                      bar_mb=round((g.get("bar") or 0) / 2**20)))
+                                      bar_mb=round(bar / 2**20), bar_known=big is not None))
     try:
         import monitor as M
         hw["thermal"] = M.quick_thermal()
@@ -767,6 +849,47 @@ def is_integrated(name: str, vram: float = 0.0) -> bool:
     return bool(vram and vram < 1)
 
 
+# Карта ресурсів PnP: для кожного пристрою — REG_RESOURCE_LIST з пам'яттю, яку йому видав Windows.
+# 7.0.1 (скарга: «Resizable BAR вимкнено», хоча SAM у драйвері AMD увімкнено): Win32_DeviceMemoryAddress не показує
+# вікна пам'яті понад 4 ГБ (CmResourceTypeMemoryLarge) — а саме таким стає BAR відеокарти з Resizable BAR.
+RESOURCE_MAP_KEY = r"HARDWARE\RESOURCEMAP\PnP Manager\PnpManager"
+_CM_MEMORY, _CM_MEMORY_LARGE = 3, 7
+_CM_LARGE_SHIFT = ((0x0200, 8), (0x0400, 16), (0x0800, 32))  # CM_RESOURCE_MEMORY_LARGE_40 / _48 / _64
+
+
+def parse_resource_list(blob: bytes) -> Optional[int]:
+    """Найбільше вікно пам'яті (байти) в REG_RESOURCE_LIST (x64). None — дані не розібрати."""
+    import struct
+    try:
+        (count,), off, best = struct.unpack_from("<I", blob, 0), 4, 0
+        for _ in range(count):
+            _iface, _bus, _ver, _rev, n = struct.unpack_from("<iIHHI", blob, off)
+            off += 16
+            for _ in range(n):
+                typ, _share, flags, _start, length = struct.unpack_from("<BBHQI", blob, off)
+                off += 16
+                if typ == _CM_MEMORY_LARGE:
+                    length <<= next((s for bit, s in _CM_LARGE_SHIFT if flags & bit), 0)
+                if typ in (_CM_MEMORY, _CM_MEMORY_LARGE):
+                    best = max(best, length)
+        return best
+    except struct.error:
+        return None
+
+
+def resource_map_max_mem(pdo) -> Optional[int]:
+    """Найбільше вікно пам'яті пристрою за його PDO-іменем (\\Device\\NTPNP_PCI0012). None — не прочитати."""
+    if not E.IS_WIN or not pdo or not str(pdo).startswith("\\Device\\"):
+        return None
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, RESOURCE_MAP_KEY) as k:
+            blob, typ = winreg.QueryValueEx(k, f"{pdo}.Translated")
+    except OSError:
+        return None
+    return parse_resource_list(bytes(blob)) if typ == winreg.REG_RESOURCE_LIST else None
+
+
 def rebar_relevance(name: str):
     """Для яких відеокарт Resizable BAR важливий: critical (Intel Arc), useful (RTX 30+/RX 6000+) або None."""
     n = (name or "").lower()
@@ -817,6 +940,8 @@ def build_check(hw: dict, games=None) -> list:
         wear, temp = d.get("wear"), d.get("temp")
         if h and h not in ("healthy", "0", "здоровий", "исправен"):
             worst = worst or ("warn", "health_bad", dict(name=d["name"], state=d.get("health")))
+        elif d.get("smart_fail"):
+            worst = worst or ("warn", "health_bad", dict(name=d["name"], state="SMART " + ", ".join(d["smart_fail"])))
         elif isinstance(wear, (int, float)) and wear >= 80:
             worst = worst or ("warn", "wear_high", dict(name=d["name"], wear=int(wear)))
         elif isinstance(temp, (int, float)) and temp >= 70:
@@ -898,11 +1023,11 @@ def build_check(hw: dict, games=None) -> list:
             add("pcie", "ok", gpu=g["name"], cur=cw)
         rel = rebar_relevance(g.get("name", ""))
         bar = g.get("bar_mb") or 0
-        if rel and bar:
-            if bar > 300:
-                add("rebar", "ok", gpu=g["name"])
-            else:
-                add("rebar", "warn" if rel == "critical" else "info", ("hint", "rebar"), gpu=g["name"])
+        if rel and bar > 300:
+            add("rebar", "ok", gpu=g["name"])
+        elif rel and bar and g.get("bar_known", True):
+            # 7.0.1: «вимкнено» — лише коли прочитано всю пам'ять карти (карта ресурсів), а не лише те, що бачить WMI
+            add("rebar", "warn" if rel == "critical" else "info", ("hint", "rebar"), gpu=g["name"])
         break
     # температура в простої
     th = hw.get("thermal") or {}

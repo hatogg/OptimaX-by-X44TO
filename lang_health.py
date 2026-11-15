@@ -2,6 +2,22 @@
 (українська, російська, англійська)."""
 
 STRINGS = {
+    # ── «Що нового» 7.0.1 ──
+    "wn.701.rebar": ("Resizable BAR (AMD SmartAccess Memory) більше не показується вимкненим, коли він увімкнений.",
+                     "Resizable BAR (AMD SmartAccess Memory) больше не показывается выключенным, когда он включён.",
+                     "Resizable BAR (AMD SmartAccess Memory) is no longer shown as off when it is on."),
+    "wn.701.smart": ("«Здоров'я ПК» читає SMART SATA-дисків: зношений SSD чи диск на порозі відмови тепер видно, "
+                     "навіть коли Windows пише «Healthy».",
+                     "«Здоровье ПК» читает SMART SATA-дисков: изношенный SSD или диск на пороге отказа теперь видно, "
+                     "даже когда Windows пишет «Healthy».",
+                     "PC health reads SMART on SATA drives: a worn-out SSD or a drive at its failure threshold now "
+                     "shows up even when Windows says “Healthy”."),
+    "wn.701.nic": ("Interrupt Moderation і Flow Control, вимкнені вручну, тепер видно й на адаптерах Realtek 2.5G "
+                   "і USB.",
+                   "Interrupt Moderation и Flow Control, выключенные вручную, теперь видно и на адаптерах Realtek 2.5G "
+                   "и USB.",
+                   "Interrupt Moderation and Flow Control turned off by hand now show up on Realtek 2.5G and USB "
+                   "adapters too."),
     # ── «Що нового» 7.0.0 ──
     "wn.700.design": ("Новий вигляд: графіт і один червоний акцент замість синьо-фіолетових градієнтів, без світіння й "
                       "кольорових плиток. Показники — як на приладі, з одиницями, а основна кнопка на кожному екрані одна. "
@@ -321,6 +337,12 @@ STRINGS = {
     "hc.disk.health": ("{name}: стан «{health}»", "{name}: состояние «{health}»", "{name}: health “{health}”"),
     "hc.disk.wear": ("{name}: використано {n}% ресурсу записів", "{name}: использовано {n}% ресурса записи",
                      "{name}: {n}% of its write endurance used"),
+    "hc.disk.worn": ("{name}: лишилося {n}% ресурсу записів — скопіюйте важливе й плануйте заміну диска",
+                     "{name}: осталось {n}% ресурса записи — скопируйте важное и планируйте замену диска",
+                     "{name}: {n}% of its write endurance left — back up what matters and plan to replace the drive"),
+    "hc.disk.smart": ("{name}: атрибут SMART {ids} на порозі відмови — скопіюйте важливе",
+                      "{name}: атрибут SMART {ids} на пороге отказа — скопируйте важное",
+                      "{name}: SMART attribute {ids} is at its failure threshold — back up what matters"),
     "hc.disk.temp": ("{name}: {t} °C — гарячий", "{name}: {t} °C — горячий", "{name}: {t} °C — hot"),
     "hc.disk.free_ok": ("{l}: вільно {free} з {total} ГБ", "{l}: свободно {free} из {total} ГБ",
                         "{l}: {free} of {total} GB free"),

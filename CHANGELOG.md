@@ -2,6 +2,22 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [7.0.1] — 2026-11-15
+
+Виправлення за відгуками користувачів 7.0.0.
+
+### Виправлено
+
+- **Resizable BAR «вимкнено», хоча він увімкнений** (AMD SmartAccess Memory, RX 7800 XT). WMI не показує вікон пам'яті понад 4 ГБ, а саме таким стає BAR відеокарти з Resizable BAR. Тепер розмір BAR читається з карти ресурсів PnP (`HKLM\HARDWARE\RESOURCEMAP`), а «вимкнено» OptimaX каже лише тоді, коли прочитала її повністю.
+- **Зношений SSD — «диски в порядку».** Частина SATA-дисків (наприклад, Kingston A400) не віддає знос у лічильники Windows, а Windows пише «Healthy», доки диск не відмовив. Тепер OptimaX читає атрибути SMART: залишок ресурсу (E7, A9, CA, B1, E9) і атрибути на порозі відмови. Лишилося ≤ 10% ресурсу чи атрибут на порозі — «Проблема з диском» у «Здоров'ї ПК» і порада в «Що гальмує».
+- **Interrupt Moderation і Flow Control, вимкнені вручну, не видно.** Частина адаптерів Realtek 2.5G і USB віддає «тип носія не вказано» — тепер Ethernet видно й за MediaType 802.3 (і для застосування твіку теж). Стан рахується за підключеними адаптерами: невикористаний другий порт на платі більше не робить твік «не застосованим».
+
+<details>
+<summary>English</summary>
+
+Fixes from user reports on 7.0.0. **Resizable BAR reported off while it is on** (AMD SmartAccess Memory, RX 7800 XT): WMI does not show memory windows above 4 GB, which is exactly what a resized GPU BAR becomes; the BAR size now comes from the PnP resource map, and OptimaX says “off” only when it read that map in full. **A worn-out SSD shown as fine:** some SATA drives (e.g. Kingston A400) don't report wear to Windows counters and Windows says “Healthy” until the drive fails; OptimaX now reads SMART attributes — remaining endurance (E7, A9, CA, B1, E9) and attributes at their failure threshold; ≤ 10% left or an attribute at threshold is a drive problem in PC health and in What slows it down. **Interrupt Moderation and Flow Control turned off by hand were not seen:** some Realtek 2.5G and USB adapters report an unspecified physical medium — Ethernet is now also recognised by MediaType 802.3 (for applying the tweak too), and the state counts connected adapters only, so an unused second port no longer makes the tweak “not applied”.
+</details>
+
 ## [7.0.0] — 2026-11-15
 
 Перший реліз після 6.15: новий вигляд програми й сайту, а також усе, що було в 6.16 («Здоров'я ПК») і 6.17 (виправлення за незалежним аудитом коду) — ці дві версії окремо не випускалися, їхні розділи нижче.

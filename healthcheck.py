@@ -45,6 +45,7 @@ DISK_FREE_BAD_GB = 10  # менше — Windows не встановить оно
 DISK_FREE_WARN_GB = 25
 DISK_FREE_WARN_PCT = 10
 DISK_WEAR_WARN = 80  # % ресурсу записів SSD
+DISK_WEAR_BAD = 90  # 7.0.1: лишилося ≤ 10% — диск може перейти в «лише читання» чи відмовити, час копіювати дані
 DISK_TEMP_WARN = 70  # °C — SSD починає скидати швидкість
 WU_WARN_DAYS = 40  # місячне оновлення пропущено
 WU_BAD_DAYS = 70  # пропущено два й більше — відомі діри відкриті
@@ -180,7 +181,7 @@ def disk_facts(hw: dict) -> list:
                 demo_free = {"C": {"old": 7.2, "laptop": 41.0}.get(E.DEMO, 182.4), "D": 912.0}.get(L, 300.0)
                 free.append(dict(l=L, free=demo_free, total=float(d.get("size_gb") or 1000)))
         out.append(dict(name=d.get("name") or "?", health=d.get("health"), wear=d.get("wear"), temp=d.get("temp"),
-                        media=d.get("media"), free=free))
+                        media=d.get("media"), free=free, smart_fail=d.get("smart_fail") or []))
     return out
 
 
@@ -325,7 +326,15 @@ def check_disk(f: dict) -> dict:
             st = BAD
             det.append(_d("hc.disk.health", name=d["name"], health=d.get("health")))
             opens.append(["hwc", "storage"])
-        if isinstance(d.get("wear"), (int, float)) and d["wear"] >= DISK_WEAR_WARN:
+        if d.get("smart_fail"):  # 7.0.1: атрибут SMART на порозі відмови, хоч Windows і пише «Healthy»
+            st = BAD
+            det.append(_d("hc.disk.smart", name=d["name"], ids=", ".join(d["smart_fail"])))
+            opens.append(["hwc", "storage"])
+        if isinstance(d.get("wear"), (int, float)) and d["wear"] >= DISK_WEAR_BAD:
+            st = BAD
+            det.append(_d("hc.disk.worn", name=d["name"], n=max(0, 100 - int(d["wear"]))))
+            opens.append(["hwc", "storage"])
+        elif isinstance(d.get("wear"), (int, float)) and d["wear"] >= DISK_WEAR_WARN:
             st = st if st == BAD else WARN
             det.append(_d("hc.disk.wear", name=d["name"], n=int(d["wear"])))
             opens.append(["hwc", "storage"])

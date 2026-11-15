@@ -31,7 +31,7 @@ from i18n import tr, tweak_text
 APP_NAME = "OptimaX"
 AUTHOR = "X44TO"
 APP_TITLE = f"{APP_NAME} by {AUTHOR}"
-VERSION = "7.0.0"
+VERSION = "7.0.1"
 IS_WIN = sys.platform == "win32"
 DRY_RUN = (not IS_WIN) or ("--dry-run" in sys.argv)
 DEMO = os.environ.get("OPTIMAX_DEMO", "gaming")  # демо-залізо поза Windows: gaming/laptop/old/x3d/xeon
@@ -2061,7 +2061,10 @@ def f_nic_power(ctx: Ctx) -> None:
 
 WIFI_FILTER = ("$_.NdisPhysicalMedium -eq 9 -or $_.InterfaceDescription -match "
                "'Wi-?Fi|Wireless|WLAN|802\\.11|Killer.*AX|Centrino'")
-ETH_FILTER = "$_.NdisPhysicalMedium -eq 14 -and $_.InterfaceDescription -notmatch 'Wi-?Fi|Wireless|WLAN|802\\.11'"
+# 7.0.1: частина Realtek 2.5G та USB-адаптерів віддає NdisPhysicalMedium = 0 (не вказано) —
+# тоді Ethernet видно з MediaType
+ETH_FILTER = ("($_.NdisPhysicalMedium -eq 14 -or ($_.NdisPhysicalMedium -eq 0 -and $_.MediaType -eq '802.3')) -and "
+              "$_.InterfaceDescription -notmatch 'Wi-?Fi|Wireless|WLAN|802\\.11'")
 
 
 def _nic_props(ctx: Ctx, media_filter: str, prop_filter: str, target: str) -> None:
@@ -2101,7 +2104,8 @@ NIC_STATE_PS = (
     " $p = @(Get-NetAdapterAdvancedProperty -Name $a.Name -AllProperties -ErrorAction SilentlyContinue | ForEach-Object {"
     "  @{k=[string]$_.RegistryKeyword; v=($_.RegistryValue -join ','); d=[string]$_.DisplayName;"
     "    valid=@($_.ValidRegistryValues | ForEach-Object { [string]$_ })} });"
-    " $r += @{n=$a.Name; m=[int]$a.NdisPhysicalMedium; desc=[string]$a.InterfaceDescription;"
+    " $r += @{n=$a.Name; m=[int]$a.NdisPhysicalMedium; desc=[string]$a.InterfaceDescription; mt=[string]$a.MediaType;"
+    "  up=($a.Status -eq 'Up');"
     "  pm=$(if ($pm) { [string]$pm.AllowComputerToTurnOffDevice } else { '' }); p=$p} };"
     " ConvertTo-Json -InputObject @($r) -Compress -Depth 4")
 _WIFI_RE = re.compile(r"Wi-?Fi|Wireless|WLAN|802\.11|Killer.*AX|Centrino", re.I)  # як WIFI_FILTER
@@ -2120,7 +2124,8 @@ def nic_snapshot() -> Optional[list]:
 
 
 def _is_eth(a: dict) -> bool:
-    return int(a.get("m") or -1) == 14 and not _NOT_ETH_RE.search(str(a.get("desc") or ""))
+    m = int(a.get("m") if a.get("m") is not None else -1)
+    return (m == 14 or (m == 0 and a.get("mt") == "802.3")) and not _NOT_ETH_RE.search(str(a.get("desc") or ""))
 
 
 def _is_wifi(a: dict) -> bool:
@@ -2136,9 +2141,12 @@ def eth_latency_state(nics) -> Optional[object]:
     if nics is None:
         return None
     seen = False
-    for a in nics:
-        if not _is_eth(a):
-            continue
+    eth = [a for a in nics if _is_eth(a)]
+    # 7.0.1 (скарга: «вимкнув вручну, а OptimaX не бачить»): стан — за підключеними адаптерами; другий, невикористаний
+    # порт на платі не робить твік «не застосованим»
+    if any(a.get("up") for a in eth):
+        eth = [a for a in eth if a.get("up")]
+    for a in eth:
         for p in _props(a):
             if p.get("k") not in ("*InterruptModeration", "*FlowControl"):
                 continue
