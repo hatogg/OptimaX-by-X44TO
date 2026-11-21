@@ -62,5 +62,5 @@ def test_rescue_failed_step_keeps_entry_and_no_injection():
     # 7.1.1: find.exe — буквальним шляхом зі збірки скрипта, не з %SystemRoot% (його користувач може перевизначити)
     assert re.match(r'powercfg /getactivescheme 2>nul \| "[A-Za-z]:\\[^"%]*\\System32\\find\.exe" /i "'
                     + g + r'" >nul && \(powercfg -setactive ' + g + r' >nul 2>&1 \|\| \(set /a FAIL\+=1 & ',
-                    r["pw"][0]), r["pw"]
+                    r["pw"][0], re.I), r["pw"]  # GetSystemDirectory дає «system32»
     assert r["psq"] == "'Assassin’’s ''Creed'''", "PowerShell treats ’ as a quote too"
