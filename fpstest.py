@@ -71,6 +71,18 @@ def _verified(path: str, sha: str) -> bool:
     return True
 
 
+# 7.1.1: результат пошуку кешується на весь процес (оверлей і сторінки питають щоразу, а пошук — це glob, читання
+# маніфесту й копіювання/перевірка підпису старого PresentMon). Знайдений файл щоразу перевіряється дешево (stat і
+# сума з кешу _OK), тож підміну після завантаження все одно видно; «не знайдено» пам'ятаємо NEG_TTL секунд, щоб
+# PresentMon, покладений вручну, з'явився без перезапуску. Скидання — forget_presentmon().
+NEG_TTL = 30.0
+_PM_CACHE: dict = {}
+
+
+def forget_presentmon() -> None:
+    _PM_CACHE.clear()
+
+
 def find_presentmon():
     """PresentMon, який можна запускати з правами адміністратора: поруч зі встановленою OptimaX (Program Files) або
     завантажений нею в захищену папку й звірений із сумою, записаною під час завантаження. Будь-який інший
@@ -78,25 +90,41 @@ def find_presentmon():
     if not E.IS_WIN:
         return "PresentMon-demo.exe"
     import secfs as SF
+    c = _PM_CACHE.get("v")
+    if c is not None:
+        path, sha, ts = c
+        if path is None:
+            if time.time() - ts < NEG_TTL:
+                return None
+        elif not SF.is_reparse(path) and (_verified(path, sha) if sha else os.path.isfile(path)):
+            return path
+        _PM_CACHE.clear()
+    path, sha = _find_presentmon(SF)
+    _PM_CACHE["v"] = (path, sha, time.time())
+    return path
+
+
+def _find_presentmon(SF) -> tuple:
+    """(шлях, сума з маніфесту або "" для копії поруч із встановленою OptimaX) або (None, "")."""
     if SF.self_trusted():
         app = _app_dir()
         for folder in (os.path.join(app, "tools"), app):
             hits = sorted(glob.glob(os.path.join(folder, "PresentMon*.exe")), reverse=True)
             hits = [h for h in hits if "service" not in h.lower() and SF.trusted_location(h)]
             if hits:
-                return hits[0]
+                return hits[0], ""
     try:
         d = tools_dir()
     except Exception:  # noqa: BLE001 — захищену папку створити не вдалося: краще без FPS, ніж неперевірений exe
-        return None
+        return None, ""
     m = _read_manifest(d)
     if not m:
         m = _adopt_legacy(d)
     if m:
         path = os.path.join(d, m["name"])
         if not SF.is_reparse(path) and _verified(path, m["sha256"]):
-            return path
-    return None
+            return path, m["sha256"]
+    return None, ""
 
 
 def _adopt_legacy(d: str) -> dict:
@@ -168,6 +196,7 @@ def download_presentmon(log) -> str:
     os.replace(tmp, dest)
     _write_manifest(d, asset["name"], sha)  # find_presentmon звірятиме файл із цією сумою перед кожним запуском
     _OK.pop(dest, None)
+    forget_presentmon()
     log(tr("fps.downloaded"))
     return dest
 
@@ -181,11 +210,18 @@ def _percentile(sorted_vals, p):
     return sorted_vals[lo] + (sorted_vals[hi] - sorted_vals[lo]) * (k - lo)
 
 
+MAX_FRAME_MS = 10_000.0  # 7.1.1: довший «кадр» — не фриз, а пауза (гру згорнули, alt-tab)
+
+
 def stats(frametimes: list) -> dict:
     """Середній FPS, 1% і 0.1% low, кількість фризів (кадр удвічі з половиною довший за медіану) і плавність:
     100 × медіанний час кадру / 99-й перцентиль — 100 означає ідеально рівні кадри, 50 — кожен сотий кадр
     удвічі довший за звичайний."""
-    ft = [x for x in frametimes if 0.05 < x < 1000]
+    # 7.1.1: раніше відкидалися всі кадри ≥ 1 с — і саме фризи (1.5 с, 2.5 с) зникали з середнього, 1%/0.1% low і
+    # лічильника фризів. Тепер лишаємо кадри до MAX_FRAME_MS; довші — це пауза, згорнута гра чи alt-tab, а не
+    # гра; їх відкидаємо, але рахуємо (gaps), щоб було видно, що замір переривався.
+    ft = [x for x in frametimes if 0.05 < x <= MAX_FRAME_MS]
+    gaps = sum(1 for x in frametimes if isinstance(x, (int, float)) and x > MAX_FRAME_MS)
     if len(ft) < 30:
         return {}
     s = sorted(ft)
@@ -200,7 +236,7 @@ def stats(frametimes: list) -> dict:
     return dict(frames=n, seconds=round(secs, 1), avg=round(1000 * n / sum(ft), 1),
                 low1=round(1000 / (sum(worst1) / len(worst1)), 1), low01=round(1000 / (sum(worst01) / len(worst01)), 1),
                 p99=round(p99, 2), stutters=stutters, stutters_pm=round(stutters * 60 / secs, 1) if secs else 0.0,
-                smooth=round(100 * med / p99, 1) if p99 else 0.0,
+                smooth=round(100 * med / p99, 1) if p99 else 0.0, gaps=gaps,
                 series=[round(sum(ft[i:i + step]) / len(ft[i:i + step]), 2) for i in range(0, n, step)][:240])
 
 
@@ -331,13 +367,19 @@ def parse_csv(path: str) -> list:
     col = next((head.index(c) for c in ("MsBetweenPresents", "FrameTime", "msBetweenPresents") if c in head), None)
     if col is None:
         return []
-    out = []
+    # 7.1.1: --process_name ловить усі процеси з цим ім'ям і всі їхні ланцюжки показу (лаунчер, другий екран,
+    # оверлей): змішані в один ряд 144 і 30 FPS давали «середні» 87. Групуємо за (ProcessID, SwapChainAddress) і
+    # беремо групу з найбільшою кількістю кадрів — це і є гра.
+    keys = [head.index(c) for c in ("ProcessID", "SwapChainAddress") if c in head]
+    groups: dict = {}
     for r in rows[1:]:
         try:
-            out.append(float(r[col]))
+            v = float(r[col])
+            k = tuple(r[i].strip() for i in keys)
         except (ValueError, IndexError):
-            pass
-    return out
+            continue
+        groups.setdefault(k, []).append(v)
+    return max(groups.values(), key=len) if groups else []
 
 
 def parse_csv_by_app(path: str) -> dict:
@@ -358,6 +400,22 @@ def parse_csv_by_app(path: str) -> dict:
     return out
 
 
+DIAG_SESSION = "OptimaXDiag"
+CAPTURE_SESSION = "OptimaX"
+
+
+def _end_session(pm: str, name: str) -> None:
+    """7.1.1: kill() зупиняє лише процес PresentMon, а його ETW-сесія реального часу лишається в системі (до
+    перезавантаження, і з кожним разом їх більшає). Закриваємо її тим самим PresentMon; коротко, у фоновому потоці."""
+    if not (E.IS_WIN and pm):
+        return
+    try:
+        subprocess.run([pm, "--terminate_existing_session", "--session_name", name], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=8, creationflags=E.CREATE_NO_WINDOW)
+    except (OSError, subprocess.SubprocessError):
+        pass  # не вийшло — сесію закриє наступний запуск (--stop_existing_session)
+
+
 def start_capture_all(seconds: int) -> dict:
     """Запис кадрів усіх процесів у фоні (для «Чому лагає?»: гра стане відома лише після заміру)."""
     pm = find_presentmon()
@@ -368,9 +426,9 @@ def start_capture_all(seconds: int) -> dict:
         return {}
     out = os.path.join(tools_dir(), f"diag_{int(time.time())}.csv")
     cmd = [pm, "--output_file", out, "--timed", str(seconds + 2), "--terminate_after_timed", "--no_console_stats",
-           "--stop_existing_session", "--session_name", "OptimaXDiag"]
+           "--stop_existing_session", "--session_name", DIAG_SESSION]
     p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=E.CREATE_NO_WINDOW)
-    return dict(proc=p, out=out, t0=time.time(), seconds=seconds)
+    return dict(proc=p, out=out, t0=time.time(), seconds=seconds, pm=pm)
 
 
 def finish_capture_all(cap: dict) -> dict:
@@ -381,6 +439,7 @@ def finish_capture_all(cap: dict) -> dict:
         p.wait(timeout=12)
     except subprocess.TimeoutExpired:
         p.kill()
+        _end_session(cap.get("pm"), DIAG_SESSION)
     try:
         return parse_csv_by_app(out) if os.path.exists(out) else {}
     finally:
@@ -429,7 +488,7 @@ def _capture(exe: str, seconds: int, log, progress) -> dict:
     if not E.IS_WIN:
         for i in range(seconds):
             if E.CANCEL.is_set():
-                break
+                raise RuntimeError(tr("e.stopped").strip())  # 7.1.1: як і на Windows — обірваний замір не результат
             if progress:
                 progress(i, seconds, tr("fps.recording", s=seconds - i))
             time.sleep(0.005)
@@ -442,18 +501,29 @@ def _capture(exe: str, seconds: int, log, progress) -> dict:
         raise RuntimeError(tr("vf.sig_invalid", name=os.path.basename(pm), code="WinVerifyTrust"))
     out = os.path.join(tools_dir(), f"capture_{int(time.time())}.csv")
     cmd = [pm, "--process_name", exe, "--output_file", out, "--timed", str(seconds), "--terminate_after_timed",
-           "--no_console_stats", "--stop_existing_session", "--session_name", "OptimaX"]
+           "--no_console_stats", "--stop_existing_session", "--session_name", CAPTURE_SESSION]
     log(f"  {' '.join(os.path.basename(c) if i == 0 else c for i, c in enumerate(cmd))}")
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=E.CREATE_NO_WINDOW)
     t0 = time.time()
+    broken = ""
     while p.poll() is None:
         el = int(time.time() - t0)
         if progress:
             progress(min(el, seconds), seconds, tr("fps.recording", s=max(0, seconds - el)))
         if E.CANCEL.is_set() or el > seconds + 25:
+            broken = "stop" if E.CANCEL.is_set() else "timeout"
             p.kill()
+            _end_session(pm, CAPTURE_SESSION)
             break
         time.sleep(0.5)
+    if broken:
+        # 7.1.1: обірваний замір (Зупинити / PresentMon завис) — не результат: кілька секунд кадрів ставали
+        # повноцінним заміром «до» чи «після» і псували порівняння
+        try:
+            os.remove(out)
+        except OSError:
+            pass
+        raise RuntimeError(tr("e.stopped").strip() if broken == "stop" else tr("fps.pm_timeout", s=seconds + 25))
     try:
         tail = (p.stdout.read() or b"").decode("utf-8", "replace").strip()
     except Exception:
@@ -505,6 +575,9 @@ def capture_runs(exe: str, seconds: int, runs: int, log, progress, pause: float 
             last_err = e
             log(tr("fps.run_failed", i=i + 1, err=str(e)))
             continue
+        if E.CANCEL.is_set():  # 7.1.1: прогін, що закінчився вже після «Зупинити», — не рахуємо
+            last_err = RuntimeError(tr("e.stopped").strip())
+            break
         got.append(r)
         if i < runs - 1:  # коротка пауза: PresentMon закриває сесію, гра вирівнює частоти
             end = time.time() + (pause if E.IS_WIN else 0.01)

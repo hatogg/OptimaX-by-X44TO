@@ -341,12 +341,14 @@ class Main(QWidget):
             inc = new[0]
             title, _text = CL.explain(inc)
             home = self.pages["home"]
-            if not home.banner.isVisible():
+            # 7.1.1: isHidden, а не isVisible (як у _freeze_tick): поки головна не на екрані, isVisible() хибне й для
+            # показаного банера — і збій затирав банер обірваного пакета, пробного періоду, захисту чи оновлення
+            if home.banner.isHidden():
                 home.set_banner("pc_crash", tr("crash.banner_t"), title + (" · " + tr("crash.game", game=inc["game"])
                                                                           if inc.get("game") else ""),
-                                (tr("crash.banner_btn"), lambda: (home.set_banner(None), self.go("diagnose"),
+                                (tr("crash.banner_btn"), lambda: (self.guard_refresh(), self.go("diagnose"),
                                                                   dg.focus_crash())),
-                                (tr("btn.close"), lambda: home.set_banner(None)))
+                                (tr("btn.close"), self.guard_refresh))
             if not self.isVisible():
                 self.toast(tr("crash.banner_t"), "warn")
         self.run_quick("crash", job, silent=True, on_done=done)
@@ -673,6 +675,12 @@ class Main(QWidget):
         """По одній сторінці за раз: вікно з головною з'являється одразу, а не після створення всіх сторінок (6.9)."""
         key = self.pages.next_missing()
         if not key:
+            return
+        # 7.1.1: вікно в треї (автозапуск --tray) — сторінки не будуємо: ~15 сторінок і їхні конструктори (winget,
+        # таймери) працювали б для вікна, якого ніхто не бачить. Продовжимо з showEvent; сторінку, до якої
+        # звернеться трей чи фонова дія, Pages збудує на вимогу.
+        if not self.isVisible():
+            self._build_waiting = True
             return
         if self.stack.animating or time.monotonic() - getattr(self, "_last_nav", 0.0) < self.BUILD_QUIET_S:
             QTimer.singleShot(150, self._build_pages)  # іде перехід — сторінку збудуємо, коли він закінчиться
@@ -1302,10 +1310,11 @@ class Main(QWidget):
         self.refresh_all()
 
     def rescue_dismiss(self):
-        RS.dismiss()
+        # 7.1.1: RS.dismiss видаляє задачу «OptimaX Safety» (schtasks, до 20 с) — фоном, не в потоці інтерфейсу
         self.crash = None
         self.guard_refresh()
-        self.toast(tr("rs.dismissed"))
+        self.run_quick("rescue", lambda log, p: RS.dismiss(), silent=True,
+                       on_done=lambda _r: self.toast(tr("rs.dismissed")))
 
     # ── розумна оптимізація ──
     def start_smart(self, ids, restore_point: bool = True):
@@ -1341,7 +1350,8 @@ class Main(QWidget):
     def resume_smart(self):
         d = F.CFG["smart"]
         if not d:
-            SM.set_resume_task(False)
+            # 7.1.1: schtasks /Delete (до 20 с) — фоном: під час запуску це блокувало вікно
+            self.run_quick("smart", lambda log, p: SM.set_resume_task(False), silent=True)
             return
         try:
             s = SM.AB.Session.from_dict(d)
@@ -1353,7 +1363,7 @@ class Main(QWidget):
         self.show_window()
         if not Ask.ask(self, tr("sm.resume_t"), tr("sm.resume_q"), tr("sm.resume_btn")):
             F.CFG["smart"] = None
-            SM.set_resume_task(False)
+            self.run_quick("smart", lambda log, p: SM.set_resume_task(False), silent=True)  # 7.1.1: фоном
             return
         if (s.pending or {}).get("do") == "reboot":
             s.ok()
@@ -1530,6 +1540,9 @@ class Main(QWidget):
             self._titled = True
             dark_titlebar(self)
         super().showEvent(e)
+        if getattr(self, "_build_waiting", False):  # 7.1.1: фонова побудова чекала, поки вікно покажуть
+            self._build_waiting = False
+            QTimer.singleShot(self.BUILD_DELAY_MS, self._build_pages)
 
     def hideEvent(self, e):
         super().hideEvent(e)

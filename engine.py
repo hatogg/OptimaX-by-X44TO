@@ -31,7 +31,7 @@ from i18n import tr, tweak_text
 APP_NAME = "OptimaX"
 AUTHOR = "X44TO"
 APP_TITLE = f"{APP_NAME} by {AUTHOR}"
-VERSION = "7.1.0"
+VERSION = "7.1.1"
 IS_WIN = sys.platform == "win32"
 DRY_RUN = (not IS_WIN) or ("--dry-run" in sys.argv)
 DEMO = os.environ.get("OPTIMAX_DEMO", "gaming")  # демо-залізо поза Windows: gaming/laptop/old/x3d/xeon
@@ -118,6 +118,8 @@ CANCEL = _CurrentCancel()
 
 if IS_WIN:
     SF.pin_environment()  # ComSpec, ProgramData, PSModulePath… — справжні, а не перевизначені користувачем
+    if not DRY_RUN:
+        SF.pin_temp()  # 7.1.1: тимчасові файли процесу з правами адміністратора — у захищеній папці
 APPDATA = os.environ.get("APPDATA") or os.path.expanduser("~")
 DATA_DIR = os.path.join(APPDATA, APP_NAME)
 CREATE_NO_WINDOW = 0x08000000
@@ -320,14 +322,18 @@ def as_list(x):
     return x if isinstance(x, list) else ([x] if x else [])
 
 
-def stream(cmd: str, log: Callable, parse: Callable, timeout: int = 1800, enc: Optional[str] = None) -> bool:
-    """Довга команда з порядковим виводом (SFC, DISM, defrag)."""
+def stream(cmd, log: Callable, parse: Callable, timeout: int = 1800, enc: Optional[str] = None) -> bool:
+    """Довга команда з порядковим виводом (SFC, DISM, defrag). cmd — рядок (через cmd.exe) або список аргументів."""
     if DRY_RUN:
-        log(f"  [dry-run] {cmd}")
+        log(f"  [dry-run] {cmd if isinstance(cmd, str) else subprocess.list2cmdline(cmd)}")
         return True
+    if isinstance(cmd, list) and cmd:
+        # 7.1.1: список — без cmd.exe: жоден аргумент (наприклад, диск) не розбирається як команда
+        cmd = [SF.sysexe(cmd[0])] + list(cmd[1:])
     try:
-        p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                             encoding=enc or OEM, errors="replace", creationflags=CREATE_NO_WINDOW, cwd=_child_cwd())
+        p = subprocess.Popen(cmd, shell=isinstance(cmd, str), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             text=True, encoding=enc or OEM, errors="replace", creationflags=CREATE_NO_WINDOW,
+                             cwd=_child_cwd())
     except Exception as e:
         log(tr("e.stream_fail", err=e))
         return False
@@ -692,19 +698,21 @@ class Journal:
     def put(self, tid: str, undo: list, title: str = None, group: str = None) -> None:
         with self.lock:
             old = self.data["applied"].get(tid)
-            if old is not None and old.get("partial"):
+            if old is not None:
                 # 6.17: після часткового відкату в записі лишилися лише кроки, що не повернулися. Повторне
                 # застосування знову змінило й решту — дописуємо їхні записи (найперший знімок кожного параметра
                 # лишається), інакше ці зміни вже ніщо не поверне.
+                # 7.1.1: так само й для повного запису: динамічні твіки (msi_gpu, disable_nagle, amd_ulps, задачі
+                # NVIDIA) при повторному застосуванні змінюють нові пристрої й задачі — їхні записи раніше губилися.
                 have = {self._rec_key(r) for r in old["undo"]}
                 extra = [r for r in undo if self._rec_key(r) not in have]
                 if extra:
-                    old["undo"] = list(old["undo"]) + extra
+                    prev = list(old["undo"])
+                    live = [r for r in extra if r.get("t") == "live"]  # оновлення (Провідник…) — як і раніше, останнім
+                    old["undo"] = live + prev + [r for r in extra if r.get("t") != "live"]
                     if not self._save():
-                        old["undo"] = old["undo"][:-len(extra)]
+                        old["undo"] = prev
                         raise JournalError(self.save_error)
-                return
-            if old is not None:  # повторне застосування: зберігаємо найперший знімок
                 return
             entry = {"ts": int(time.time()), "undo": list(undo)}
             if title:
@@ -1025,11 +1033,13 @@ class Ctx:
         self.appx_done: dict = {}
         self.failed: list = []  # кроки поточної оптимізації, що не вдалися (команда, служба, живлення…)
         self.live = None  # LiveState: справжній стан системи — «вже застосовано, нічого не змінюю» (apply_tweaks)
+        self.scheme = None  # 7.1.1: активна схема живлення для ряду операцій «pw» поспіль (exec_op)
 
     def begin(self, track: bool = False) -> None:
         """track — кожен запис відкату одразу потрапляє в попередній запис журналу (Journal.begin/note)."""
         self.undo = UndoLog(self.journal.note if track else None)
         self.failed = []
+        self.scheme = None
 
     def fail(self, what: str) -> None:
         """Крок не вдався, але решту оптимізації можна лишити: у підсумку вона буде «частково», а не «готово»."""
@@ -1040,7 +1050,9 @@ class Ctx:
         if self._tasks is False:
             self._tasks = None
             if IS_WIN:
-                names = {p.lower() for p, en in all_tasks().items() if en}
+                # 7.1.1: знімок LiveState пакета (apply_tweaks уже читав усі задачі) — без другого обходу планувальника
+                got = self.live.tasks() if self.live is not None else None
+                names = {p.lower() for p, en in (got if got is not None else all_tasks()).items() if en}
                 if names:
                     self._tasks = names
         return self._tasks
@@ -1150,6 +1162,8 @@ def reg_matches(cur, value) -> bool:
 
 def exec_op(op, ctx: Ctx) -> None:
     k, log = op[0], ctx.log
+    if k != "pw":
+        ctx.scheme = None  # 7.1.1: будь-яка інша операція могла перемкнути схему живлення (f_ultimate, powercfg)
     if k == "reg":
         _, path, name, value, rt = op
         if callable(value):
@@ -1167,12 +1181,18 @@ def exec_op(op, ctx: Ctx) -> None:
     elif k == "regdel":
         _, path, name = op
         old = reg_get(path, name)
+        rec = None
         if old is not None:
-            ctx.undo.append({"t": "reg", "p": path, "n": name, "old": [old[0], _enc(old[1])]})
+            rec = {"t": "reg", "p": path, "n": name, "old": [old[0], _enc(old[1])]}
+            ctx.undo.append(rec)
         if DRY_RUN:
             log(f"  [dry-run] reg delete {path} \\ {name}")
-        else:
+        elif rec is not None:
             reg_del_value(path, name)
+            if reg_get(path, name) is not None:  # 7.1.1: перевіряємо справжній результат, як і для запису
+                log(tr("e.reg_verify", path=path, name=name))
+                ctx.fail(f"reg {name}")
+                ctx.undo.discard(rec)  # значення лишилося як було — повертати нічого
     elif k == "kv":
         _, path, name, key, value = op
         old = reg_get(path, name)
@@ -1199,9 +1219,10 @@ def exec_op(op, ctx: Ctx) -> None:
         if old == start:
             return
         ctx.undo.append({"t": "svc", "n": name, "old": old})
+        # 7.1.1: списки аргументів, без cmd.exe — %ЗМІННІ% середовища користувача в імені не розгортаються
         if start == "disabled":
-            run(f"sc stop {name}", 12, log)
-        rc, out = run(f"sc config {name} start= {start}", 12, log)
+            run(["sc", "stop", name], 12, log)
+        rc, out = run(["sc", "config", name, "start=", start], 12, log)
         # 6.14: «[DISABLED] ім'я» лише тоді, коли режим справді змінився (захищену службу Windows не дає змінити)
         now = start if DRY_RUN else svc_get_start(name)
         if rc != 0 or now != start:
@@ -1216,12 +1237,14 @@ def exec_op(op, ctx: Ctx) -> None:
                 continue
             rec = {"t": "task", "n": tn}
             ctx.undo.append(rec)  # 6.17: запис відкату — до зміни (аварія посередині не лишить задачу без запису)
-            rc, _ = run(f'schtasks /Change /Disable /TN "{tn}"', 15, log)
+            # 7.1.1: список аргументів, без cmd.exe: ім'я задачі (її могла створити програма користувача) — лише дані
+            rc, _ = run(["schtasks", "/Change", "/Disable", "/TN", tn], 15, log, stoppable=False)
             if rc == 0:
                 n += 1
             else:
-                ctx.undo.discard(rec)
-                if en is not None:  # задача точно є й увімкнена, але вимкнути не вдалося
+                if rc != TIMEOUT_RC:
+                    ctx.undo.discard(rec)
+                if en is not None or rc == TIMEOUT_RC:  # задача точно є й увімкнена, але вимкнути не вдалося
                     ctx.fail(f"task {tn}")
         log(tr("e.tasks_disabled", n=n))
     elif k == "cmd":
@@ -1244,7 +1267,10 @@ def exec_op(op, ctx: Ctx) -> None:
             ctx.undo.discard(rec)
     elif k == "pw":
         _, sub, setting, value, mode = op
-        g = active_scheme()
+        # 7.1.1: активну схему читаємо один раз на ряд параметрів живлення поспіль (кеш скидає будь-яка інша
+        # операція — вона могла перемкнути схему), а не окремим powercfg для кожного параметра
+        g = ctx.scheme or active_scheme()
+        ctx.scheme = g
         old = pw_get(g, sub, setting, mode)
         if old is None and not DRY_RUN:
             # 6.14: старе значення не прочиталося — параметр не змінюємо: його не було б як повернути
@@ -1253,9 +1279,12 @@ def exec_op(op, ctx: Ctx) -> None:
         rec = {"t": "pw", "g": g, "s": sub, "st": setting, "old": old, "m": mode}
         ctx.undo.append(rec)  # запис відкату — до зміни, як і для реєстру
         verb = "-setdcvalueindex" if mode == "dc" else "-setacvalueindex"
-        rc, _ = run(f"powercfg {verb} {g} {sub} {setting} {value}", 10, log)
+        rc, _ = run(f"powercfg {verb} {g} {sub} {setting} {value}", 10, log, stoppable=False)
         if rc != 0:
-            ctx.undo.remove(rec)  # нічого не змінилося — і повертати нічого
+            # 7.1.1: discard (через попередній запис журналу), а не list.remove; за тайм-аутом запис лишається —
+            # зміна могла відбутися
+            if rc != TIMEOUT_RC:
+                ctx.undo.discard(rec)  # нічого не змінилося — і повертати нічого
             log(tr("e.pw_na", setting=setting))
             ctx.fail(f"powercfg {setting}")
             return
@@ -1264,14 +1293,19 @@ def exec_op(op, ctx: Ctx) -> None:
         _, src, dest = op
         if SF.system_target(os.path.dirname(dest)):  # «папка гри» з налаштувань веде в Windows (чи це посилання туди)
             raise RuntimeError(tr("e.file_system", path=dest))
+        # 7.1.1: папка гри береться з settings.json, а копіює OptimaX з правами адміністратора. Посилання (junction,
+        # symlink) на шляху могло б завести копію в чужу папку (Program Files іншої програми) — таке не виконуємо.
+        # Саму Program Files не забороняємо: Steam і його ігри законно лежать у Program Files (x86).
+        if _has_link(os.path.dirname(dest)):
+            raise RuntimeError(tr("e.file_link", path=dest))
         sha = file_sha256(src)
         bak = None
-        if os.path.exists(dest):
-            if file_sha256(dest) == sha:
+        if os.path.lexists(dest):
+            if not SF.is_reparse(dest) and file_sha256(dest) == sha:
                 return  # там уже такий самий файл — змінювати й повертати нічого
             bak = dest + ".optimax-bak"
             n = 1
-            while os.path.exists(bak):
+            while os.path.lexists(bak):  # lexists: і «зависле» посилання — теж зайняте ім'я
                 n += 1
                 bak = f"{dest}.optimax-bak{n}"
         ctx.undo.append({"t": "file", "p": dest, "sha": sha, "bak": bak})
@@ -1279,11 +1313,12 @@ def exec_op(op, ctx: Ctx) -> None:
             log(f"  [dry-run] copy {os.path.basename(src)} → {dest}")
             return
         tmp = dest + ".optimax-tmp"
-        if os.path.exists(tmp):  # залишок попередньої спроби, перерваної аварією
-            os.remove(tmp)
         if bak:
             os.replace(dest, bak)
-        shutil.copyfile(src, tmp)
+        # 7.1.1: тимчасовий файл — лише новий (x): залишок попередньої спроби чи підкинуте посилання на його місці
+        # прибирається, а не дописується (copyfile пішов би за посиланням)
+        with open(src, "rb") as fs, SF.remove_then_create(tmp, "wb") as fd:
+            shutil.copyfileobj(fs, fd)
         os.replace(tmp, dest)
     elif k == "fn":
         op[1](ctx)
@@ -1320,6 +1355,8 @@ def _undo_record(rec: dict, log: Callable, deferred: set = None) -> None:
     elif t == "reg":
         if rec["old"] is None:
             reg_del_value(rec["p"], rec["n"])
+            if reg_get(rec["p"], rec["n"]) is not None:  # 7.1.1: не видалилося — запис лишається в журналі
+                raise RuntimeError(f"reg delete {rec['p']}\\{rec['n']}")
         else:
             reg_set(rec["p"], rec["n"], _dec(rec["old"][1]), rec["old"][0])
     elif t == "svc":
@@ -1384,8 +1421,10 @@ def _undo_file(rec: dict, log: Callable) -> None:
     path, bak = rec["p"], rec.get("bak")
     if SF.system_target(path):  # 6.17: OptimaX кладе файли лише в папки ігор — системний шлях означає підкинутий запис
         raise ValueError(tr("e.undo_bad", what=path[:80]))
+    if _has_link(os.path.dirname(path)):  # 7.1.1: папку гри відтоді підмінили посиланням — за ним не йдемо
+        raise RuntimeError(tr("e.file_link", path=path))
     tmp = path + ".optimax-tmp"
-    if os.path.exists(tmp):
+    if os.path.lexists(tmp):
         os.remove(tmp)
     if os.path.exists(path):
         if rec.get("sha") and file_sha256(path) != rec["sha"]:
@@ -1438,7 +1477,11 @@ def explorer_start(log=None) -> None:
         _, out = run('tasklist /fi "imagename eq explorer.exe" /nh', 8, ro=True)
         if "explorer.exe" in out.lower():
             return
-    subprocess.Popen(["explorer.exe"], creationflags=CREATE_NO_WINDOW)
+    # 7.1.1: за повним шляхом (за самим ім'ям Windows шукає й у папці OptimaX.exe та поточній) і зі звичайними
+    # правами користувача — оболонка, запущена з правами адміністратора, передавала б їх усьому, що з неї відкрито
+    exe = SF.explorer_exe()
+    if not start_as_user(exe, log=log):
+        subprocess.Popen([exe], creationflags=CREATE_NO_WINDOW, cwd=_child_cwd())
 
 
 def restart_explorer(log=None) -> None:
@@ -1656,6 +1699,18 @@ def process_path(pid: int):
     return None
 
 
+def _has_link(path: str) -> bool:
+    """Посилання (junction, symlink) будь-де на шляху до папки, крім кореня диска."""
+    p = os.path.abspath(path)
+    while True:
+        parent = os.path.dirname(p)
+        if parent == p:
+            return False
+        if SF.is_reparse(p):
+            return True
+        p = parent
+
+
 def clean_dir(path: str) -> int:
     """Видаляє вміст папки (зайняті файли пропускає). -> звільнено байтів."""
     freed = 0
@@ -1666,27 +1721,60 @@ def clean_dir(path: str) -> int:
     # Rescue), посилання на місці папки й корінь диска не чистимо ніколи.
     real = os.path.realpath(path)
     own = SF.data_root()
-    if SF.is_reparse(path) or os.path.dirname(real) == real or (own and SF.is_under(real, os.path.realpath(own))):
+    if _has_link(path) or os.path.dirname(real) == real or (own and SF.is_under(real, os.path.realpath(own))):
         return 0
-    for root, dirs, files in os.walk(path, topdown=False):
-        for f in files:
-            fp = os.path.join(root, f)
+    # 7.1.1: обхід зверху вниз без заходу в посилання. os.walk(topdown=False) заходив у junction усередині папки
+    # (is_symlink() для junction — False), і програма користувача могла так видалити будь-яку папку з правами
+    # адміністратора: досить створити %TEMP%\x → C:\Program Files\…
+    stack, dirs_seen = [path], []
+    while stack:
+        cur = stack.pop()
+        try:
+            entries = list(os.scandir(cur))
+        except OSError:
+            continue
+        for e in entries:
+            fp = e.path
+            if SF.is_reparse(fp):
+                for rm in (os.rmdir, os.remove):  # саме посилання (junction — rmdir), не те, куди воно веде
+                    try:
+                        rm(fp)
+                        break
+                    except OSError:
+                        pass
+                continue
+            if e.is_dir(follow_symlinks=False):
+                stack.append(fp)
+                dirs_seen.append(fp)
+                continue
             try:
-                sz = os.path.getsize(fp)
+                sz = e.stat(follow_symlinks=False).st_size
                 os.remove(fp)
                 freed += sz
             except OSError:
                 pass
-        for d in dirs:
-            try:
-                os.rmdir(os.path.join(root, d))
-            except OSError:
-                pass
+    for d in reversed(dirs_seen):
+        try:
+            os.rmdir(d)
+        except OSError:
+            pass
     return freed
 
 
 def _env(p: str) -> str:
     return os.path.expandvars(p)
+
+
+def _user_temp() -> str:
+    """Тимчасова папка користувача для очищення (7.1.1): не змінна TEMP — вона вказує на захищену папку OptimaX."""
+    return SF.user_temp() or os.environ.get("TEMP", "")
+
+
+def _system_drive() -> str:
+    """7.1.1: системний диск ("C:") — з папки Windows (Windows API), а не зі змінної SystemDrive, яку користувач
+    може перевизначити: вона потрапляла в рядок команди cmd.exe (chkdsk, defrag) з правами адміністратора."""
+    d = os.path.splitdrive(SF.windows_dir())[0] if IS_WIN else ""
+    return d if re.fullmatch(r"[A-Za-z]:", d or "") else "C:"
 
 
 class _PowerThrottling(ctypes.Structure):
@@ -1745,13 +1833,19 @@ def f_ultimate(ctx: Ctx) -> None:
     new, created = ensure_ultimate(log)
     if new == HIGH_PERF:
         log(tr("e.plan_fallback"))
-    rc, out = run(f"powercfg -setactive {new}", 15, log)
-    if rc != 0:
-        log(tr("e.plan_fail", msg=first_line(out)))
-        return
+    # 7.1.1: записи відкату — до зміни. Створену схему прибираємо при відкаті й тоді, коли перемкнутися на неї не
+    # вдалося: вона вже є в системі.
     if created:
         ctx.undo.append({"t": "cmd", "c": f"powercfg -delete {new}"})
-    ctx.undo.append({"t": "cmd", "c": f"powercfg -setactive {old}"})
+    rec = {"t": "cmd", "c": f"powercfg -setactive {old}"}
+    ctx.undo.append(rec)
+    rc, out = run(f"powercfg -setactive {new}", 15, log, stoppable=False)
+    if rc != 0:
+        log(tr("e.plan_fail", msg=first_line(out)))
+        ctx.fail("powercfg -setactive")
+        if rc != TIMEOUT_RC:
+            ctx.undo.discard(rec)
+        return
     log(tr("e.plan_active", guid=new))
 
 
@@ -1798,8 +1892,11 @@ def f_pagefile(ctx: Ctx) -> None:
 
 @cmd_doc("Set-MpPreference -DisableRealtimeMonitoring $true")
 def f_defender(ctx: Ctx) -> None:
-    rc, _ = ps("Set-MpPreference -DisableRealtimeMonitoring $true", 25, ctx.log)
-    ctx.undo.append({"t": "ps", "c": "Set-MpPreference -DisableRealtimeMonitoring $false"})
+    rec = {"t": "ps", "c": "Set-MpPreference -DisableRealtimeMonitoring $false"}
+    ctx.undo.append(rec)  # 7.1.1: запис відкату — до зміни
+    rc, _ = ps("Set-MpPreference -DisableRealtimeMonitoring $true", 25, ctx.log, stoppable=False)
+    if rc not in (0, TIMEOUT_RC):  # команда відмовила — нічого не змінено
+        ctx.undo.discard(rec)
     if DRY_RUN:
         return
     # «Захист від підробки» мовчки відкидає зміну, і Set-MpPreference при цьому часто повертає 0 — перечитуємо
@@ -1811,15 +1908,31 @@ def f_defender(ctx: Ctx) -> None:
 
 @cmd_doc("Set-MpPreference -ScanAvgCPULoadFactor 20 -EnableLowCpuPriority $true -ScanOnlyIfIdleEnabled $true")
 def f_defender_limit(ctx: Ctx) -> None:
-    old = ps_json("$p=Get-MpPreference; @{a=$p.ScanAvgCPULoadFactor; b=$p.EnableLowCpuPriority; "
-                  "c=$p.ScanOnlyIfIdleEnabled} | ConvertTo-Json -Compress", 30) or {}
-    a = int(old.get("a") or 50)
-    b = "$true" if old.get("b") else "$false"
-    c = "$false" if old.get("c") is False else "$true"
-    ctx.undo.append({"t": "ps", "c": f"Set-MpPreference -ScanAvgCPULoadFactor {a} -EnableLowCpuPriority {b} "
-                                     f"-ScanOnlyIfIdleEnabled {c}"})  # 6.17: запис — до зміни
-    ps("Set-MpPreference -ScanAvgCPULoadFactor 20 -EnableLowCpuPriority $true -ScanOnlyIfIdleEnabled $true",
-       30, ctx.log)
+    if not IS_WIN:  # демо: значень Defender немає — типові
+        old = {"a": 50, "b": False, "c": True}
+    else:
+        old = ps_json("$p=Get-MpPreference; @{a=$p.ScanAvgCPULoadFactor; b=$p.EnableLowCpuPriority; "
+                      "c=$p.ScanOnlyIfIdleEnabled} | ConvertTo-Json -Compress", 30)
+    # 7.1.1: старі значення не прочиталися (Defender вимкнено, інший антивірус) — нічого не змінюємо. Раніше
+    # у запис відкату йшли вигадані «типові» значення замість ваших.
+    if not (isinstance(old, dict) and isinstance(old.get("a"), int) and not isinstance(old.get("a"), bool)
+            and isinstance(old.get("b"), bool) and isinstance(old.get("c"), bool)):
+        ctx.log(tr("e.skipped", why="Get-MpPreference", cmd="Set-MpPreference"))
+        ctx.fail("defender limit")
+        return
+    a = max(0, min(100, old["a"]))
+    b = "$true" if old["b"] else "$false"
+    c = "$true" if old["c"] else "$false"
+    rec = {"t": "ps", "c": f"Set-MpPreference -ScanAvgCPULoadFactor {a} -EnableLowCpuPriority {b} "
+                           f"-ScanOnlyIfIdleEnabled {c}"}
+    ctx.undo.append(rec)  # 6.17: запис — до зміни
+    rc, out = ps("Set-MpPreference -ScanAvgCPULoadFactor 20 -EnableLowCpuPriority $true -ScanOnlyIfIdleEnabled $true",
+                 30, ctx.log, stoppable=False)
+    if rc != 0:  # 7.1.1: код повернення перевіряємо
+        ctx.log(tr("e.skipped", why=first_line(out, 60) or tr("e.code", rc=rc), cmd="Set-MpPreference"))
+        ctx.fail("defender limit")
+        if rc != TIMEOUT_RC:
+            ctx.undo.discard(rec)
 
 
 @cmd_doc("winget uninstall Microsoft.OneDrive / OneDriveSetup.exe /uninstall")
@@ -1828,16 +1941,25 @@ def f_onedrive(ctx: Ctx) -> None:
     run("taskkill /f /im OneDrive.exe", 8, log)
     if not DRY_RUN:
         time.sleep(1)
-    rc, _ = run("winget uninstall --id Microsoft.OneDrive --silent --accept-source-agreements", 120, log)
+    # 7.1.1: запис відкату — до видалення (тайм-аут чи аварія посередині інакше лишали OneDrive без запису); прибираємо
+    # його, лише якщо жоден спосіб видалення точно не спрацював — і тоді результат «частково», а не «готово»
+    rec = {"t": "cmd", "c": "winget install -e --id Microsoft.OneDrive --silent "
+                            "--accept-package-agreements --accept-source-agreements"}
+    ctx.undo.append(rec)
+    rc, _ = run("winget uninstall --id Microsoft.OneDrive --silent --accept-source-agreements", 120, log,
+                stoppable=False)
+    codes = [rc]
     if rc == 0:
         log(tr("e.od_winget"))
     else:
         log(tr("e.od_classic"))
         for exe in (r"%SystemRoot%\SysWOW64\OneDriveSetup.exe", r"%SystemRoot%\System32\OneDriveSetup.exe"):
-            run(f'"{exe}" /uninstall', 60, log)
-        ps("Get-AppxPackage *OneDrive* | Remove-AppxPackage -ErrorAction SilentlyContinue", 90, log)
-    ctx.undo.append({"t": "cmd", "c": "winget install -e --id Microsoft.OneDrive --silent "
-                                      "--accept-package-agreements --accept-source-agreements"})
+            codes.append(run(f'"{exe}" /uninstall', 60, log, stoppable=False)[0])
+        ps("Get-AppxPackage *OneDrive* | Remove-AppxPackage -ErrorAction SilentlyContinue", 90, log, stoppable=False)
+    if 0 not in codes:
+        ctx.fail("onedrive uninstall")
+        if TIMEOUT_RC not in codes:
+            ctx.undo.discard(rec)
 
 
 # Лише служби Windows, без яких система й залізо точно працюють. Версія 6.3 додавала сюди ще всі служби з
@@ -1994,7 +2116,7 @@ NIC_KEYWORDS = ("*EEE", "EEELinkAdvertisement", "AdvancedEEE", "EnableGreenEther
 
 
 def _psq(s: str) -> str:
-    return "'" + str(s).replace("'", "''") + "'"
+    return SF.psq(s)  # 7.1.1: і типографські лапки ‘ ’ ‚ ‛, які PowerShell теж вважає одинарними
 
 
 def _nic_plan_lines(plan: list, undo: bool) -> list:
@@ -2260,16 +2382,19 @@ def f_audio_fx(ctx: Ctx) -> None:
             log(f"  [dry-run] reg {path} \\ {FX_DISABLE} = 1")
             n += 1
             continue
+        # 7.1.1: запис відкату — до зміни; прибираємо його, лише якщо запис у реєстр точно не відбувся
+        rec = {"t": "reg", "p": path, "n": FX_DISABLE, "old": None if old is None else [old[0], _enc(old[1])]}
+        ctx.undo.append(rec)
         try:
             reg_set(path, FX_DISABLE, 1, "dword")
-            ctx.undo.append({"t": "reg", "p": path, "n": FX_DISABLE,
-                             "old": None if old is None else [old[0], _enc(old[1])]})
             n += 1
         except OSError:
+            ctx.undo.discard(rec)
             denied += 1
     log(tr("e.audio_fx", n=n))
     if denied:
         log(tr("e.audio_denied", n=denied))
+        ctx.fail("audio fx")  # 7.1.1: не «готово», якщо частину пристроїв не змінено
     if n:
         run("net stop Audiosrv /y", 30, log)
         run("net start Audiosrv", 30, log)
@@ -2319,8 +2444,7 @@ def f_memory_clean(ctx: Ctx) -> None:
 
 @cmd_doc("chkdsk C: /f")
 def f_chkdsk(ctx: Ctx) -> None:
-    drive = os.environ.get("SystemDrive", "C:")
-    run(f"chkdsk {drive} /f", 25, ctx.log, input_text="Y\n")
+    run(["chkdsk", _system_drive(), "/f"], 25, ctx.log, input_text="Y\n")  # 7.1.1: список, без cmd.exe
     ctx.log(tr("e.chkdsk"))
 
 
@@ -2363,7 +2487,7 @@ def f_clean_junk(ctx: Ctx) -> None:
     if DRY_RUN:
         log("  [dry-run] TEMP, Windows\\Temp, SoftwareDistribution\\Download, Edge")
         return
-    for p in (os.environ.get("TEMP"), _env(r"%SystemRoot%\Temp")):
+    for p in (_user_temp(), _env(r"%SystemRoot%\Temp")):
         freed += clean_dir(p)
     run("ie4uinit.exe -ClearIconCache", 15, log)
     log(tr("e.wu_cache"))
@@ -2387,17 +2511,21 @@ def f_hibernation_off(ctx: Ctx) -> None:
     """Раніше відкат завжди робив «powercfg -h on» — навіть якщо гібернацію ви вимкнули самі: після відкату
     з'являвся файл hiberfil.sys на кілька гігабайтів."""
     cur = reg_get(POWER_KEY, "HibernateEnabled")
-    hiberfil = os.path.join(os.environ.get("SystemDrive", "C:") + "\\", "hiberfil.sys")
+    hiberfil = os.path.join(_system_drive() + "\\", "hiberfil.sys")
     # гібернація справді ввімкнена лише тоді, коли є hiberfil.sys: на віртуальних машинах і ПК без підтримки S4
     # HibernateEnabled буває 1, а «powercfg -h on» потім не спрацює
     if (cur is not None and not cur[1]) or (IS_WIN and not os.path.exists(hiberfil)):
         ctx.log(tr("e.hib_off_already"))
         return
-    rc, out = run("powercfg -h off", 30, ctx.log)
-    if rc == 0:
-        ctx.undo.append({"t": "cmd", "c": "powercfg -h on"})
-    else:
+    # 7.1.1: запис відкату — до зміни (тайм-аут чи аварія посеред команди інакше лишали зміну без запису)
+    rec = {"t": "cmd", "c": "powercfg -h on"}
+    ctx.undo.append(rec)
+    rc, out = run("powercfg -h off", 30, ctx.log, stoppable=False)
+    if rc != 0:
         ctx.log(tr("e.skipped", why=first_line(out, 60) or tr("e.code", rc=rc), cmd="powercfg -h off"))
+        ctx.fail("powercfg -h off")
+        if rc != TIMEOUT_RC:
+            ctx.undo.discard(rec)
 
 
 def a_clean_winsxs(ctx: Ctx) -> None:
@@ -3322,7 +3450,7 @@ def a_clean_temp(ctx: Ctx) -> None:
     if DRY_RUN:
         ctx.log("  [dry-run] TEMP, Windows\\Temp, Prefetch")
         return
-    freed = sum(clean_dir(p) for p in (os.environ.get("TEMP"), _env(r"%SystemRoot%\Temp"),
+    freed = sum(clean_dir(p) for p in (_user_temp(), _env(r"%SystemRoot%\Temp"),
                                        _env(r"%SystemRoot%\Prefetch")))
     ctx.log(tr("e.freed_mb", mb=f"{freed / 2**20:.0f}"))
 
@@ -3408,8 +3536,7 @@ def _pct_parser(label: str):
 
 
 def a_optimize_disk(ctx: Ctx) -> None:
-    drive = os.environ.get("SystemDrive", "C:")
-    ok = stream(f"defrag {drive} /O /U /V", ctx.log, _pct_parser("defrag"), 7200)
+    ok = stream(["defrag", _system_drive(), "/O", "/U", "/V"], ctx.log, _pct_parser("defrag"), 7200)
     ctx.log(tr("e.done") if ok else tr("e.disk_warn"))
 
 
@@ -3826,6 +3953,14 @@ def recover_interrupted(log: Callable = lambda *_: None) -> dict:
                     JOURNAL.put(tid, failed, title=w.get("title"), group=w.get("group"))
                 except JournalError:
                     pass
+        elif not w.get("fresh") and JOURNAL.has(tid) and w.get("undo"):
+            # 7.1.1: обірвалося повторне застосування того, що вже є в журналі. Нові зміни цього застосування
+            # (нові пристрої, задачі) дописуємо до запису — інакше їх ніщо не поверне; для вже записаних параметрів
+            # лишається найперший знімок (Journal.put)
+            try:
+                JOURNAL.put(tid, [r for r in w["undo"] if valid_undo(r)], title=w.get("title"), group=w.get("group"))
+            except JournalError:
+                pass
         JOURNAL.abort()
     op = JOURNAL.op()
     if op:

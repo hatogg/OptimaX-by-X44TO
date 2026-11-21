@@ -177,7 +177,7 @@ def run_maintenance(log) -> dict:
     freed = 0
     if not E.DRY_RUN:
         for d in MAINT_DIRS:
-            freed += E.clean_dir(os.path.expandvars(d))
+            freed += E.clean_dir(E._user_temp() if d == "%TEMP%" else os.path.expandvars(d))
     else:
         log("  [dry-run] TEMP, Windows\\Temp, CrashDumps, WER")
     log(tr("e.freed_mb", mb=f"{freed / 2**20:.0f}"))
@@ -185,10 +185,11 @@ def run_maintenance(log) -> dict:
     info = dict(ts=int(time.time()), freed_mb=round(freed / 2**20), reverted=len(g["reverted"]))
     F.CFG["maint_last"] = info
     try:
-        os.makedirs(E.DATA_DIR, exist_ok=True)
-        with open(os.path.join(E.DATA_DIR, "maintenance.log"), "a", encoding="utf-8") as f:
+        # 7.1.1: журнал — у захищеній папці (admin_dir): у %APPDATA% на місці maintenance.log програма користувача
+        # могла поставити посилання, і OptimaX з правами адміністратора дописувала б у будь-який файл
+        with open(os.path.join(E.admin_dir("logs"), "maintenance.log"), "a", encoding="utf-8") as f:
             f.write(time.strftime("%Y-%m-%d %H:%M") + f"  freed={info['freed_mb']}MB reverted={info['reverted']}\n")
-    except OSError:
+    except (OSError, ValueError):
         pass
     log(tr("maint.done"))
     return info

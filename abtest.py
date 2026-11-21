@@ -85,6 +85,11 @@ def rel(x: float, base: float) -> float:
     return (x - base) / base if base else 0.0
 
 
+def _metric_ok(m) -> bool:
+    return isinstance(m, dict) and all(isinstance(m.get(k), (int, float)) and not isinstance(m.get(k), bool)
+                                       for k in ("avg", "low1")) and m["avg"] > 0
+
+
 class Session:
     def __init__(self, live=(), boot=(), other=(), mode: str = "new", provider: str = "gpu", game: str = None):
         self.mode = mode  # new — нові зміни; audit — перевірка вже застосованих
@@ -102,6 +107,7 @@ class Session:
         self.result = None
         self.final = None
         self.pending = None
+        self.checks = []  # 7.1.1: заміри перевірки поточного підозрюваного (винним він стає лише за двома)
         self.events = []  # [(ключ, параметри)] — для журналу в інтерфейсі
         self.ts = int(time.time())
 
@@ -110,10 +116,48 @@ class Session:
         return {k: v for k, v in vars(self).items()}
 
     @classmethod
-    def from_dict(cls, d: dict) -> "Session":
+    def from_dict(cls, d: dict, tweaks: dict = None) -> "Session":
+        """7.1.1: settings.json пише будь-яка програма користувача, а відновлена сесія виконує свою дію pending з
+        правами адміністратора. Тож беремо лише відомі ключі потрібних типів, а id змін — лише з каталогу, не
+        ризиковані, не «лише вручну» й не прибрані; pending — лише з id власного плану сесії, інакше її відкидаємо
+        (next() збудує дію заново з перевірених списків). tweaks — каталог (за замовчуванням engine.BY_ID)."""
+        if tweaks is None:
+            import engine as E
+            tweaks = E.BY_ID
         s = cls()
+        d = d if isinstance(d, dict) else {}
         for k, v in d.items():
-            setattr(s, k, v)
+            if k in _FIELDS and isinstance(v, _FIELDS[k]) and not isinstance(v, bool):
+                setattr(s, k, v)
+        s.events = [e for e in s.events if isinstance(e, (list, tuple)) and len(e) == 2 and isinstance(e[0], str)
+                    and isinstance(e[1], dict)]
+        if s.mode not in ("new", "audit") or s.stage not in _STAGES or s.provider not in ("gpu", "game"):
+            raise ValueError("bad smart session")
+
+        def ok_id(tid) -> bool:
+            t = tweaks.get(tid) if isinstance(tid, str) else None
+            return bool(t) and not (getattr(t, "risky", "") or getattr(t, "retired", "") or getattr(t, "custom", False)
+                                    or not getattr(t, "p", ""))
+        plan = [i for i in s.live + s.boot + s.other if ok_id(i)]
+        live, boot, other = split_plan(plan, tweaks)
+        s.live = [i for i in s.live if i in live]
+        s.boot = [i for i in s.boot if i in boot]
+        s.other = [i for i in s.other if i in plan and i not in s.live + s.boot]
+        own = set(s.live + s.boot + s.other)
+        for k in ("queue", "half", "removed"):
+            setattr(s, k, [i for i in getattr(s, k) if i in own])
+        s.scan_halves = [[i for i in h if i in own] for h in s.scan_halves if isinstance(h, list)]
+        for k in ("base", "after", "probes", "checks"):
+            setattr(s, k, [m for m in getattr(s, k) if _metric_ok(m)])
+        for k in ("current", "final"):
+            if getattr(s, k) is not None and not _metric_ok(getattr(s, k)):
+                setattr(s, k, None)
+        a = s.pending
+        if a is not None:
+            ids = a.get("ids", [])
+            if a.get("do") not in ("measure", "apply", "undo", "reboot") or not isinstance(ids, list) or \
+                    any(i not in own for i in ids) or (a.get("do") in ("apply", "undo") and not ids):
+                s.pending = None
         return s
 
     # ── оцінка ──
@@ -139,11 +183,15 @@ class Session:
         return max(floor, t95(df) * math.sqrt(se2))
 
     def _cmp(self, m: dict, ref: dict) -> str:
-        n = self.noise
+        # 7.1.1: поріг для 1% low — за розкидом самого 1% low, а не «3 × розкид середнього FPS»: 1% low «гуляє»
+        # сильніше, і випадкове коливання часто сприймалося як «без цієї зміни краще»
+        c = cv(self.base, "low1")
+        na, nl = self.noise, (2 * MIN_NOISE if c is None else max(2 * MIN_NOISE, c))
+        ta, tl = max(na * 1.5, 0.02), max(nl * 1.5, 0.04)
         da, dl = rel(m["avg"], ref["avg"]), rel(m["low1"], ref["low1"])
-        if da < -max(n * 1.5, 0.02) or dl < -max(n * 3, 0.04):
+        if da < -ta or dl < -tl:
             return "worse"
-        if da > max(n * 1.5, 0.02) or dl > max(n * 3, 0.04):
+        if da > ta or dl > tl:
             return "better"
         return "same"
 
@@ -309,7 +357,21 @@ class Session:
         elif label_ == "check":
             self.probes.append(m)
             c = self.half[0]
-            if self._cmp(m, self.current) == "better" or (self.overall == "worse" and self.verdict(m) != "worse"):
+            # 7.1.1: один замір проти поточного стану в ~6–9% сесій «знаходив» винною нешкідливу зміну (і писав це в
+            # докази harm). Тепер винна — лише якщо й другий замір без неї кращий за поріг, і медіана обох теж;
+            # перший невдалий замір одразу знімає підозру.
+            self.checks = list(self.checks or []) + [m]
+
+            def gain(x: dict) -> bool:
+                return (self._cmp(x, self.current) == "better"
+                        or (self.overall == "worse" and self.verdict(x) != "worse"))
+            ok = gain(m)
+            if ok and len(self.checks) < 2:
+                return  # стадія confirm лишається: next() попросить другий замір
+            m = mean_metric(self.checks)
+            ok = ok and gain(m)
+            self.checks = []
+            if ok:
                 self.removed.append(c)
                 self.current = self.final = m
                 self._log("sm.ev_culprit", id=c)
@@ -337,6 +399,16 @@ class Session:
                     kept=[i for i in self.live + self.boot + self.other if i not in self.removed],
                     measured=[i for i in self.live + self.boot if i not in self.removed],
                     measures=len(self.base) + len(self.after) + len(self.probes), ts=self.ts)
+
+
+# 7.1.1: що можна відновити з settings.json, і якого типу
+_STAGES = ("init", "base", "apply", "reboot", "after", "scan", "search", "probe", "reapply", "confirm", "restore",
+           "done")
+_OPT_STR, _OPT_DICT = (str, type(None)), (dict, type(None))
+_FIELDS = {"mode": str, "provider": str, "game": _OPT_STR, "live": list, "boot": list, "other": list, "stage": str,
+           "base": list, "after": list, "probes": list, "current": _OPT_DICT, "overall": _OPT_STR, "queue": list,
+           "half": list, "removed": list, "scan_halves": list, "scan_i": int, "purpose": _OPT_STR, "rounds": int,
+           "result": _OPT_STR, "final": _OPT_DICT, "pending": _OPT_DICT, "checks": list, "events": list, "ts": int}
 
 
 def update_evidence(ev: dict, sm: dict, now: int = None) -> dict:

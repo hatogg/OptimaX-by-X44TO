@@ -730,4 +730,32 @@ STRINGS = {
                       "Card: {gpu}, driver {driver}, DirectX 12: {dx12}, Vulkan: {vk}, monitor: {display}"),
     "rep.gpu_game": ("{game}: режим «{mode}», перевірка: {verdict}", "{game}: режим «{mode}», проверка: {verdict}",
                      "{game}: “{mode}” mode, check: {verdict}"),
+
+    # ── 7.1.1 ──
+    "sc.link_skip": ("  ⚠ Пропущено (посилання чи шлях поза папками кешу): {path}",
+                     "  ⚠ Пропущено (ссылка или путь вне папок кэша): {path}",
+                     "  ⚠ Skipped (a link or a path outside the cache folders): {path}"),
+    "gb.fm_untrusted": ("FurMark лежить поза Program Files ({path}) — з правами адміністратора OptimaX його не "
+                        "запускає: туди може писати будь-яка програма. Перевстановіть FurMark кнопкою «Встановити».",
+                        "FurMark лежит вне Program Files ({path}) — с правами администратора OptimaX его не "
+                        "запускает: туда может писать любая программа. Переустановите FurMark кнопкой «Установить».",
+                        "FurMark is outside Program Files ({path}) — OptimaX won't run it as administrator: any "
+                        "program can write there. Reinstall FurMark with the Install button."),
+    "gb.fm_exit": ("  ✗ FurMark завершився з кодом {rc}", "  ✗ FurMark завершился с кодом {rc}",
+                   "  ✗ FurMark exited with code {rc}"),
+    "gt.tune.wrong_gpu": ("Стрес-тест малювала інша відеокарта — про стабільність цієї він нічого не каже. Повернуто "
+                          "заводські значення.",
+                          "Стресс-тест рисовала другая видеокарта — о стабильности этой он ничего не говорит. "
+                          "Возвращены заводские значения.",
+                          "The stress test ran on another graphics card, so it says nothing about this one. Factory "
+                          "values restored."),
+    "hwc.f.nothing_tested": ("Пам'ять не вдалося виділити — перевірено 0 МБ. Закрийте програми й спробуйте ще раз.",
+                             "Память не удалось выделить — проверено 0 МБ. Закройте программы и попробуйте ещё раз.",
+                             "Could not allocate memory — 0 MB tested. Close some programs and try again."),
+    "hwc.f.disk_link": ("Папка {dir} у корені диска — посилання або створена іншим користувачем. Тест не запущено; "
+                        "видаліть цю папку й повторіть.",
+                        "Папка {dir} в корне диска — ссылка или создана другим пользователем. Тест не запущен; "
+                        "удалите эту папку и повторите.",
+                        "The {dir} folder at the drive root is a link or was created by another user. The test did "
+                        "not run; delete that folder and try again."),
 }

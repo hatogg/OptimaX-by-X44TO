@@ -2,6 +2,57 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [7.1.1] — 2026-11-21
+
+Виправлення за повним аудитом коду (п'ять незалежних перевірок: ядро й відкат, безпека, відеокарта й залізо,
+вимірювання, інтерфейс). Нових функцій немає — лише безпека, чесність результатів і швидкодія.
+
+### Виправлено — безпека
+
+- **Тимчасові файли процесу з правами адміністратора — у захищеній папці.** TEMP/TMP OptimaX і її тестів (результати тестів, профіль WPR, звіт батареї, перевірка відеокарти) тепер `%ProgramData%\OptimaX\tmp`, куди звичайні програми не пишуть. Раніше будь-яка програма користувача могла підмінити файл між записом і читанням або поставити посилання на місці файлу, який OptimaX перезаписувала чи видаляла.
+- **Очищення тимчасових файлів не йде за посиланнями.** Junction усередині %TEMP% більше не дозволяє видалити вміст будь-якої папки (наприклад, у Program Files); посилання будь-де на шляху — папка не чиститься. Папка користувача береться з Windows API, а не зі змінної TEMP.
+- **Кеш шейдерів:** резервна копія — у захищеній папці, а шляхи відновлення ніколи не беруться з файлу (раніше підкинутий index.txt дозволяв покласти файл будь-куди, зокрема в System32); папки-посилання пропускаються.
+- **Підроблений «журнал відкату».** Папку в ProgramData, створену чужим користувачем до першого запуску OptimaX, програма відкладає вбік і створює нову, а не захищає разом з підкинутим вмістом.
+- **Програми лише за повним шляхом із довіреного місця:** explorer.exe, rstrui.exe, cctk.exe (Dell), FurMark і тести з winget / HKCU; програми не з Program Files запускаються зі звичайними правами. `SystemDrive`, `ProgramFiles`, `LOCALAPPDATA` теж закріплені на справжніх значеннях.
+- **Команди без оболонки:** chkdsk, оптимізація диска, sc і schtasks у твіках — списком аргументів, а не рядком для cmd.exe (назву задачі чи `SystemDrive` не можна перетворити на команду).
+- **Лапки PowerShell:** ‘ ’ ‚ ‛ PowerShell теж вважає одинарними лапками — тепер вони екрануються всюди.
+- **OptimaX-Rescue.cmd** не розкриває змінних середовища: справжня ProgramData читається з HKLM, шляхи до find.exe і explorer.exe записуються буквально. Аварійний відкат тепер повертає й DNS фільтра реклами.
+- **Фільтр реклами (DNS):** окремий обмежений пул для TCP (16 з'єднань, 3 с простою) — 48 «мовчазних» з'єднань більше не зупиняють DNS усього ПК; відповідь сервера звіряється з адресою, власним ID і питанням.
+- **Режим гри** не відновлює пріоритет REALTIME і чужі процеси зі settings.json; **A/B-сесія** зі settings.json не застосує ризикований твік; **базовий знімок** перевіряє тип і значення перед записом у реєстр.
+- **Відлагоджувач (cdb)** не підвантажує розширення зі змінних `_NT_*`; **DNS / DoH** повертаються повністю (DoH-шаблони теж); **звіт про помилку** ховає IP-адреси й токен телефонного монітора; **оновлення** без прав адміністратора не можна підмінити між перевіркою й запуском.
+- **CI:** пароль сертифіката підпису — лише в кроці збірки інсталятора, файл сертифіката видаляється одразу після; архіви Mesa і DXVK без контрольної суми GitHub не потрапляють у збірку.
+
+### Виправлено — чесні результати
+
+- **Фрізи довші за секунду** більше не випадають зі статистики FPS (avg, 1% / 0.1% low, ривки); пауза понад 10 с (alt-tab) рахується окремо.
+- **Перерваний чи завислий замір FPS** не зберігається як «до / після», а сесія ETW PresentMon закривається.
+- **Кілька swapchain** (лаунчер, відео) не змішуються з грою — береться найбільший потік кадрів.
+- **A/B-тест** підтверджує винуватця другим заміром, а поріг для 1% low — за його власним розкидом (менше «винних» нешкідливих твіків).
+- **Латентність:** пізні події ETW більше не створюють «фантомних» секунд.
+- **Андервольт:** Intel 10–13-го покоління для ноутбуків (i5-1135G7, i7-1255U…) більше не вважаються розблокованими.
+- **Автопідбір андервольту** зупиняється, якщо тест ішов на іншій відеокарті (раніше нестабільний профіль міг стати «перевіреним»); тест «висне» понад 30 с — це збій.
+- **Вентилятори** повертаються в авто для всіх, які змінювалися; **дві однакові відеокарти** (2× P106) більше не плутаються при скиданні й після збою.
+- **Тест пам'яті / VRAM,** що нічого не перевірив, — «Н/Д», а не «Пройдено»; FurMark без результату — не «готово».
+- **Журнал:** повторне застосування твіку зберігає відкат для нових пристроїв; запис відкату — до зміни (Ultimate Performance, Defender, OneDrive, аудіоефекти, гібернація); тайм-аут не стирає запис; видалення значення реєстру перевіряється.
+
+### Змінено — швидкодія
+
+- **У треї майже не навантажує процесор:** головна сторінка не анімується, коли вікно сховане (було ~150 оновлень на секунду), налаштування відеокарти, CPU-Z і фільтр реклами не опитуються у згорнутому вікні.
+- **Запуск у трей** (`--tray`) не будує сторінки, доки вікно не відкрили; пошук winget і обкладинок ігор Steam більше не підвішує вікно.
+- **Менше процесів:** схема живлення й задачі планувальника читаються один раз за пакет; температура NVIDIA — без повторної ініціалізації NVML кожні 3 с; підрахунок помилок VRAM — без побайтового циклу; settings.json не перезаписується без змін.
+
+<details>
+<summary>English</summary>
+
+Fixes from a full code audit (five independent reviews: core and rollback, security, GPU and hardware, measurements, UI). No new features — security, honest results and performance only.
+
+**Security:** temp files of the elevated process and its tests now live in a protected `%ProgramData%\OptimaX\tmp`; temp cleanup no longer follows junctions and takes the user's temp folder from the Windows API; the shader-cache backup is protected and restore targets never come from a file; a pre-planted ProgramData folder is quarantined instead of hardened in place; explorer.exe, rstrui.exe, cctk.exe, FurMark and winget/HKCU tools run only by full trusted path (untrusted ones de-elevated); SystemDrive, Program Files and LOCALAPPDATA are pinned; chkdsk, disk optimization, sc and schtasks run without a shell; PowerShell quoting covers ‘ ’ ‚ ‛; OptimaX-Rescue.cmd expands no environment variables and now also restores the ad-block DNS; the DNS filter has a bounded TCP pool and validates upstream answers; game mode, A/B sessions and the baseline no longer trust settings data; cdb ignores `_NT_*` variables; DNS/DoH undo is complete; bug reports mask IPs and tokens; non-admin updates can't be swapped before launch; CI keeps the signing password in one step and requires GitHub digests for Mesa/DXVK.
+
+**Honest results:** freezes over 1 s stay in FPS stats; a stopped or hung capture is not saved as before/after and its ETW session is closed; extra swapchains are not mixed in; the A/B test confirms a culprit with a second run and uses each metric's own spread; late ETW events no longer create phantom seconds; locked 10th–13th gen Intel mobile CPUs are not offered undervolting; GPU auto-tune stops when the stress test ran on another GPU and treats a 30 s hang as a crash; fans all return to auto; identical GPUs are no longer mixed up; a RAM/VRAM test that tested nothing is N/A; re-applying a tweak keeps undo for new devices, undo records are written before the change and kept on timeouts.
+
+**Performance:** near-zero CPU in the tray (Home no longer animates while hidden; GPU tuning, CPU-Z and the ad-block page don't poll while minimized); `--tray` start builds pages only when the window opens; winget and Steam cover lookups no longer freeze the window; fewer process spawns for power schemes and tasks, a cached NVML session, a faster VRAM error count, and settings.json isn't rewritten when unchanged.
+</details>
+
 ## [7.1.0] — 2026-11-20
 
 Аналоги CrystalDiskInfo і CPU-Z всередині OptimaX і виправлення за відгуками користувачів 7.0.0 (7.0.1 окремо не

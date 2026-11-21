@@ -109,9 +109,11 @@ def uninstall_cleanup(revert: bool, log) -> dict:
     except Exception as e:
         log(f"adblock: {e}")
     lim = F.CFG["charge_limit"]
-    if lim and lim.get("method"):
+    if isinstance(lim, dict) and lim.get("method"):
         import power as PW
-        PW.set_charge_limit(lim["method"], 100, log)
+        # 7.1.1: метод із settings.json — лише дані: тільки відомий і тільки якщо його знову знайдено на цьому ПК
+        if lim["method"] in PW.METHODS and PW.method_available(lim["method"]):
+            PW.set_charge_limit(lim["method"], 100, log)
         F.CFG["charge_limit"] = None
     for name in TASKS:
         E.run(["schtasks", "/Delete", "/TN", name, "/F"], 20, log)
@@ -154,9 +156,11 @@ def run_cli(argv) -> int:
         code = 0 if F.set_autostart("--set-autostart" in argv, log) else 1
     if code is not None:
         try:
-            path = os.path.join(os.environ.get("TEMP", E.DATA_DIR), "OptimaX-setup.log")
+            # 7.1.1: у захищену папку (admin_dir), а не в %TEMP% користувача: там на місці файлу могло стояти
+            # посилання, і інсталятор з правами адміністратора дописував би в чужий файл
+            path = os.path.join(E.admin_dir("logs"), "OptimaX-setup.log")
             with open(path, "a", encoding="utf-8") as f:
                 f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + " ".join(argv[1:]) + "\n" + "\n".join(lines) + "\n")
-        except OSError:
+        except (OSError, ValueError):
             pass
     return code

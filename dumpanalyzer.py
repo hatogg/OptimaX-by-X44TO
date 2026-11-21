@@ -159,6 +159,15 @@ FAILURE_BUCKET_ID:  0x116_IMAGE_nvlddmkm.sys
 """
 
 
+def cdb_env(cdb: str) -> dict:
+    """7.1.1: середовище для cdb без змінних, якими користувач керує налагоджувачем: _NT_* (шляхи розширень і
+    символів, журнал) та INIT (тека з tools.ini) — інакше cdb з правами адміністратора вантажив би DLL-розширення
+    з теки, куди пише будь-яка програма. Розширення — лише з власної теки winext; символи — через -y (sympath)."""
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith("_NT_") and k.upper() != "INIT"}
+    env["_NT_DEBUGGER_EXTENSION_PATH"] = os.path.join(os.path.dirname(cdb), "winext")
+    return env
+
+
 def analyze_dump(path: str, log) -> dict:
     """!analyze -v через cdb (лише читання). -> результат Hardware Center «windiag_dump»."""
     import hwtests as HT
@@ -179,8 +188,10 @@ def analyze_dump(path: str, log) -> dict:
                 shutil.copy2(path, tmp)
                 src = tmp
             log(f"  cdb -z {os.path.basename(path)} -c \"!analyze -v; q\"")
+            # 7.1.1: очищене середовище й робоча тека — тека самого cdb (довірена), а не поточна
             p = subprocess.run([cdb, "-z", src, "-y", sympath(), "-c", "!analyze -v; q"], capture_output=True,
-                               timeout=CDB_TIMEOUT, creationflags=E.CREATE_NO_WINDOW)
+                               timeout=CDB_TIMEOUT, creationflags=E.CREATE_NO_WINDOW, env=cdb_env(cdb),
+                               cwd=os.path.dirname(cdb))
             text = (p.stdout or b"").decode("utf-8", "replace")
         except subprocess.TimeoutExpired:
             return HT.result("windiag_dump", HT.NA, tr("da.timeout", s=CDB_TIMEOUT))

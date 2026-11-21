@@ -118,7 +118,7 @@ def test_profile_apply_restore_and_journal_entry():
         assert st["active"] and st["pending"]["what"] == "apply" and st["orig"][t.key]["power"] == 200
         tid = GT.journal_id(t)
         rec = j.get(tid)["undo"]
-        assert rec[0]["t"] == "cmd" and "--gpu-reset" in rec[0]["c"] and "--vendor=nvidia" in rec[0]["c"]
+        assert rec[0]["t"] == "ps" and "--gpu-reset" in rec[0]["c"] and "--vendor=nvidia" in rec[0]["c"]
         assert E.valid_undo(rec[0])
         GT.apply_profile(cfg, t, dict(power=150))               # повторна зміна не перезаписує заводські
         assert GT.state(cfg)["orig"][t.key]["power"] == 200

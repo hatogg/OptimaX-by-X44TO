@@ -903,6 +903,8 @@ class AdblockPage(QWidget):
         self.btn_pause.setVisible(on)
         self.btn_off.setVisible(on or light)
         self.btn_on.setVisible(mode == "off" and self.seg_i == 0)
+        if on and self.isVisible() and not self.timer.isActive():  # 7.1.1: фільтр увімкнули — знову опитуємо
+            self.timer.start(4000)
         cur = self.ab.ui.get("light")
         for pid, (st, b) in self.light_rows.items():
             st.setVisible(light and pid == cur)
@@ -976,10 +978,12 @@ class AdblockPage(QWidget):
 
     # ── дані з фільтра ──
     def refresh(self):
-        if self.ab.mode != "filter" or self.fetching:
-            return
-        if not self.isVisible():
+        # 7.1.1: без фільтра таймер зупиняємо (раніше return стояв перед stop() — опитування йшло вічно);
+        # знову запускає його sync(), коли фільтр увімкнуть. Згорнуте вікно лишає isVisible() — не опитуємо.
+        if self.ab.mode != "filter" or not self.isVisible():
             self.timer.stop()
+            return
+        if self.fetching or self.window().isMinimized():
             return
         self.fetching = True
         flt, text = self.log_flt, self.search.text().strip().lower()

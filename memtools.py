@@ -24,6 +24,7 @@ from i18n import tr
 
 MIN_TRIM_MB = 40           # менші процеси не варті стискання
 IDLE_SHARE = 0.003         # < 0,3 % усього процесора за вимір — «спить»
+SHARE_SPAN = 2.0           # 7.1.1: с — частку процесора перед стисканням міряємо щонайменше стільки
 ACTIVE_SHARE = 0.02        # > 2 % — «активна»
 REBOUND_AFTER = 60         # через скільки секунд перевіряти, що повернулося
 NEVER = {"system", "registry", "secure system", "memory compression", "smss.exe", "csrss.exe", "wininit.exe",
@@ -214,7 +215,17 @@ def free_memory(watcher: Watcher, log, progress) -> dict:
             fg = M.foreground_pid()
         except Exception:
             pass
-        procs = watcher.processes()
+        # 7.1.1: «простоює» — лише за власним заміром щонайменше SHARE_SPAN с. Частка з watcher могла бути
+        # порахована за долі секунди після попереднього оновлення інтерфейсу — і тоді зайнята програма виглядала
+        # бездіяльною й втрачала робочий набір. Процес, якого немає в обох замірах, вважаємо зайнятим.
+        import monitor as M
+        sm = M.ProcSampler()
+        sm.sample()
+        t0 = time.perf_counter()
+        while time.perf_counter() - t0 < SHARE_SPAN and not E.CANCEL.is_set():
+            time.sleep(0.1)
+        shares = sm.sample()
+        procs = [dict(pr, share=shares.get(pr["pid"], (None, 1.0))[1]) for pr in watcher.processes()]
         cand = [pr for pr in procs if pr["mb"] >= MIN_TRIM_MB and pr["share"] < IDLE_SHARE and pr["pid"] != fg
                 and pr["pid"] != os.getpid() and (pr["name"] or "").lower() not in keep]
         skipped = len(procs) - len(cand)

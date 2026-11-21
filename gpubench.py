@@ -44,6 +44,8 @@ if os.environ.get("OPTIMAX_BENCH_FAST"):  # для автоматичних те
         PRESETS[_k] = (320, 180)
 BENCH_SECONDS = 60
 WARMUP_SECONDS = 4
+HANG_SECONDS = 30   # 7.1.1: прогрес тесту (t, кадри) не змінюється стільки секунд — драйвер завис, це збій
+HANG_GRACE = 60     # 7.1.1: і понад тривалість тесту (з прогрівом) — стільки секунд запасу на старт і завершення
 CHECK_EVERY = 10.0  # стрес-тест: контрольний кадр раз на 10 секунд
 CHECK_SIZE = (480, 270)
 CHECK_TIME = 7.25  # момент анімації для контрольного кадру
@@ -570,7 +572,7 @@ class Nvml:
     """Температура, частоти, споживання й причини скидання частот відеокарти NVIDIA.
     name — котра саме карта (як її називає DXGI чи GL_RENDERER); без назви — карта з найбільшою пам'яттю."""
 
-    def __init__(self, name: str = ""):
+    def __init__(self, name: str = "", index: int = None, uuid: str = ""):
         self.lib = None
         self.h = ctypes.c_void_p()
         self.index = -1
@@ -583,7 +585,7 @@ class Nvml:
                 if init() != 0:
                     continue
                 self.lib = lib
-                if self.select(name):
+                if (self.select_index(index, uuid) if index is not None or uuid else self.select(name)):
                     return
                 self.lib = None
                 lib.nvmlShutdown()
@@ -629,9 +631,44 @@ class Nvml:
         self.h, self.index = h, idx
         return True
 
+    def select_index(self, index: int = None, uuid: str = "") -> bool:
+        """7.1.1: карта за номером NVML (і UUID, якщо відомий), а не за назвою: у збірці з двох однакових карт
+        (2× P106) назва однакова, і скидання чи сторож вентиляторів діяли на першу, а не на ту, яку змінювали."""
+        if not self.lib:
+            return False
+        get = getattr(self.lib, "nvmlDeviceGetHandleByIndex_v2", None) or self.lib.nvmlDeviceGetHandleByIndex
+        order = [i for i, _n, _m in self.devices()]
+        if index is not None and index in order:  # спершу — той самий номер, далі (якщо UUID не збігся) решта
+            order.remove(index)
+            order.insert(0, index)
+        elif not uuid:
+            return False
+        for i in order:
+            h = ctypes.c_void_p()
+            if get(i, ctypes.byref(h)) != 0:
+                continue
+            self.h, self.index = h, i
+            if not uuid or self.uuid() == uuid:
+                return True
+        self.h, self.index = ctypes.c_void_p(), -1
+        return False
+
     @property
     def ok(self) -> bool:
         return self.lib is not None
+
+    def uuid(self) -> str:
+        """UUID карти (GPU-…): не змінюється, навіть якщо карти переставили в інші слоти."""
+        if not self.lib:
+            return ""
+        fn = getattr(self.lib, "nvmlDeviceGetUUID", None)
+        buf = ctypes.create_string_buffer(96)
+        try:
+            if fn is not None and fn(self.h, buf, 96) == 0:
+                return buf.value.decode("ascii", "replace")
+        except Exception:
+            pass
+        return ""
 
     def name(self) -> str:
         if not self.lib:
@@ -1156,6 +1193,9 @@ class Run:
         self.proc = subprocess.Popen(cmd, cwd=here, env=env)
         self.started = time.time()
         self.stopped = False
+        self.hung = False
+        self.duration = seconds or (BENCH_SECONDS if mode == "bench" else minutes * 60)
+        self._prog, self._prog_ts = None, self.started
         self.child_pid = 0
         self.eng = []  # [{luid: {"3d": %, ...}}] — лише під час заміру (після прогріву)
         self.mon = None
@@ -1199,16 +1239,21 @@ class Run:
         self._sample(data)
         if data.get("result") and data.get("state") in ("done", "lost", "cancelled") and self.adapter.get("name"):
             data["result"] = self._decorate(data["result"])
+        self._check_hang(data)
         rc = self.proc.poll()
+        if self.hung:
+            rc = -1 if rc is None else rc
         if rc is not None and self.stopped and data.get("state") not in ("done", "error", "lost"):
             return dict(data, state="cancelled")
-        if rc is not None and data.get("state") not in ("done", "cancelled", "error", "lost"):
+        if rc is not None and (self.hung or data.get("state") not in ("done", "cancelled", "error", "lost")):
             # процес зник без підсумку — найчастіше це скидання відеодрайвера під навантаженням
             data = dict(data, state="crash", exit_code=rc)
             data["result"] = dict(state="crash", preset=self.preset, mode=self.mode, errors=data.get("errors", 0),
                                   checks=data.get("checks", 0), dur=len(data.get("series_fps", [])),
                                   series_fps=data.get("series_fps", []), series_temp=data.get("series_temp", []),
                                   gpu=data.get("gpu"), verdict="crash", exit_code=rc)
+            if self.hung:
+                data["hang"] = data["result"]["hang"] = True
         if data.get("state") == "lost" and data.get("result"):
             data["result"]["verdict"] = "crash"
         if data.get("result") and self.power == "battery":
@@ -1223,6 +1268,23 @@ class Run:
             res["adapter_key"] = self.adapter.get("key", "")
         return res
 
+    def _check_hang(self, data: dict) -> None:
+        """7.1.1: завислий драйвер не завершує процес тесту — без цього автопідбір і перевірка чекали б вічно (а
+        андервольт лишався б застосованим). Прогрес не змінюється HANG_SECONDS с чи тест іде довше за тривалість +
+        HANG_GRACE — процес завершуємо, а тест вважаємо збоєм."""
+        if self.hung or self.stopped or self.proc.poll() is not None:
+            return
+        if data.get("state") not in ("starting", "warmup", "running"):
+            return
+        now = time.time()
+        key = (data.get("t"), data.get("frames"))
+        if key != self._prog:
+            self._prog, self._prog_ts = key, now
+        stuck = data.get("state") != "starting" and now - self._prog_ts > HANG_SECONDS
+        if stuck or now - self.started > self.duration + WARMUP_SECONDS + HANG_GRACE:
+            self.hung = True
+            E.kill_tree(self.proc)
+
     @property
     def alive(self) -> bool:
         return self.proc.poll() is None
@@ -1230,7 +1292,9 @@ class Run:
     def stop(self) -> None:
         self.stopped = True
         if self.alive:
-            self.proc.terminate()
+            # 7.1.1: у портативній (onefile) версії self.proc — лише завантажувач, а малює його дочірній процес
+            # (data["pid"]); terminate() лишав той працювати далі. taskkill /T — разом з усіма дочірніми.
+            E.kill_tree(self.proc)
 
     def cleanup(self) -> None:
         if self.mon is not None:

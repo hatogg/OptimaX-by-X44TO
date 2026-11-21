@@ -215,7 +215,10 @@ class ExecStats:
         if self.t0 is None:
             self.t0 = ts
         sec = int((ts - self.t0) * self.k / 1e6)
-        if sec != self.sec:
+        # 7.1.1: події ETW приходять не строго за часом (буфери різних ядер). Закривати секунду на будь-якій «іншій»
+        # давало фантомні секунди й занижений максимум; тепер секунди лише йдуть уперед, а запізніла подія
+        # зараховується поточній секунді
+        if sec > self.sec:
             self._close_second(sec)
         kind = "isr" if isr else "dpc"
         self.count[kind] += 1

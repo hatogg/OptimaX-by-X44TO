@@ -13,7 +13,7 @@ OptimaX — бібліотека ігор: ігри зі Steam, Epic, GOG, Ubiso
 """
 from __future__ import annotations
 
-import glob
+import fnmatch
 import ntpath
 import os
 import subprocess
@@ -56,6 +56,9 @@ def refresh(games: list = None) -> list:
     items = [entry(g) for g in games]
     F.CFG["library"] = dict(F.CFG["library"] or {}, ts=int(time.time()), games=items)
     F.remember_game_exes(games)
+    reset_covers()
+    if E.IS_WIN:  # 7.1.1: корінь Steam і список кешу обкладинок — тут, у фоновому потоці, а не під час побудови плиток
+        _cover_index(_cover_state(), _cover_base(_cover_state()["root"]))
     return items
 
 
@@ -94,21 +97,77 @@ def set_setting(key: str, value) -> None:
 COVER_NAMES = ("library_600x900", "library_capsule", "header")
 
 
+# 7.1.1: раніше кожна плитка читала корінь Steam з реєстру й до 9 разів переглядала весь librarycache (тисячі
+# файлів) — у потоці інтерфейсу. Тепер корінь і список кешу — один раз на оновлення бібліотеки (reset_covers),
+# а папка <appid> — один раз на гру. Збіги й порядок — ті самі, що в glob (fnmatch, сортування повних шляхів).
+_COVER_STATE: dict = {"root": None, "index": {}}
+
+
+def reset_covers() -> None:
+    global _COVER_STATE
+    _COVER_STATE = {"root": None, "index": {}}  # заміною цілком: потік інтерфейсу міг саме читати попередній
+
+
+def _cover_state() -> dict:
+    st = _COVER_STATE
+    if st["root"] is None:
+        import mining as MG
+        st["root"] = MG.steam_root() or ""
+    return st
+
+
+def _cover_base(steam_root: str) -> str:
+    return os.path.join(steam_root, "appcache", "librarycache") if steam_root else ""
+
+
+def _listdir(path: str) -> list:
+    try:
+        return os.listdir(path)
+    except OSError:
+        return []
+
+
+def _cover_index(st: dict, base: str) -> dict:
+    idx = st["index"].get(base)
+    if idx is None and base:
+        top = {}  # <appid> -> імена «<appid>_…» у корені кешу (інших шаблон «<appid>_<назва>*.jpg» не бере)
+        for n in _listdir(base):
+            top.setdefault(n.split("_", 1)[0], []).append(n)
+        idx = st["index"][base] = {"top": top, "apps": {}}
+    return idx
+
+
+def _app_files(idx: dict, base: str, appid: str) -> tuple:
+    """(файли в <appid>/, [(ім'я, шлях)] у <appid>/*/) — один раз на гру."""
+    got = idx["apps"].get(appid)
+    if got is None:
+        d = os.path.join(base, appid)
+        lvl1 = _listdir(d)
+        lvl2 = []
+        for n in lvl1:
+            if not n.startswith(".") and os.path.isdir(os.path.join(d, n)):  # «*» у glob не бере приховані
+                lvl2 += [(m, os.path.join(d, n, m)) for m in _listdir(os.path.join(d, n))]
+        got = idx["apps"][appid] = (lvl1, lvl2)
+    return got
+
+
 def cover(g: dict, steam_root: str = None) -> str:
     """Шлях до локальної обкладинки Steam або "". Нові версії Steam кладуть файли в librarycache/<appid>/(…/), старі —
     librarycache/<appid>_library_600x900.jpg."""
     appid = str(g.get("appid") or "")
     if not appid.isdigit():
         return ""
-    if steam_root is None:
-        import mining as MG
-        steam_root = MG.steam_root()
-    if not steam_root:
+    st = _cover_state() if steam_root is None else _COVER_STATE
+    base = _cover_base(st["root"] if steam_root is None else steam_root)
+    if not base:
         return ""
-    base = glob.escape(os.path.join(steam_root, "appcache", "librarycache"))
+    idx = _cover_index(st, base)
+    lvl1, lvl2 = _app_files(idx, base, appid)
+    top = [(n, os.path.join(base, n)) for n in idx["top"].get(appid, ())]
+    sub = [(n, os.path.join(base, appid, n)) for n in lvl1]
     for name in COVER_NAMES:
-        for pat in (f"{appid}_{name}*.jpg", os.path.join(appid, f"{name}*.jpg"), os.path.join(appid, "*", f"{name}*.jpg")):
-            hits = sorted(glob.glob(os.path.join(base, pat)))
+        for cands, pat in ((top, f"{appid}_{name}*.jpg"), (sub, f"{name}*.jpg"), (lvl2, f"{name}*.jpg")):
+            hits = sorted(p for n, p in cands if fnmatch.fnmatch(n, pat))
             if hits:
                 return hits[0]
     return ""
@@ -135,7 +194,10 @@ def launch(g: dict, log) -> dict:
         return {"ok": 1, "target": target}
     try:
         # explorer.exe відкриває посилання чи exe від імені користувача, як подвійне натискання на робочому столі
-        subprocess.Popen(["explorer.exe", target], cwd=os.path.dirname(g.get("main") or "") or None)
+        # 7.1.1: повний шлях (SF.explorer_exe): за самим ім'ям Windows шукає exe спершу в папці OptimaX.exe і в
+        # поточній, куди будь-яка програма могла б покласти свій «explorer.exe»
+        import secfs as SF
+        subprocess.Popen([SF.explorer_exe(), target], cwd=os.path.dirname(g.get("main") or "") or None)
         return {"ok": 1, "target": target}
     except OSError as e:
         return {"error": str(e)}

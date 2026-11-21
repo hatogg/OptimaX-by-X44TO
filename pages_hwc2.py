@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import QFrame, QLineEdit, QFileDialog, QMenu
 import engine as E
 import features as F
 import hwtests as HT
+import secfs as SF
 from i18n import tr
 from ui_kit import (label, button, vbox, hbox, badge, clear_layout, Segmented, Switch,
                     Ask, LOG, Check)
@@ -466,8 +467,13 @@ def view_report(page):
     import tempfile
     import hwreport as HR
     path = os.path.join(tempfile.gettempdir(), "OptimaX-report-preview.html")
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(HR.to_html(current_report(page)))
+    # 7.1.1: сталу назву в тимчасовій папці відкриваємо лише як новий файл — не за чужим файлом чи посиланням
+    try:
+        with SF.remove_then_create(path, "w", encoding="utf-8") as f:
+            f.write(HR.to_html(current_report(page)))
+    except OSError as e:
+        Ask.info(page, tr("rep.view"), tr("e.err", err=e))
+        return
     open_file(path)
 
 
@@ -485,8 +491,12 @@ def compare_reports(page):
     if (a.get("created") or 0) > (b.get("created") or 0):
         a, b = b, a
     path = os.path.join(tempfile.gettempdir(), "OptimaX-report-compare.html")
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(HR.compare_html(a, b))
+    try:  # 7.1.1: як у view_report — лише новий файл
+        with SF.remove_then_create(path, "w", encoding="utf-8") as f:
+            f.write(HR.compare_html(a, b))
+    except OSError as e:
+        Ask.info(page, tr("rep.compare"), tr("e.err", err=e))
+        return
     open_file(path)
 
 

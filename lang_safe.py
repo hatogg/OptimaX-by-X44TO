@@ -318,4 +318,14 @@ STRINGS = {
     "sc.footer": ("Перевірено замірами · кожну зміну можна повернути одним кліком",
                   "Проверено замерами · каждое изменение можно вернуть одним кликом",
                   "Verified by measurements · every change can be undone in one click"),
+    # ── 7.1.1: аварійний відкат повертає й DNS фільтра реклами ──
+    "rs.cmd_dns": ("DNS адаптерів, як до фільтра реклами", "DNS адаптеров, как до фильтра рекламы",
+                   "Adapter DNS as before the ad filter"),
+    # ── 7.1.1: файл у папці гри ──
+    "e.file_link": ("Файл не покладено: на шляху {path} є посилання (junction чи symlink) — воно може вести в чужу "
+                    "папку",
+                    "Файл не положен: на пути {path} есть ссылка (junction или symlink) — она может вести в чужую "
+                    "папку",
+                    "File not placed: the path {path} contains a link (junction or symlink) that may lead to another "
+                    "folder"),
 }

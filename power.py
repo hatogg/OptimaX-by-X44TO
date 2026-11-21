@@ -8,6 +8,7 @@ import ctypes
 import os
 
 import engine as E
+import secfs as SF
 from i18n import tr
 
 DM_DISPLAYFREQUENCY = 0x400000
@@ -101,7 +102,10 @@ class RefreshByPower:
 
 # ───────────────────────── ліміт заряду ─────────────────────────
 ASUS_DEV = 0x00120057
-CCTK = [r"%ProgramFiles(x86)%\Dell\Command Configure\X86_64\cctk.exe", r"%ProgramFiles%\Dell\Command Configure\X86_64\cctk.exe"]
+# 7.1.1: cctk.exe — лише в Program Files (шлях із Windows API, а не з %ProgramFiles%, який користувач може
+# перевизначити): OptimaX запускає його з правами адміністратора
+CCTK_REL = os.path.join("Dell", "Command Configure", "X86_64", "cctk.exe")
+METHODS = ("asus", "dell")
 VENDOR_HINTS = [("lenovo", "lenovo"), ("hp", "hp"), ("hewlett", "hp"), ("micro-star", "msi"), ("msi", "msi"),
                 ("huawei", "huawei"), ("honor", "huawei"), ("samsung", "samsung"), ("acer", "acer"),
                 ("gigabyte", "gigabyte"), ("aorus", "gigabyte"), ("microsoft", "surface"), ("razer", "razer"),
@@ -109,9 +113,9 @@ VENDOR_HINTS = [("lenovo", "lenovo"), ("hp", "hp"), ("hewlett", "hp"), ("micro-s
 
 
 def _cctk():
-    for c in CCTK:
-        p = os.path.expandvars(c)
-        if os.path.exists(p):
+    for pf in SF.program_files_dirs():
+        p = os.path.join(pf, CCTK_REL)
+        if os.path.isfile(p) and SF.trusted_location(p):
             return p
     return None
 
@@ -121,25 +125,43 @@ def vendor_key(hw: dict) -> str:
     return next((k for w, k in VENDOR_HINTS if w in v), "other")
 
 
+def _asus_wmi() -> bool:
+    rc, out = E.ps("[bool](Get-CimInstance -Namespace root/wmi -ClassName AsusAtkWmi_WMNB -ErrorAction "
+                   "SilentlyContinue)", 20, ro=True)
+    return out.strip().lower() == "true"
+
+
+def method_available(method: str) -> bool:
+    """7.1.1: спосіб зміни ліміту справді є на цьому ПК (не з settings.json на віру)."""
+    if method == "asus":
+        return not E.IS_WIN or _asus_wmi()
+    if method == "dell":
+        return _cctk() is not None
+    return False
+
+
 def charge_method(hw: dict):
     """-> 'asus' | 'dell' | None (лише підказка, де шукати налаштування у фірмовій утиліті)."""
     vk = vendor_key(hw)
     if vk == "asus":
         if not E.IS_WIN:
             return "asus"
-        rc, out = E.ps("[bool](Get-CimInstance -Namespace root/wmi -ClassName AsusAtkWmi_WMNB -ErrorAction "
-                       "SilentlyContinue)", 20, ro=True)
-        return "asus" if out.strip().lower() == "true" else None
+        return "asus" if _asus_wmi() else None
     if vk == "dell" and _cctk():
         return "dell"
     return None
 
 
 def set_charge_limit(method: str, pct: int, log) -> dict:
+    # 7.1.1: відсоток приходить і з settings.json — у команду PowerShell / cctk лише ціле число з допустимого діапазону
+    try:
+        pct = max(50, min(100, int(pct)))
+    except (TypeError, ValueError):
+        return {"ok": False}
     if method == "asus":
         rc, out = E.ps("Get-CimInstance -Namespace root/wmi -ClassName AsusAtkWmi_WMNB | Invoke-CimMethod -MethodName "
                        f"DEVS -Arguments @{{Device_ID=[uint32]{ASUS_DEV}; Control_status=[uint32]{pct}}}", 30, log)
-    elif method == "dell":
+    elif method == "dell" and _cctk():
         arg = "Standard" if pct >= 100 else f"Custom:50-{pct}"
         rc, out = E.run([_cctk(), f"--PrimaryBattChargeCfg={arg}"], 30, log)
     else:

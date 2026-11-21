@@ -6,6 +6,7 @@ OptimaX — мережа: тест і вибір найшвидшого DNS (з 
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import random
 import socket
@@ -117,41 +118,100 @@ def dns_benchmark(log, progress) -> list:
     return cands
 
 
+def _ps_ips(servers) -> str:
+    """7.1.1: DNS-адреси для PowerShell — лише справжні IP, кожна через secfs.psq (а не сирий '{s}')."""
+    import secfs as SF
+    ok = []
+    for s in servers:
+        try:
+            ipaddress.ip_address(str(s).split("%")[0])
+        except ValueError:
+            continue
+        ok.append(SF.psq(s))
+    return ",".join(ok)
+
+
+# запису немає — порожній вивід і код 0; немає самої команди (не той PowerShell) — код 2
+DOH_GET = ("if (-not (Get-Command Get-DnsClientDohServerAddress -ErrorAction SilentlyContinue)) {{ exit 2 }}; "
+           "$d=Get-DnsClientDohServerAddress -ServerAddress {ip} -ErrorAction SilentlyContinue; if ($d) "
+           "{{ @{{t=[string]$d.DohTemplate; f=[bool]$d.AllowFallbackToUdp; a=[bool]$d.AutoUpgrade}} | "
+           "ConvertTo-Json -Compress }}; exit 0")
+
+
+def _doh_undo(ip: str):
+    """7.1.1: команда відкату для запису DoH цього сервера: Remove — якщо запису не було, Set зі старими значеннями —
+    якщо був. None — поточний стан не прочитано (тоді й не змінюємо: відкотити не було б чим)."""
+    import secfs as SF
+    rc, out = E.ps(DOH_GET.format(ip=SF.psq(ip)), 30, ro=True)
+    if rc != 0:
+        return None
+    if not (out or "").strip():
+        return f"Remove-DnsClientDohServerAddress -ServerAddress {SF.psq(ip)} -ErrorAction SilentlyContinue"
+    cur = E.parse_json_out(out)
+    if not isinstance(cur, dict) or not cur.get("t"):
+        return None
+    fb, au = ("$true" if cur.get(k) is True else "$false" for k in ("f", "a"))
+    return (f"Set-DnsClientDohServerAddress -ServerAddress {SF.psq(ip)} -DohTemplate {SF.psq(cur['t'])} "
+            f"-AllowFallbackToUdp {fb} -AutoUpgrade {au}")
+
+
 def dns_tweak(provider: dict, doh: bool) -> E.Tweak:
     """Твік із записом у журнал: при відкаті повертаються ваші попередні DNS (або DHCP)."""
     ips = tuple(provider["ips"])
 
     @E.cmd_doc(f"Set-DnsClientServerAddress -ServerAddresses {', '.join(ips)}" + ("; DNS-over-HTTPS" if doh else ""))
     def apply(ctx: E.Ctx) -> None:
-        ifaces = current_dns()
-        undo = []
-        for c in ifaces:
-            if c["static"] and c["servers"]:
-                old = ",".join(f"'{s}'" for s in c["servers"])
-                back = f"Set-DnsClientServerAddress -InterfaceIndex {c['idx']} -ServerAddresses ({old})"
+        import secfs as SF
+        new = _ps_ips(ips)
+        if not new:  # 7.1.1: жодної справжньої IP-адреси — нічого не змінюємо
+            ctx.fail("dns ips")
+            return
+        for c in current_dns():
+            idx = int(c["idx"])
+            old = _ps_ips(c["servers"]) if c["static"] else ""
+            if old:
+                back = f"Set-DnsClientServerAddress -InterfaceIndex {idx} -ServerAddresses ({old})"
             else:
-                back = f"Set-DnsClientServerAddress -InterfaceIndex {c['idx']} -ResetServerAddresses"
-            new = ",".join(f"'{s}'" for s in ips)
-            rc, _out = E.ps(f"Set-DnsClientServerAddress -InterfaceIndex {c['idx']} -ServerAddresses ({new})", 30,
-                            ctx.log)
-            if rc != 0:  # 6.17: політика чи адаптер відмовили — не «готово» і не записуємо цей адаптер як змінений
+                back = f"Set-DnsClientServerAddress -InterfaceIndex {idx} -ResetServerAddresses"
+            # 7.1.1: запис відкату — до зміни і на кожен адаптер окремо (раніше — один, після всіх адаптерів:
+            # збій посередині лишав змінені адаптери без відкату); прибираємо лише за точної відмови, не за тайм-аутом
+            rec = {"t": "ps", "c": back + "; ipconfig /flushdns"}
+            ctx.undo.append(rec)
+            rc, _out = E.ps(f"Set-DnsClientServerAddress -InterfaceIndex {idx} -ServerAddresses ({new})", 30,
+                            ctx.log, stoppable=False)
+            if rc != 0:  # 6.17: політика чи адаптер відмовили — не «готово»
                 ctx.fail(f"dns {c['alias']}")
+                if rc != E.TIMEOUT_RC:
+                    ctx.undo.discard(rec)
                 continue
-            undo.append(back)
             ctx.log(tr("net.dns.set_iface", alias=c["alias"], ips=", ".join(ips)))
-        if undo:
-            ctx.undo.append({"t": "ps", "c": "; ".join(undo) + "; ipconfig /flushdns"})
         if doh and provider.get("doh") and E.win_build() >= 22000:
             doh_ok = 0
+            tpl = SF.psq(provider["doh"])
             for ip in ips:
+                try:
+                    ipaddress.ip_address(str(ip))
+                except ValueError:
+                    ctx.fail(f"doh {ip}")
+                    continue
+                # 7.1.1: реєстрацію DoH теж відкочуємо: Remove для доданої, Set зі старими значеннями для наявної
+                back = _doh_undo(ip)
+                if back is None:
+                    ctx.fail(f"doh {ip}")
+                    continue
+                rec = {"t": "ps", "c": back}
+                ctx.undo.append(rec)
+                q = SF.psq(ip)
                 rc, _out = E.ps(
-                    f"if (Get-DnsClientDohServerAddress -ServerAddress '{ip}' -ErrorAction SilentlyContinue) "
-                    f"{{ Set-DnsClientDohServerAddress -ServerAddress '{ip}' -DohTemplate '{provider['doh']}' "
+                    f"if (Get-DnsClientDohServerAddress -ServerAddress {q} -ErrorAction SilentlyContinue) "
+                    f"{{ Set-DnsClientDohServerAddress -ServerAddress {q} -DohTemplate {tpl} "
                     f"-AllowFallbackToUdp $true -AutoUpgrade $true }} else {{ Add-DnsClientDohServerAddress "
-                    f"-ServerAddress '{ip}' -DohTemplate '{provider['doh']}' -AllowFallbackToUdp $true "
-                    f"-AutoUpgrade $true }}", 30, ctx.log)
+                    f"-ServerAddress {q} -DohTemplate {tpl} -AllowFallbackToUdp $true "
+                    f"-AutoUpgrade $true }}", 30, ctx.log, stoppable=False)
                 if rc != 0:  # 6.17: шаблон DoH не прийнято — крок не вдався
                     ctx.fail(f"doh {ip}")
+                    if rc != E.TIMEOUT_RC:
+                        ctx.undo.discard(rec)
                 else:
                     doh_ok += 1
             if doh_ok:  # жоден сервер не отримав шаблон — не вмикаємо автоперехід і не кажемо «DoH увімкнено»

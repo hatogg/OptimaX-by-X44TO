@@ -25,7 +25,8 @@ Power-Troubleshooter 1) — це не фриз, такий запис відки
 
 Чого OptimaX не вгадує: без глибокого запису конкретний драйвер не називається — лише клас причини й докази.
 
-Результати — %APPDATA%\\OptimaX\\freezes: freezes.json (пише лише процес-ловець), status.json (серцебиття, TPM, стан WPR),
+Результати — %ProgramData%\\OptimaX\\freezes (до 7.1.1 — %APPDATA%\\OptimaX\\freezes): freezes.json (пише лише
+процес-ловець), status.json (серцебиття, TPM, стан WPR),
 файл stop — прохання програми завершитися (тоді ловець сам зупиняє WPR).
 """
 from __future__ import annotations
@@ -55,7 +56,20 @@ KEEP_ETL = 3         # записів WPR (кожен — десятки МБ)
 BEAT = 10.0          # с між записами status.json
 STALE = 45.0         # с без серцебиття — ловець не працює
 
-DIR = os.path.join(E.DATA_DIR, "freezes")
+
+
+def _folder() -> str:
+    """7.1.1: ловець працює з правами адміністратора, пише сюди профіль WPR (і запускає з ним `wpr -start`), .etl і
+    JSON, а потім видаляє старі freeze-*.etl. У %APPDATA% усе це могла підмінити (чи підкласти посилання) будь-яка
+    програма користувача — тож папка в захищеному %ProgramData%\\OptimaX\\freezes (користувачі лише читають).
+    Тут лише шлях: створює й захищає папку _ensure_dir() — під час першого запису."""
+    if E.IS_WIN and not E.DRY_RUN and E.is_admin():
+        import secfs as SF
+        return os.path.join(SF.data_root(), "freezes")
+    return os.path.join(E.DATA_DIR, "freezes")
+
+
+DIR = _folder()
 LIST_PATH = os.path.join(DIR, "freezes.json")
 STATUS_PATH = os.path.join(DIR, "status.json")
 STOP_PATH = os.path.join(DIR, "stop")
@@ -485,11 +499,12 @@ class DeepTrace:
         if E.DRY_RUN:
             self.error = "dry-run"
             return False
+        import secfs as SF
         try:
-            os.makedirs(self.folder, exist_ok=True)
-            with open(self.profile, "w", encoding="utf-8") as f:
+            _ensure_dir(self.folder)
+            with SF.remove_then_create(self.profile, "w", encoding="utf-8") as f:  # 7.1.1: див. _folder()
                 f.write(WPRP)
-        except OSError as e:
+        except (OSError, ValueError) as e:
             self.error = str(e)[:200]
             return False
         # 6.17: ловця вбили з увімкненим глибоким записом — сесія WPR (кільце 64 МБ, DPC/ISR) живе до перезавантаження,
@@ -560,14 +575,25 @@ def prune_etl(folder: str = DIR, keep: int = KEEP_ETL) -> None:
 
 
 # ───────────────────────── файли ─────────────────────────
+def _ensure_dir(folder: str) -> None:
+    """Папка ловця: захищена (E.admin_dir) для DIR з правами адміністратора, звичайна — для тестів і демо."""
+    if os.path.normcase(os.path.normpath(folder)) == os.path.normcase(os.path.normpath(DIR)) and \
+            E.IS_WIN and not E.DRY_RUN and E.is_admin():
+        E.admin_dir("freezes", users_read=True)
+    else:
+        os.makedirs(folder, exist_ok=True)
+
+
 def _write_json(path: str, data) -> None:
+    import secfs as SF
     try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        _ensure_dir(os.path.dirname(path))
         tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
+        # 7.1.1: тимчасовий файл — новий (не за підкладеним посиланням і не чужий файл із чужим власником)
+        with SF.remove_then_create(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False)
         os.replace(tmp, path)
-    except OSError:
+    except (OSError, ValueError):  # ValueError — папка поза %ProgramData%\OptimaX (secure_dir)
         pass
 
 
@@ -859,7 +885,7 @@ class Watcher:
 def watch_main(argv) -> int:
     """Точка входу процесу-ловця: OptimaX.exe --freeze-watch --parent=<pid> [--deep=1]."""
     a = _args(argv)
-    os.makedirs(DIR, exist_ok=True)
+    _ensure_dir(DIR)
     if not _single_instance():
         return 0
     try:
@@ -917,7 +943,7 @@ class Catcher:
             log("  [demo] freeze catcher on")
             return {"ok": 1}
         try:
-            os.makedirs(DIR, exist_ok=True)
+            _ensure_dir(DIR)
             try:
                 os.remove(STOP_PATH)
             except OSError:
@@ -941,10 +967,11 @@ class Catcher:
         p, self.proc = self.proc, None
         if p is None or p.poll() is not None:
             return {"ok": 1}
+        import secfs as SF
         try:
-            os.makedirs(DIR, exist_ok=True)
-            open(STOP_PATH, "w").close()  # ловець сам зупинить WPR і допише статус
-        except OSError:
+            _ensure_dir(DIR)
+            SF.remove_then_create(STOP_PATH, "w").close()  # ловець сам зупинить WPR і допише статус
+        except (OSError, ValueError):
             pass
         try:
             p.wait(8)

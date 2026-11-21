@@ -21,6 +21,7 @@ import i18n
 import lifecycle as L
 import mining as MG
 import power as PW
+import secfs as SF
 import ui_motion as UM
 import updater as U
 from i18n import tr
@@ -582,7 +583,8 @@ class LaptopPage(QWidget):
         bt.addWidget(self.bat_text)
         br = hbox(spacing=8)
         br.addWidget(button(tr("lp.refresh"), None, self.load_battery))
-        br.addWidget(button(tr("lp.full_report"), "ghost", self.full_report))
+        self.btn_full_report = button(tr("lp.full_report"), "ghost", self.full_report)
+        br.addWidget(self.btn_full_report)
         br.addStretch()
         bt.addLayout(br)
         bh.addLayout(bt, 1)
@@ -725,9 +727,12 @@ class LaptopPage(QWidget):
         if not E.IS_WIN:
             self.main.toast(tr("toast.preview_only"), "warn")
             return
-        path = H.battery_html_report()
-        if os.path.exists(path):
-            os.startfile(path)  # лише Windows
+        # 7.1.1: powercfg /batteryreport (до 40 с) — фоном, а не в потоці інтерфейсу після натискання
+        def done(path):
+            if isinstance(path, str) and os.path.exists(path):
+                os.startfile(path)  # лише Windows
+        self.main.run_quick(tr("lp.full_report"), lambda log, p: H.battery_html_report(), busy=self.btn_full_report,
+                            silent=True, on_done=done)
 
 
 # ───────────────────────── Очищення та виправлення ─────────────────────────
@@ -883,7 +888,7 @@ class StartupPage(QWidget):
     def locate(self, item: dict):
         path = item.get("file") or ""
         if E.IS_WIN and os.path.exists(path):
-            subprocess.Popen(["explorer.exe", "/select,", path])
+            subprocess.Popen([SF.explorer_exe(), "/select,", path])  # 7.1.1: повний шлях, не за ім'ям
         else:
             self.main.toast(tr("st.no_file"), "warn")
 
@@ -1065,7 +1070,7 @@ class BackupPage(QWidget):
         path = RS.write_rescue() or RS.rescue_path()
         if E.IS_WIN:
             import subprocess
-            subprocess.Popen(["explorer.exe", "/select,", path])
+            subprocess.Popen([SF.explorer_exe(), "/select,", path])  # 7.1.1: повний шлях, не за ім'ям
         else:
             self.main.toast(tr("toast.preview_only"), "warn")
 
@@ -1189,7 +1194,10 @@ class BackupPage(QWidget):
             self.main.toast(tr("toast.preview_only"), "warn")
             return
         try:
-            subprocess.Popen(["rstrui.exe"])
+            exe = SF.sysexe("rstrui.exe")  # 7.1.1: лише з System32 — за ім'ям шукалася б і папка програми
+            if not os.path.isabs(exe):
+                raise FileNotFoundError(exe)
+            subprocess.Popen([exe])
         except Exception as e:
             Ask.info(self, tr("bk.rstrui_fail"), str(e))
 

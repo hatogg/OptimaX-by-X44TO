@@ -143,7 +143,9 @@ def _page_latest() -> dict:
 
 
 def _ps_quote(s: str) -> str:
-    return "'" + str(s).replace("'", "''") + "'"
+    # 7.1.1: secfs.psq подвоює й типографські лапки ‘ ’ ‚ ‛ — PowerShell теж закінчує ними рядок
+    import secfs as SF
+    return SF.psq(s)
 
 
 def _ps_api_latest() -> dict:
@@ -429,6 +431,29 @@ def download_job(info: dict, log, progress=None) -> dict:
         return {"error": str(e) or type(e).__name__, "kind": kind}
 
 
+def _hold(path: str):
+    """7.1.1: дескриптор файлу, відкритого лише зі спільним читанням (без запису й видалення/перейменування). Поки він
+    відкритий, файл у %TEMP% (так завантажує OptimaX без прав адміністратора) ніхто не підмінить між повторною
+    перевіркою суми й запуском; сам запуск (лише читання й виконання) він не блокує. Не вдалося — OSError."""
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateFileW.restype = wintypes.HANDLE
+    k32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD,
+                                wintypes.DWORD, wintypes.HANDLE]
+    # GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING
+    h = k32.CreateFileW(os.path.abspath(path), 0x80000000, 0x1, None, 3, 0, None)
+    if not h or h == wintypes.HANDLE(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    return h
+
+
+def _release(h) -> None:
+    if h:
+        import ctypes
+        ctypes.windll.kernel32.CloseHandle(ctypes.c_void_p(h))
+
+
 def launch(path: str, kind: str) -> bool:
     """Запускає інсталятор у тихому режимі (він сам закриє OptimaX і запустить нову версію).
     Перед запуском файл перевіряється ще раз: сума та підпис мають бути тими самими, що й після завантаження."""
@@ -439,16 +464,23 @@ def launch(path: str, kind: str) -> bool:
     # 6.17: kind приходить разом із даними про версію; тихий запуск — лише для перевіреного файлу з ім'ям інсталятора
     kind = "setup" if kind == "setup" and SETUP_RE.fullmatch(os.path.basename(path)) else "portable"
     import verify as V
+    # 7.1.1: без прав адміністратора файл лежить у %TEMP% (download_dir) — тримаємо його відкритим від повторної
+    # перевірки до запуску, щоб його не підмінили в проміжку. Папка оновлень адміністратора й так захищена.
+    held = None
     try:
         if path not in _VERIFIED:
             raise V.VerifyError("vf.no_hash", name=os.path.basename(path))
+        if os.name == "nt" and not E.is_admin():
+            held = _hold(path)
         V.check_file(path, _VERIFIED[path], name=os.path.basename(path))
+        if kind == "setup":
+            subprocess.Popen([path, "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/UPDATE=1"],
+                             creationflags=E.CREATE_NO_WINDOW)
+        else:
+            os.startfile(os.path.dirname(path))  # портативна версія — показуємо завантажений файл
     except (V.VerifyError, OSError) as e:
         LAST_ERROR = str(e)
         return False
-    if kind == "setup":
-        subprocess.Popen([path, "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/UPDATE=1"],
-                         creationflags=E.CREATE_NO_WINDOW)
-    else:
-        os.startfile(os.path.dirname(path))  # портативна версія — показуємо завантажений файл
+    finally:
+        _release(held)
     return True

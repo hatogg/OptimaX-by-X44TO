@@ -331,22 +331,28 @@ class SmartDialog(QDialog):
             self.save()
             QTimer.singleShot(300, self.step)
             return
-        set_resume_task(True, self.log)
-        self.bar.setRange(0, 1)
-        self.bar.setValue(1)
-        style_badge(self.state, tr("sm.wait_reboot"), "warn")
-        self.btn_main.setText(tr("btn.close"))
-        self.finished_ok = True
-        if Ask.ask(self, tr("sm.reboot_t"), tr("sm.reboot_q"), tr("run.reboot")):
-            E.run(["shutdown", "/r", "/t", "10", "/c", "OptimaX"], 15, self.log)
-            self.main.quit_app()
+        # 7.1.1: schtasks (до 20 с) — у фоні, а не в потоці інтерфейсу; перезавантаження пропонуємо, коли задача,
+        # що продовжить сесію після входу, уже створена
+        def ready(_res):
+            if self.stopping:
+                self._stopped()
+                return
+            self.bar.setRange(0, 1)
+            self.bar.setValue(1)
+            style_badge(self.state, tr("sm.wait_reboot"), "warn")
+            self.btn_main.setText(tr("btn.close"))
+            self.finished_ok = True
+            if Ask.ask(self, tr("sm.reboot_t"), tr("sm.reboot_q"), tr("run.reboot")):
+                E.run(["shutdown", "/r", "/t", "10", "/c", "OptimaX"], 15, self.log)
+                self.main.quit_app()
+        self._start_worker(lambda log, _p: set_resume_task(True, log), ready)
 
     def _done(self):
         sm = self.s.summary()
         F.CFG["smart_last"] = sm
         F.CFG["smart"] = None
         F.CFG["tweak_evidence"] = AB.update_evidence(F.CFG["tweak_evidence"], sm)
-        set_resume_task(False)
+        self._drop_resume_task()
         self.finished_ok = True
         self.timer.stop()
         self.bar.setRange(0, 1)
@@ -391,6 +397,11 @@ class SmartDialog(QDialog):
         self.btn_main.style().unpolish(self.btn_main)
         self.btn_main.style().polish(self.btn_main)
 
+    def _drop_resume_task(self):
+        """7.1.1: видалити задачу продовження — у фоні (schtasks до 20 с не блокує інтерфейс)."""
+        if E.IS_WIN and not E.DRY_RUN:
+            self.main.run_quick("smart", lambda _log, _p: set_resume_task(False), silent=True)
+
     # ── зупинка й помилки ──
     def _restore_consistent(self, then):
         """Після зупинки посеред пошуку частина змін могла бути тимчасово відкочена — повертаємо їх."""
@@ -398,7 +409,7 @@ class SmartDialog(QDialog):
         if STAGE_STEP.get(self.s.stage, 0) >= 3:
             missing = [i for i in self.s.applied_live() if not E.JOURNAL.has(i)]
         F.CFG["smart"] = None
-        set_resume_task(False)
+        self._drop_resume_task()
         if not missing:
             then()
             return

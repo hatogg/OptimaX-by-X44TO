@@ -258,16 +258,16 @@ def check_freezecatch():
            "tpm": tpm.get("vendor") if tpm.get("present") else None, "wpr": None}
     exe = FZ.wpr_path()
     if exe and E.is_admin():
-        import tempfile
-        d = tempfile.mkdtemp(prefix="oxfz_")
-        prof = os.path.join(d, "OptimaX.wprp")
-        with open(prof, "w", encoding="utf-8") as f:
+        import secfs as SF
+        # 7.1.1: профіль, з яким wpr запускається з правами адміністратора, — у захищеній папці, а не в TEMP
+        prof = os.path.join(E.admin_dir("freezes"), "OptimaX-selftest.wprp")
+        with SF.remove_then_create(prof, "w", encoding="utf-8") as f:
             f.write(FZ.WPRP)
         rc, out = E.run([exe, "-start", f"{prof}!{FZ.PROFILE_NAME}"], 60, ro=True)
         if rc == 0:
             E.run([exe, "-cancel"], 60, ro=True)
             res["wpr"] = "ok"
-        elif "already" in (out or "").lower() or "уже" in (out or "").lower():
+        elif FZ._already_running(out):  # 7.1.1: і «вже запущен…», і код 0xc5583001 (текст буває локалізований)
             res["wpr"] = "busy: " + E.first_line(out, 160)
         else:
             raise AssertionError(f"wpr rejected the OptimaX profile (rc={rc}): {(out or '').strip()[-600:]}")

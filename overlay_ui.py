@@ -214,6 +214,10 @@ class OverlayController(QObject):
         if time.time() >= self.next_sensor:
             self.next_sensor = time.time() + OV.SENSOR_S
             self.last_s = self.sensors.sample(1.0) if self.sensors else {}
+            if self.sensors:
+                # 7.1.1: Sensors.sample() дописує кожен замір у samples, а оверлей їх не читає — за довгу гру список
+                # ріс без меж; лишаємо останню хвилину
+                del self.sensors.samples[:-60]
             if self.rec is not None:
                 self.rec["samples"].append(dict(self.last_s, t=round(time.time() - self.rec["t0"], 1)))
                 # 6.17: запис фону — раз на PM.INTERVAL (2 с), як вважає procmon.analyze; щосекундні заміри

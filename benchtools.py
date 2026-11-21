@@ -19,6 +19,7 @@ import webbrowser
 
 import apps as A
 import engine as E
+import secfs as SF
 from i18n import tr
 
 try:
@@ -163,6 +164,12 @@ def install(item: dict, log, progress=None) -> dict:
     return {"ok": ok, "path": find_exe(item)}
 
 
+def trusted(path: str) -> bool:
+    """7.1.1: exe можна запускати з правами адміністратора, лише якщо він у Program Files чи Windows. Посилання й пакети
+    winget у %LOCALAPPDATA%, InstallLocation / DisplayIcon з HKCU — місця, куди пише будь-яка програма користувача."""
+    return bool(path) and SF.trusted_location(path)
+
+
 def launch(item: dict) -> bool:
     if item.get("steam"):
         url = f"steam://run/{item['steam']}" if steam_installed() else item["url"]
@@ -172,6 +179,9 @@ def launch(item: dict) -> bool:
     path = find_exe(item)
     if not path or not E.IS_WIN:
         return False
+    if not trusted(path):
+        # 7.1.1: програма з папки користувача — зі звичайними правами (її вікно й результат нам не потрібні)
+        return E.start_as_user(path)
     subprocess.Popen([path], cwd=os.path.dirname(path))
     return True
 
@@ -258,6 +268,9 @@ def run_furmark(preset: str, log, progress=None) -> dict:
     cli = _furmark_cli(gui) if gui else None
     if not cli:
         raise RuntimeError(tr("gb.fm_missing"))
+    if not trusted(cli):
+        # 7.1.1: furmark.exe запускається з правами адміністратора й пише файли, які ми читаємо, — лише з Program Files
+        raise RuntimeError(tr("gb.fm_untrusted", path=os.path.dirname(cli)))
     work = os.path.dirname(cli)
     scores = os.path.join(work, "_scores.csv")
     before = os.path.getmtime(scores) if os.path.exists(scores) else 0
@@ -279,7 +292,7 @@ def run_furmark(preset: str, log, progress=None) -> dict:
         if el > 600:
             p.terminate()
             raise RuntimeError(tr("gb.fm_timeout"))
-    res = dict(ok=True, kind="furmark", preset=preset, mode="bench", exit_code=p.returncode)
+    res = dict(ok=False, kind="furmark", preset=preset, mode="bench", exit_code=p.returncode)
     try:
         if os.path.exists(scores) and os.path.getmtime(scores) > before:
             with open(scores, encoding="utf-8", errors="replace") as f:
@@ -293,8 +306,12 @@ def run_furmark(preset: str, log, progress=None) -> dict:
             os.remove(gpu_csv)
     except OSError:
         pass
-    if res.get("score"):
+    # 7.1.1: «готово» — лише зі свіжими балами з _scores.csv; без них (FurMark впав, закрили вікно) — чесне «частково»
+    res["ok"] = bool(res.get("score"))
+    if res["ok"]:
         log(tr("gb.fm_result", score=res["score"], fps=res.get("avg", "—")))
     else:
+        if p.returncode:
+            log(tr("gb.fm_exit", rc=p.returncode))
         log(tr("gb.fm_noscore"))
     return res

@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -1104,6 +1105,8 @@ def battery_report() -> list:
         return [dict(name="DEMO 5B10W13930", design=57000, full=48450, cycles=312, wear=15.0)] \
             if E.DEMO in ("laptop", "old") else []
     path = os.path.join(tempfile.gettempdir(), "optimax_battery.xml")
+    if not _clear_report(path):
+        return []
     rc, _ = E.run(["powercfg", "/batteryreport", "/xml", "/output", path], 40, ro=True)
     if rc != 0 or not os.path.exists(path):
         return []
@@ -1128,8 +1131,21 @@ def battery_report() -> list:
     return res
 
 
+def _clear_report(path: str) -> bool:
+    """7.1.1: файл звіту з постійним іменем: те, що вже лежить на його місці (чужий файл чи посилання, за яким
+    powercfg з правами адміністратора записав би звіт будь-куди), спершу прибираємо — powercfg створить файл сам."""
+    try:
+        if os.path.lexists(path):
+            os.remove(path)
+        return True
+    except OSError:
+        return False
+
+
 def battery_html_report() -> str:
     path = os.path.join(tempfile.gettempdir(), "optimax_battery.html")
+    if not _clear_report(path):
+        return ""
     E.run(["powercfg", "/batteryreport", "/output", path], 40, ro=True)
     return path
 
@@ -1204,18 +1220,32 @@ def sys_stats() -> dict:
     return d
 
 
+_NV_CACHE = {}
+_NV_LOCK = threading.Lock()
+
+
 def gpu_temp(name: str = ""):
     """Температура відеокарти NVIDIA через NVML, °C, або None. Без назви — карта з найбільшою пам'яттю (ігрова,
-    а не GT 710 для картинки, яка стоїть першою на шині)."""
+    а не GT 710 для картинки, яка стоїть першою на шині).
+    7.1.1: сеанс NVML відкривається один раз і лишається відкритим (раніше — завантаження nvml.dll, ініціалізація,
+    перелік карт і завершення кожні 3 с з monitor.lag_diagnosis). Не прочиталось — сеанс закриваємо, наступного
+    разу відкриваємо заново (драйвер могли перевстановити)."""
     if not E.IS_WIN:
         return 54 if E.DEMO in ("gaming", "laptop", "xeon") else None
     try:
         import gpubench as GB
-        nv = GB.Nvml(name)
-        try:
-            return nv.read().get("temp") if nv.ok else None
-        finally:
-            nv.close()
+        with _NV_LOCK:
+            nv = _NV_CACHE.get(name)
+            if nv is None:
+                nv = GB.Nvml(name)
+                if not nv.ok:
+                    return None
+                _NV_CACHE[name] = nv
+            temp = nv.read().get("temp")
+            if temp is None:
+                _NV_CACHE.pop(name, None)
+                nv.close()
+            return temp
     except Exception:
         return None
 

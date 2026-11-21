@@ -1,4 +1,5 @@
 """OptimaX-Rescue.cmd: правильний cmd-файл, екранування, пакети, синхронізація з програмою, банер після збою."""
+import re
 from _util import IS_WIN, run_script, tail
 
 
@@ -58,6 +59,8 @@ def test_rescue_failed_step_keeps_entry_and_no_injection():
     # схема живлення — лише якщо вона зараз активна (як engine._undo_record)
     g = "381b4222-f694-41f0-9685-ff5bb260df2e"
     assert r["bare_setactive"] == [] and len(r["pw"]) == 1
-    assert r["pw"][0].startswith(f'powercfg /getactivescheme 2>nul | "%SystemRoot%\\System32\\find.exe" /i "{g}" '
-                                 f'>nul && (powercfg -setactive {g} >nul 2>&1 || (set /a FAIL+=1 & '), r["pw"]
+    # 7.1.1: find.exe — буквальним шляхом зі збірки скрипта, не з %SystemRoot% (його користувач може перевизначити)
+    assert re.match(r'powercfg /getactivescheme 2>nul \| "[A-Za-z]:\\[^"%]*\\System32\\find\.exe" /i "'
+                    + g + r'" >nul && \(powercfg -setactive ' + g + r' >nul 2>&1 \|\| \(set /a FAIL\+=1 & ',
+                    r["pw"][0]), r["pw"]
     assert r["psq"] == "'Assassin’’s ''Creed'''", "PowerShell treats ’ as a quote too"

@@ -62,6 +62,53 @@ def targets() -> dict:
     return {"reg": reg, "svc": svc}
 
 
+# 7.1.1: коди типів реєстру (winreg.REG_*) — і поза Windows, де winreg немає
+_REG_CODE = {"sz": 1, "expand": 2, "bin": 3, "dword": 4, "qword": 11}
+
+
+def reg_types() -> dict:
+    """{ключ (нижній регістр): {коди типів, якими каталог пише цей параметр}}; для параметрів, які каталог лише
+    видаляє, — рядкові й DWORD (тип до видалення каталогу невідомий)."""
+    out = {}
+    for t in E.TWEAKS:
+        if not t.reversible:
+            continue
+        for op in t.ops:
+            if op[0] == "reg" and not callable(op[3]) and op[4] in _REG_CODE:
+                out.setdefault(_rkey(op[1], op[2]).lower(), set()).add(_REG_CODE[op[4]])
+            elif op[0] == "regdel":
+                out.setdefault(_rkey(op[1], op[2]).lower(), set())
+    return {k: (v or {_REG_CODE["sz"], _REG_CODE["expand"], _REG_CODE["dword"]}) for k, v in out.items()}
+
+
+def base_ok(key: str, base, types: dict = None) -> bool:
+    """7.1.1: знімок лежить у %APPDATA% (його може переписати будь-яка програма), а відкат «сиріт» пише значення
+    з нього з правами адміністратора. Тож тип — лише той, яким каталог пише цей параметр, а значення — відповідне
+    типу: DWORD/QWORD — ціле в межах, рядок — без нульових символів, двійкове — шістнадцятковий рядок."""
+    if base is None:
+        return True
+    if not (isinstance(base, list) and len(base) == 2 and isinstance(base[0], int) and not isinstance(base[0], bool)):
+        return False
+    rt, v = base
+    if rt not in (reg_types() if types is None else types).get(str(key).lower(), set()):
+        return False
+    if rt in (_REG_CODE["dword"], _REG_CODE["qword"]):
+        top = 0xFFFFFFFF if rt == _REG_CODE["dword"] else 0xFFFFFFFFFFFFFFFF
+        return isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= top
+    if rt in (_REG_CODE["sz"], _REG_CODE["expand"]):
+        return isinstance(v, str) and "\x00" not in v and len(v) <= 4096
+    if rt == _REG_CODE["bin"]:
+        h = v.get("hex") if isinstance(v, dict) else None
+        if not (isinstance(h, str) and len(h) % 2 == 0 and len(h) <= 8192):
+            return False
+        try:
+            bytes.fromhex(h)
+        except ValueError:
+            return False
+        return True
+    return False
+
+
 def _journal_originals(journal: E.Journal = None) -> tuple:
     """Найперші значення «до» з журналу відкату: {ключ реєстру: [тип, значення] | None}, {служба: режим}."""
     j = journal or E.JOURNAL
@@ -132,12 +179,15 @@ def orphans(snap: dict = None, journal: E.Journal = None) -> list:
     if not snap:
         return []
     tg = targets()
+    types = reg_types()
     c_reg, c_svc = _covered(journal)
     out = []
     for k, (path, name, vals, ids) in tg["reg"].items():
         if k not in snap["reg"] or k.lower() in c_reg:
             continue
         base = snap["reg"][k]
+        if not base_ok(k, base, types):  # 7.1.1: як для служб нижче — лише очікувані тип і значення
+            continue
         cur = E.reg_get(path, name)
         cur_n = "<deleted>" if cur is None else _norm(E._enc(cur[1]))
         base_n = "<deleted>" if base is None else _norm(base[1])
@@ -169,6 +219,8 @@ def restore(items: list, log, progress=None) -> dict:
             continue
         try:
             if it["kind"] == "reg":
+                if not base_ok(it.get("key", ""), it["base"]):  # 7.1.1: значення прийшло з файла знімка
+                    raise ValueError(tr("e.undo_bad", what=f"{it['name']}: {it['base']}"[:80]))
                 if it["base"] is None:
                     E.reg_del_value(it["path"], it["name"])
                 else:

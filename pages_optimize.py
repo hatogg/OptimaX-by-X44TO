@@ -1186,9 +1186,21 @@ class HomePage(QWidget):
         self.retheme()
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
-        self.timer.start(1500)
+        # 7.1.1: такт іде лише, поки головну видно (showEvent/hideEvent, як у «Пам'яті»): раніше він ішов і в треї
+        # чи на іншій сторінці й щоразу запускав 700-мс анімації трьох плиток — ≈150 кадрів анімацій на секунду
+        # без жодного глядача. Стан, потрібний іншим (режим гри), оновлює update_booster_ui, а не цей такт.
         self.tick()
         self.render_metrics()
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        if not self.timer.isActive():
+            self.timer.start(1500)
+            self.tick()  # одразу свіжі цифри, а не через 1,5 с після повернення
+
+    def hideEvent(self, e):
+        super().hideEvent(e)
+        self.timer.stop()
 
     def retheme(self):
         for ic, name in self.path_icons:
@@ -1252,6 +1264,8 @@ class HomePage(QWidget):
 
     # ── живі показники ──
     def tick(self):
+        if self.window().isMinimized():  # 7.1.1: згорнуте вікно дочірнім віджетам hideEvent не надсилає
+            return
         s = H.sys_stats()
         self.stats = s
         self.s_cpu.push(s["cpu"] * 100, s["cpu"], tr("home.cpu_d"))

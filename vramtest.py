@@ -195,7 +195,7 @@ class Core:
             w = want[o:o + BLOCK] if want is not None else blk
             if got[o:o + BLOCK] != w:
                 bad += 1
-                nb = sum(1 for x, y in zip(got[o:o + BLOCK], w) if x != y)
+                nb = _diff_count(got[o:o + BLOCK], w)
                 self.bad_bytes += nb
                 if len(self.log) < 20:
                     self.log.append(dict(pattern=name, chunk=ci, block=bi, bytes=nb))
@@ -208,6 +208,14 @@ class Core:
             arr = (ctypes.c_uint * len(ids))(*ids)
             self.gl.glDeleteBuffers(len(ids), arr)
         self.bufs, self.scratch = [], None
+
+
+def _diff_count(a: bytes, b: bytes) -> int:
+    """7.1.1: скільки байтів відрізняється — XOR цілих чисел і підрахунок нульових байтів у C, а не цикл Python по
+    мільйону байтів на кожен поганий блок (з несправною пам'яттю тест «зависав» на звірці)."""
+    n = min(len(a), len(b))
+    x = (int.from_bytes(a[:n], "little") ^ int.from_bytes(b[:n], "little")).to_bytes(n, "little")
+    return n - x.count(0) + abs(len(a) - len(b))
 
 
 def run_core(core: Core, state: dict, write_state, should_stop) -> None:
@@ -329,12 +337,17 @@ class Run:
         self.proc = subprocess.Popen(cmd, cwd=here, env=env)
         self.stopped = False
 
+    kill_at = 0.0
+
     def poll(self) -> dict:
         try:
             with open(self.out, encoding="utf-8") as f:
                 data = json.load(f)
         except (OSError, ValueError):
             data = {"state": "starting"}
+        if self.stopped and self.kill_at and time.time() >= self.kill_at and self.alive:
+            self.kill_at = 0.0
+            E.kill_tree(self.proc)  # не зупинився сам — разом із дочірнім процесом onefile
         rc = self.proc.poll()
         if rc is not None and data.get("state") not in ("done", "error", "cancelled"):
             data = dict(data, state="cancelled" if self.stopped else "crash", exit_code=rc)
@@ -345,16 +358,18 @@ class Run:
         return self.proc.poll() is None
 
     def stop(self) -> None:
+        """7.1.1: без очікування до 10 с у потоці інтерфейсу: файл-прохання зупинитися, коротка пауза, а якщо процес не
+        завершився за 10 с — його завершить poll(), який інтерфейс викликає й далі."""
         self.stopped = True
         try:
             open(self.out + ".stop", "w").close()
         except OSError:
             pass
-        end = time.time() + 10
+        end = time.time() + 0.3
         while self.alive and time.time() < end:
             time.sleep(0.05)
         if self.alive:
-            self.proc.kill()
+            self.kill_at = time.time() + 10
 
     def cleanup(self) -> None:
         for p in (self.out, self.out + ".tmp", self.out + ".stop"):
@@ -423,6 +438,10 @@ def vram_result(state: dict, adapter: dict) -> dict:
     if st == "error":
         status = HT.NA
         f.append((HT.WARN, "hwc.f.error", dict(err=state.get("error", "?"))))
+    elif st == "done" and not state.get("mb") and status in (HT.PASS, HT.WARN):
+        # 7.1.1: перший же буфер не виділився (GL_OUT_OF_MEMORY) — перевірено 0 МБ, це не «помилок не знайдено»
+        status = HT.NA
+        f.append((HT.WARN, "hwc.f.nothing_tested", {}))
     if st == "cancelled" and status == HT.PASS:
         status = HT.SKIPPED
     rows = [("vt.r.gpu", state.get("renderer")), ("vt.r.tested", f"{state.get('mb', 0)} {tr('u.mb')}"),

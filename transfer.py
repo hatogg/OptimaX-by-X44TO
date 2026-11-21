@@ -57,6 +57,15 @@ def load(path: str) -> dict:
     return data
 
 
+def _local_exe(p: str) -> bool:
+    """exe гри з імпортованого файлу налаштувань існує на цьому ПК. 7.1.1: мережеві шляхи (\\\\сервер\\… чи //…)
+    відкидаємо ще до звернення до файлової системи: сама перевірка такого шляху відправила б серверу з файлу
+    NTLM-відбиток облікового запису Windows."""
+    if not p or (p[:1] in "\\/" and p[1:2] in "\\/"):
+        return False
+    return p.lower().endswith(".exe") and os.path.isfile(p)
+
+
 def plan(data: dict, hw: dict = None) -> dict:
     """Що вийде на цьому ПК: tweaks — можна (ще не застосовані), done — уже застосовані, blocked — [(id, причина)]
     (шкодить цьому залізу / не для цієї Windows), unknown — id, яких ця версія OptimaX не знає; games — exe є,
@@ -77,7 +86,7 @@ def plan(data: dict, hw: dict = None) -> dict:
                 res["tweaks"].append(t.id)
     for g in data.get("games") or []:
         p = str((g or {}).get("path") or "")
-        (res["games"] if p.lower().endswith(".exe") and os.path.isfile(p) else res["missing"]).append(p)
+        (res["games"] if _local_exe(p) else res["missing"]).append(p)
     return res
 
 
@@ -122,7 +131,7 @@ def apply_settings(data: dict) -> dict:
     games = []
     for g in data.get("games") or []:
         p = str((g or {}).get("path") or "")
-        if p.lower().endswith(".exe") and os.path.isfile(p):
+        if _local_exe(p):
             F.add_game(p)
             flags = {k: g.get(k) for k in GAME_FLAGS if k in g and k not in ("prio", "dgpu", "fso", "cores")}
             if flags:
@@ -137,6 +146,6 @@ def game_options(data: dict) -> list:
     out = []
     for g in data.get("games") or []:
         p = str((g or {}).get("path") or "")
-        if p.lower().endswith(".exe") and os.path.isfile(p):
+        if _local_exe(p):
             out += [(p, k) for k in ("prio", "dgpu", "fso", "cores") if g.get(k)]
     return out

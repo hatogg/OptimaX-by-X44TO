@@ -22,6 +22,7 @@ import gpudiag as GD
 import monitor as M
 import netlab as N
 import report as RP
+import secfs as SF
 from i18n import tr
 from ui_kit import (T, label, button, card, vbox, hbox, badge, style_badge, dot, scroller, page_header, clear_layout,
                     section_card, Switch, Check, Segmented, chip, Ask, RunDialog, LogView, Spark, Worker, LOG)
@@ -841,7 +842,11 @@ class AppsPage(QWidget):
         nv.addWidget(label(tr("apps.no_winget_d"), "desc", wrap=True))
         nv.addWidget(button(tr("apps.get_winget"), "ghost", lambda: webbrowser.open(
             "ms-windows-store://pdp/?productid=9NBLGGH4NNS1")), 0, Qt.AlignmentFlag.AlignLeft)
-        self.no_wg.setVisible(not A.winget_path())
+        # 7.1.1: пошук winget — PowerShell Get-AppxPackage до 30 с; раніше він ішов у потоці інтерфейсу під час
+        # фонової побудови сторінок (і під час автозапуску в трей). Тепер — фоном, банер з'явиться за результатом.
+        self.no_wg.setVisible(False)
+        main.run_quick("winget", lambda log, p: A.winget_path(), silent=True,
+                       on_done=lambda r: self.no_wg.setVisible(not (isinstance(r, str) and r)))
         v.addWidget(self.no_wg)
 
         uc, uv = section_card(tr("apps.upd"), tr("apps.upd_d"))
@@ -1102,7 +1107,8 @@ class DiskView(QWidget):
         if not path:
             return
         if E.IS_WIN and os.path.exists(path):
-            subprocess.Popen(["explorer.exe", "/select,", path] if select else ["explorer.exe", path])
+            exe = SF.explorer_exe()  # 7.1.1: повний шлях — за ім'ям Windows шукала б explorer.exe і в папці програми
+            subprocess.Popen([exe, "/select,", path] if select else [exe, path])
         else:
             self.main.toast(tr("toast.preview_only"), "warn")
 

@@ -25,6 +25,7 @@ import os
 import stat
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -43,6 +44,7 @@ FOLDERID = {
     "ProgramFilesX64": "{6D809377-6AF0-444B-8957-A3773F02200E}",
     "ProgramFilesX86": "{7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}",
     "Windows": "{F38BF404-1D43-42F2-9305-67DE0B28FC23}",
+    "LocalAppData": "{F1B32785-6FBA-4FCF-9D55-7B8E7F157091}",
 }
 
 MARK = ".optimax-secured"
@@ -127,6 +129,19 @@ def program_files_dirs() -> list:
     return out
 
 
+def local_appdata() -> str:
+    """Справжня %LOCALAPPDATA% поточного користувача (з Windows API, а не зі змінної середовища)."""
+    return _known_folder("LocalAppData") if IS_WIN else ""
+
+
+def user_temp() -> str:
+    """7.1.1: справжня тимчасова папка користувача (%LOCALAPPDATA%\\Temp) — для очищення. Змінну TEMP процесу з
+    правами адміністратора OptimaX перенаправляє в захищену папку (pin_temp), а саме значення TEMP користувач міг
+    перевизначити (HKCU\\Environment) на будь-яку папку, вміст якої тоді видалявся б з правами адміністратора."""
+    la = local_appdata()
+    return os.path.join(la, "Temp") if la else ""
+
+
 def data_root() -> str:
     """%ProgramData%\\OptimaX — спільна папка програми з правами адміністратора й служб SYSTEM."""
     return os.path.join(program_data(), APP)
@@ -147,6 +162,15 @@ def sysexe(name: str) -> str:
     else:
         cand = os.path.join(sd, base)
     return cand if os.path.isfile(cand) else name
+
+
+def explorer_exe() -> str:
+    """7.1.1: повний шлях до explorer.exe. Він лежить у папці Windows, а не в System32 (sysexe його не знайде), а
+    за самим ім'ям Windows шукає програму спершу в папці OptimaX.exe і в поточній — у портативної версії це
+    «Завантаження», куди будь-яка програма може покласти свій explorer.exe."""
+    if not IS_WIN:
+        return "explorer.exe"
+    return os.path.join(windows_dir(), "explorer.exe")
 
 
 def ps_module_path() -> str:
@@ -171,9 +195,48 @@ def pin_environment() -> None:
     env["ALLUSERSPROFILE"] = pd
     env["NoDefaultCurrentDirectoryInExePath"] = "1"  # cmd.exe не шукатиме програми в поточній папці
     env["PSModulePath"] = ps_module_path()
+    # 7.1.1: SystemDrive, Program Files і LOCALAPPDATA теж підставляються в шляхи й команди (chkdsk, cctk.exe,
+    # кеші шейдерів) — їх користувач так само може перевизначити для себе
+    env["SystemDrive"] = os.path.splitdrive(wd)[0] or "C:"
+    pf, pf64, pf86 = (_known_folder(n) for n in ("ProgramFiles", "ProgramFilesX64", "ProgramFilesX86"))
+    for name, val in (("ProgramFiles", pf), ("ProgramW6432", pf64 or pf), ("ProgramFiles(x86)", pf86),
+                      ("CommonProgramFiles", pf and os.path.join(pf, "Common Files")),
+                      ("CommonProgramW6432", (pf64 or pf) and os.path.join(pf64 or pf, "Common Files")),
+                      ("CommonProgramFiles(x86)", pf86 and os.path.join(pf86, "Common Files")),
+                      ("LOCALAPPDATA", local_appdata())):
+        if val:
+            env[name] = val
     front = [sd, wd, os.path.join(sd, "Wbem"), os.path.join(sd, _PS_DIR)]
     rest = [p for p in (env.get("PATH") or "").split(os.pathsep) if p and p not in front]
     env["PATH"] = os.pathsep.join(front + rest)
+
+
+def pin_temp() -> str:
+    """7.1.1: TEMP/TMP процесу з правами адміністратора — захищена %ProgramData%\\OptimaX\\tmp. У звичайній %TEMP%
+    будь-яка програма користувача може підмінити файл між записом і читанням (результати тестів, профіль WPR, звіт
+    батареї) або поставити посилання на місці файлу, який OptimaX з правами адміністратора перезапише чи видалить.
+    Дочірні процеси (тести, перевірка відеокарти) успадковують цю папку. -> шлях або "" (лишилася як була)."""
+    if not (IS_WIN and is_admin()):
+        return ""
+    try:
+        d = secure_dir(os.path.join(data_root(), "tmp"), users_read=True)
+    except (OSError, ValueError):
+        return ""
+    os.environ["TEMP"] = os.environ["TMP"] = d
+    tempfile.tempdir = None  # tempfile кешує папку з першого виклику
+    return d
+
+
+PS_QUOTES = "'\u2018\u2019\u201a\u201b"
+
+
+def psq(s) -> str:
+    """Рядок у одинарних лапках PowerShell. 7.1.1: PowerShell вважає одинарною лапкою не лише ', а й ‘ ’ ‚ ‛
+    (U+2018–U+201B) — подвоювати треба кожну з них, інакше рядок закінчується раніше і решта стає командою."""
+    out = str(s)
+    for q in PS_QUOTES:
+        out = out.replace(q, q + q)
+    return "'" + out + "'"
 
 
 # ───────────────────────── власник, посилання, розташування ─────────────────────────
@@ -353,6 +416,13 @@ def secure_dir(path: str, users_read: bool = True, log=None) -> str:
             leaf = i == len(chain) - 1
             if os.path.lexists(p) and (is_reparse(p) or not os.path.isdir(p)):
                 _quarantine(p, log)
+            elif os.path.isdir(p) and not _marked(p):
+                # 7.1.1: у ProgramData звичайний користувач може створити папку заздалегідь, до першого запуску
+                # OptimaX, і покласти туди «журнал відкату». Захистити таку папку на місці — означає залишити
+                # підкинутий вміст; тож чужу (власник — не SYSTEM/адміністратори) відкладаємо й створюємо нову.
+                sid = owner_sid(p)
+                if sid is not None and sid not in TRUSTED_OWNERS:
+                    _quarantine(p, log)
             if not os.path.isdir(p):
                 os.mkdir(p)
             if not _marked(p) or (leaf and not trusted_owner(p)):

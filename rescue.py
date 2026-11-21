@@ -13,7 +13,9 @@ OptimaX — аварійний відкат.
 from __future__ import annotations
 
 import base64
+import ipaddress
 import os
+import re
 import subprocess
 import time
 
@@ -326,10 +328,19 @@ GONE_OK = ("reg delete ", "bcdedit /deletevalue ")
 
 def _psq(s: str) -> str:
     """Рядок PowerShell в одинарних лапках. Лапкою PowerShell вважає й ‘ ’ ‚ ‛ (папка «Assassin’s Creed» закрила б
-    рядок, а решта шляху стала б кодом) — подвоюємо кожну."""
-    for c in "'‘’‚‛":
-        s = str(s).replace(c, c + c)
-    return "'" + str(s) + "'"
+    рядок, а решта шляху стала б кодом) — подвоюємо кожну. 7.1.1: одна реалізація для всієї програми (secfs.psq)."""
+    return SF.psq(s)
+
+
+FIND_FALLBACK = r"C:\Windows\System32\find.exe"
+EXPLORER_FALLBACK = r"C:\Windows\explorer.exe"
+
+
+def _literal_exe(path: str, fallback: str) -> str:
+    """7.1.1: повний шлях до системної програми — літералом на момент генерації, а не через %SystemRoot%: скрипт
+    виконується з правами адміністратора, а змінні середовища користувач може перевизначити для себе. Шлях, який
+    не можна безпечно лишити в лапках .cmd (не-ASCII), — запасний сталий шлях."""
+    return path if path and os.path.isabs(path) and _cmd_safe(path) and "%" not in path else fallback
 
 
 def _ps_line(code: str) -> str:
@@ -388,6 +399,10 @@ class _When(str):
         return s
 
 
+def _find_exe() -> str:
+    return _literal_exe(os.path.join(SF.system_dir(), "find.exe") if SF.system_dir() else "", FIND_FALLBACK)
+
+
 def undo_lines(rec: dict) -> list:
     """Команди .cmd для одного запису відкату з журналу. Рядок «rem …» — крок, який виконати не можна: запис
     лишиться в журналі (див. build_script)."""
@@ -423,10 +438,65 @@ def undo_lines(rec: dict) -> list:
         # на неї ПК, який після OptimaX уже перейшов на іншу схему
         return [f"powercfg {verb} {rec['g']} {rec['s']} {rec['st']} {rec['old']}",
                 _When(f"powercfg -setactive {rec['g']}",
-                      f'powercfg /getactivescheme 2>nul | "%SystemRoot%\\System32\\find.exe" /i "{rec["g"]}" >nul')]
+                      f'powercfg /getactivescheme 2>nul | "{_find_exe()}" /i "{rec["g"]}" >nul')]
     if t == "file":  # копія, яку OptimaX поклала поруч із грою (Mesa), і файл, що лежав там раніше
         return [_ps_line(_file_undo_ps(rec))]
     return []  # live: оновлення Провідника — в кінці; решта діє після перезавантаження
+
+
+_GUID_BR = re.compile(r"\{[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}\}")
+
+
+def _dns_backup() -> list:
+    """7.1.1: DNS адаптерів до фільтра реклами (adblock: dns-backup.json) — [(guid, індекс, [адреси])]. Файл є, лише
+    поки фільтр стоїть на 127.0.0.1. Усе з файлу — лише дані: GUID за шаблоном, індекс — ціле число, адреси
+    перевіряє ipaddress (у скрипт іде їхній канонічний запис, а не рядок із файлу)."""
+    try:
+        import adblock as AB
+        data = AB._read_json(os.path.join(AB.data_dir(), "dns-backup.json"), {})
+    except Exception:  # noqa: BLE001 — без фільтра реклами аварійний відкат працює як раніше
+        return []
+    out = []
+    for guid, b in (data.items() if isinstance(data, dict) else []):
+        if not (isinstance(guid, str) and _GUID_BR.fullmatch(guid) and isinstance(b, dict)):
+            continue
+        idx = b.get("idx")
+        idx = idx if isinstance(idx, int) and not isinstance(idx, bool) and 0 < idx < 10 ** 7 else None
+        servers = []
+        for v in list(b.get("ns4") or []) + list(b.get("ns6") or []):
+            try:
+                ip = ipaddress.ip_address(str(v))
+            except ValueError:
+                continue
+            if not ip.is_loopback and str(ip) not in servers:
+                servers.append(str(ip))
+        out.append((guid, idx, servers))
+    return out
+
+
+def _dns_restore_ps(entries: list) -> list:
+    """Те саме, що adblock.disable / restore_system_dns, але без Python і без служби фільтра: зупинити й видалити
+    задачу «OptimaX DNS», прибрати правило брандмауера й повернути DNS адаптерів, як було до фільтра (DHCP, якщо
+    адреси були автоматичні). Інакше після /all ПК лишався б з DNS 127.0.0.1, який нікому обслуговувати.
+    -> коди PowerShell: перший — задача й брандмауер, далі по одному на адаптер (рядок .cmd — до 8191 символу)."""
+    import adblock as AB
+    task = _psq(AB.TASK)
+    head = "$ErrorActionPreference='Continue';$sd=[Environment]::SystemDirectory;"
+    out = [head + f"& (Join-Path $sd 'schtasks.exe') /End /TN {task} 2>$null | Out-Null;"
+           f"& (Join-Path $sd 'schtasks.exe') /Delete /TN {task} /F 2>$null | Out-Null;"
+           f"& (Join-Path $sd 'netsh.exe') advfirewall firewall delete rule {_psq('name=' + AB.TASK)} 2>$null"
+           " | Out-Null;exit 0"]
+    for guid, idx, servers in entries:
+        set_ = ("-ServerAddresses @(" + ",".join(_psq(x) for x in servers) + ")") if servers \
+            else "-ResetServerAddresses"
+        out.append(head + f"$i={idx if idx else '$null'};"
+                   "$a=Get-NetAdapter -IncludeHidden -ErrorAction SilentlyContinue | "
+                   f"Where-Object {{ $_.InterfaceGuid -eq {_psq(guid)} }} | Select-Object -First 1;"
+                   "if ($a) { $i=$a.ifIndex };"
+                   f"if ($i) {{ try {{ Set-DnsClientServerAddress -InterfaceIndex $i {set_} -ErrorAction Stop }} "
+                   "catch { exit 1 } };"
+                   "& (Join-Path $sd 'ipconfig.exe') /flushdns | Out-Null;exit 0")
+    return out
 
 
 def _cut(cmd: str, n: int = 150) -> str:
@@ -459,8 +529,20 @@ def build_script(journal: E.Journal = None) -> str:
          "if not defined QUIET cls", "echo.",
          f"echo   {_echo(E.APP_TITLE + ' - ' + tr('rs.cmd_title'))}", "echo.",
          f"echo   {_echo(tr('rs.cmd_state', n=len(newest), last=len(last), when=when))}", "echo."]
+    dns = _dns_backup()
+    # 7.1.1: DNS фільтра реклами — не в журналі (його повертає сама служба фільтра). Якщо вона зламалася, /all
+    # має повернути й DNS адаптерів — інакше без працюючого фільтра на 127.0.0.1 не відкриється жоден сайт.
+    dns_sub = []
+    if dns:
+        dns_sub = ["", ":dns", f"echo   - {_echo(tr('rs.cmd_dns'))}"]
+        dns_sub += [f'{_ps_line(code)} >nul 2>&1 || (set /a FAIL+=1 & >>"%~dp0failed.txt" echo '
+                    f'dns: {_echo_block(tr("rs.cmd_dns"))})' for code in _dns_restore_ps(dns)]
+        dns_sub += ["exit /b 0"]
     if not newest:
-        L += [f"echo   {_echo(tr('rs.cmd_nothing'))}", "if not defined QUIET pause", "exit /b 0"]
+        L += [f"echo   {_echo(tr('rs.cmd_nothing'))}"]
+        if dns:  # змін у журналі немає, але DNS фільтра стоїть — /all повертає й його
+            L += ['if /i "%~1"=="/all" call :dns']
+        L += ["if not defined QUIET pause", "exit /b 0"] + dns_sub
         return "\r\n".join(L) + "\r\n"
     L += [f"echo   [1] {_echo(tr('rs.cmd_last', n=len(last)))}",
           f"echo   [2] {_echo(tr('rs.cmd_all', n=len(newest)))}",
@@ -473,10 +555,14 @@ def build_script(journal: E.Journal = None) -> str:
     for label_, ids in (("last", last), ("all", newest)):
         L += ["", f":{label_}", "echo."]
         L += [f"call :x{index[tid]}" for tid in ids]
+        if label_ == "all" and dns:
+            L += ["call :dns"]
         L += ["goto finish"]
     L += ["", ":finish"]
     if explorer:
-        L += ["taskkill /f /im explorer.exe >nul 2>&1", 'start "" explorer.exe']
+        # 7.1.1: Провідник — за повним шляхом (за самим ім'ям cmd.exe шукає його й у поточній папці та PATH)
+        L += ["taskkill /f /im explorer.exe >nul 2>&1",
+              f'start "" "{_literal_exe(SF.explorer_exe(), EXPLORER_FALLBACK)}"']
     L += ["echo.", f"echo   {_echo(tr('rs.cmd_done'))}",
           f"if not %FAIL%==0 echo   {_echo(tr('rs.cmd_fail'))}",
           f"echo   {_echo(tr('rs.cmd_reboot'))}", "echo.", "if not defined QUIET pause", "exit /b %FAIL%"]
@@ -497,6 +583,7 @@ def build_script(journal: E.Journal = None) -> str:
                             f'{note}: {_echo_block(_cut(cmd))})')
                     L.append(f"{cmd.cond} && ({step})" if isinstance(cmd, _When) else step)
         L += ["if not %FAIL%==%XF% exit /b 0", f'>>"%~dp0done.txt" echo {_echo_id(tid)}', "exit /b 0"]
+    L += dns_sub
     return "\r\n".join(L) + "\r\n"
 
 

@@ -223,12 +223,14 @@ class CpuTemp:
     """read() -> (°C, джерело) або (None, None). Джерело, що спрацювало, опитується першим; ті, яких немає,
     перевіряються не частіше ніж раз на RETRY секунд, щоб опитування раз на секунду нічого не гальмувало."""
     RETRY = 15.0
+    LHM_CACHE = 2.0  # 7.1.1: с — HTTP-запит до LibreHardwareMonitor не частіше (опитування йде з потоку інтерфейсу)
 
     def __init__(self):
         self.src = None
         self.label = ""
         self.cpu_name = ""
         self._next = {}
+        self._lhm = (-1e9, None)
 
     def _try(self, src: str, now: float):
         if src == "coretemp":
@@ -244,8 +246,13 @@ class CpuTemp:
         if src == "aida64":
             return parse_aida64(read_mapping("AIDA64_SensorValues", 1 << 20))
         if src == "lhm":
+            ts, r = self._lhm
+            if now - ts < self.LHM_CACHE:
+                return r
             d = _lhm_fetch()
-            return parse_lhm(d) if d else None
+            r = parse_lhm(d) if d else None
+            self._lhm = (now, r)
+            return r
         return None
 
     def read(self):

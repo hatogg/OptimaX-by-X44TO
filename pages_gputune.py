@@ -502,11 +502,32 @@ def _on_start(page, on: bool) -> None:
 
 
 # ── перевірка стабільності й автопідбір ──
-def _run_fn(page):
+def _plan_for(page, t):
+    """7.1.1: стрес-тест — на тій карті, яку налаштовуємо (t), а не на вибраній для тестів у налаштуваннях: інакше
+    андервольт однієї карти «перевірявся» навантаженням іншої."""
     import gpubench as GB
+    plan = page.gpu_plan() or {}
+    want = GB.gpu_key(getattr(t, "name", "") or "")
+    if not want or GB.gpu_key(plan.get("name") or "") == want:
+        return plan or None
+    try:
+        import gpuselect as GS
+        hit = next((a for a in GS.adapters(GS.cached_probe()) if GB.gpu_key(a.get("name") or "") == want), None)
+        if hit:
+            p = GS.selection(page.main.hw or {}, choice=hit["key"])
+            if p.get("name"):
+                return p
+    except Exception:
+        pass
+    return plan or None  # карту не знайшли серед адаптерів — перевірка «хто малював» (wrong_gpu) зупинить підбір
+
+
+def _run_fn(page, t=None):
+    import gpubench as GB
+    plan = _plan_for(page, t)
 
     def run(seconds: int):
-        return GB.start("1080p", "stress", max(1, seconds // 60), seconds=seconds, adapter=page.gpu_plan() or None)
+        return GB.start("1080p", "stress", max(1, seconds // 60), seconds=seconds, adapter=plan)
     return run
 
 
@@ -522,7 +543,7 @@ def start_verify(page) -> None:
     st = GT.state(F.CFG)
     st["tuning"] = dict(key=t.key, ts=int(time.time()))  # поки йде перевірка, позначка не знімається за часом
     GT.save_state(F.CFG, st)
-    page.gt.update(run=_run_fn(page)(VERIFY_SECONDS), kind="verify", started=time.time(), samples=[])
+    page.gt.update(run=_run_fn(page, t)(VERIFY_SECONDS), kind="verify", started=time.time(), samples=[])
     _enable(page, True)
     page.gt_progress.setText(tr("gt.verify_run", t=0, d=VERIFY_SECONDS))
 
@@ -531,7 +552,7 @@ def start_tune(page) -> None:
     t = _tuner()
     if not t or page.gt["run"]:
         return
-    tune = GT.AutoTune(F.CFG, t, _run_fn(page), LOG.write)
+    tune = GT.AutoTune(F.CFG, t, _run_fn(page, t), LOG.write)
     if not tune.supported:
         return
     mins = round((GT.TUNE_STEP_SECONDS * 6 + GT.TUNE_VERIFY_SECONDS) / 60)
@@ -558,6 +579,15 @@ def _tick(page) -> None:
     t = _tuner()
     if t is None:
         return
+    if not page.gt.get("run"):
+        # 7.1.1: живі показники (NVML / ADLX раз на секунду) — лише поки їх видно. Розділ закрили чи вікно сховали —
+        # таймер зупиняється (знову запуститься show() з HwCenterPage.on_show / showEvent); згорнуте вікно — без
+        # читання датчиків. Перевірку й автопідбір таймер веде далі за будь-яких умов.
+        if not page.isVisible() or getattr(page, "current", "gputune") != "gputune":
+            page.gt_timer.stop()
+            return
+        if page.window().isMinimized():
+            return
     try:
         r = t.read()
     except Exception:
@@ -602,8 +632,7 @@ def _tick(page) -> None:
         run.cleanup()
     except Exception:
         pass
-    res = st.get("result") or {}
-    ok = st.get("state") == "done" and res.get("verdict") not in ("errors", "crash") and not res.get("errors")
+    ok, why = GT.run_ok(st)  # 7.1.1: і «малювала інша карта» — не перевірка цієї
     gst = GT.state(F.CFG)
     gst.pop("tuning", None)
     GT.save_state(F.CFG, gst)
@@ -623,7 +652,7 @@ def _tick(page) -> None:
         page.main.toast(tr("gt.verify_ok_t"), "ok")
     else:
         GT.restore_original(F.CFG, t)
-        page.gt_progress.setText(tr("gt.verify_bad"))
+        page.gt_progress.setText(tr("gt.verify_bad") + (f" {tr(why)}" if why else ""))
         page.main.toast(tr("gt.verify_bad"), "bad")
     page.gt.update(run=None, kind="")
     _fill(page, t)

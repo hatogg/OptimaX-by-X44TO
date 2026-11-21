@@ -222,14 +222,19 @@ class NvmlTuner(Tuner):
 
     vendor = "nvidia"
 
-    def __init__(self, name: str = ""):
+    def __init__(self, name: str = "", index: int = None, uuid: str = ""):
         super().__init__()
         import gpubench as GB
-        self.nv = GB.Nvml(name)
+        self.fan_count = 0
+        self._fans_set = set()
+        self.uuid = ""
+        # 7.1.1: index / uuid — саме та карта (дві однакові P106 мають однакову назву, і за назвою бралась перша)
+        self.nv = GB.Nvml(name, index=index, uuid=uuid)
         if not self.nv.ok:
             return
         self.lib, self.h, self.index = self.nv.lib, self.nv.h, self.nv.index
         self.name = self.nv.name()
+        self.uuid = self.nv.uuid()
         self._probe()
 
     def _fn(self, name: str):
@@ -252,6 +257,7 @@ class NvmlTuner(Tuner):
     def _probe(self) -> None:
         c, why = {}, {}
         n, rc = self._u("nvmlDeviceGetNumFans")
+        self.fan_count = int(n or 0)
         if n:
             lo, hi = ctypes.c_uint(0), ctypes.c_uint(100)
             if self._call("nvmlDeviceGetMinMaxFanSpeed", ctypes.byref(lo), ctypes.byref(hi)) != NVML_OK:
@@ -270,8 +276,10 @@ class NvmlTuner(Tuner):
         cur, _ = self._u("nvmlDeviceGetPowerManagementLimit")
         if rc == NVML_OK and hi.value and dflt:
             floor = max(int(lo.value), int(dflt * POWER_MIN_PCT / 100))
-            c["power"] = dict(unit="W", min=round(floor / 1000), max=round(hi.value / 1000), default=round(dflt / 1000),
-                              cur=round((cur or dflt) / 1000))
+            # 7.1.1: межі — всередину дозволеного драйвером діапазону (мінімум угору, максимум униз): round() міг дати
+            # 1 Вт нижче підлоги POWER_MIN_PCT чи вище межі драйвера, і така зміна не застосовувалась
+            c["power"] = dict(unit="W", min=-(-int(floor) // 1000), max=int(hi.value) // 1000,
+                              default=round(dflt / 1000), cur=round((cur or dflt) / 1000))
             if c["power"]["max"] <= c["power"]["min"]:
                 del c["power"]
                 why["power"] = "gt.why.locked"
@@ -348,17 +356,28 @@ class NvmlTuner(Tuner):
         pct = int(min(fan["max"], max(fan["min"], pct)))
         ok = True
         for i in range(fan["count"]):
-            ok = self._err("fan", self._call("nvmlDeviceSetFanSpeed_v2", i, pct)) and ok
+            rc = self._call("nvmlDeviceSetFanSpeed_v2", i, pct)
+            if rc not in (NVML_NOT_SUPPORTED, NVML_NO_FUNCTION):  # 7.1.1: його потім обов'язково повертаємо драйверу
+                self._fans_set.add(i)
+            ok = self._err("fan", rc) and ok
         return ok
 
     def fan_auto(self) -> bool:
-        fan = self.caps.get("fan") or {}
+        # 7.1.1: «не підтримується» на вентиляторі 1 прибирало caps["fan"], і тоді fan_auto не скидав нічого й казав
+        # «вдалося», хоч вентилятор 0 лишався на фіксованій швидкості. Тепер — усі вентилятори, яких торкались
+        # (і всі, поки керування підтримується); False, якщо хоч один не повернувся драйверу.
+        fans = set(self._fans_set)
+        if self.caps.get("fan"):
+            fans |= set(range(self.fan_count or self.caps["fan"].get("count") or 0))
         ok = True
-        for i in range(fan.get("count") or 0):
+        for i in sorted(fans):
             rc = self._call("nvmlDeviceSetDefaultFanSpeed_v2", i)
             # повідомляли, що «типова швидкість» не завжди повертає автоматичну криву — ставимо й саму політику
             rc2 = self._call("nvmlDeviceSetFanControlPolicy", i, NVML_FAN_AUTO)
-            ok = ok and (rc == NVML_OK or rc2 == NVML_OK)
+            if rc == NVML_OK or rc2 == NVML_OK:
+                self._fans_set.discard(i)
+            else:
+                ok = False
         return ok
 
     def power_set(self, watts: int) -> bool:
@@ -710,6 +729,14 @@ class AdlxTuner(Tuner):
         return ok
 
     def _fan_exact(self, pts) -> bool:
+        fan = self.caps.get("fan") or {}
+        try:
+            # 7.1.1: знімок лежить у settings.json (дані, які могла змінити будь-яка програма) — лише числа в межах
+            # драйвера, і перед записом точки перевіряє сам драйвер (FAN_VALID), як і для кривої користувача
+            pts = [(int(min(fan["tmax"], max(fan["tmin"], int(t)))), int(min(fan["max"], max(fan["min"], int(s)))))
+                   for t, s in pts]
+        except (TypeError, ValueError, KeyError):
+            return False
         lst = ctypes.c_void_p()
         if not self._ok(_vcall(self.fan_i, FAN_EMPTY, ctypes.c_int, [ctypes.POINTER(ctypes.c_void_p)],
                                ctypes.byref(lst))):
@@ -726,6 +753,11 @@ class AdlxTuner(Tuner):
                 self._seti(st, FSTATE_SET_TEMP, t)
                 self._seti(st, FSTATE_SET_SPEED, s)
                 _vcall(st, I_RELEASE, ctypes.c_long, [])
+            bad = ctypes.c_int(-1)
+            if not self._ok(_vcall(self.fan_i, FAN_VALID, ctypes.c_int, [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)],
+                                   lst, ctypes.byref(bad))):
+                self.last_error = f"fan curve point {bad.value}"
+                return False
             return self._ok(_vcall(self.fan_i, FAN_SET, ctypes.c_int, [ctypes.c_void_p], lst))
         finally:
             _vcall(lst, I_RELEASE, ctypes.c_long, [])
@@ -865,17 +897,19 @@ class DemoTuner(Tuner):
         return self.restore(dict(power=0, maxfreq=2430, voltage=1150))
 
 
-def open_tuner(gpu_name: str = "") -> Tuner:
+def open_tuner(gpu_name: str = "", vendor: str = "", index: int = None) -> Tuner:
     """Відеокарта, якою можна керувати: NVIDIA (NVML), AMD (ADLX); поза Windows — демо. Нічого не знайдено —
-    порожній Tuner (ok() == False), причину видно в why."""
+    порожній Tuner (ok() == False), причину видно в why. vendor + index — саме та карта (ключ Tuner.key)."""
     if not E.IS_WIN:
-        return DemoTuner("amd" if "amd" in (gpu_name or "").lower() or "radeon" in (gpu_name or "").lower()
-                         else "nvidia", gpu_name)
+        return DemoTuner(vendor or ("amd" if "amd" in (gpu_name or "").lower() or "radeon" in (gpu_name or "").lower()
+                                    else "nvidia"), gpu_name)
     low = (gpu_name or "").lower()
     order = (AdlxTuner, NvmlTuner) if ("amd" in low or "radeon" in low) else (NvmlTuner, AdlxTuner)
+    if vendor in ("nvidia", "amd"):
+        order = (NvmlTuner,) if vendor == "nvidia" else (AdlxTuner,)
     for cls in order:
         try:
-            t = cls(gpu_name)
+            t = cls(gpu_name, index=index) if index is not None else cls(gpu_name)
         except Exception:
             continue
         if t.ok():
@@ -894,11 +928,25 @@ def journal_id(t: Tuner) -> str:
     return f"{JOURNAL_PREFIX}{t.vendor}:{t.index}"
 
 
+def _reset_args(t: Tuner) -> list:
+    args = ["--gpu-reset", f"--vendor={t.vendor}", f"--index={int(t.index)}"]
+    uuid = getattr(t, "uuid", "") or ""
+    if uuid and all(c.isalnum() or c == "-" for c in uuid):
+        args.append(f"--uuid={uuid}")
+    return args
+
+
 def reset_command(t: Tuner) -> str:
-    """Команда для запису журналу: OptimaX сама повертає заводські значення цієї карти (і з OptimaX-Rescue.cmd)."""
+    """Скрипт PowerShell для запису журналу (тип ps): OptimaX сама повертає заводські значення цієї карти (і з
+    OptimaX-Rescue.cmd). 7.1.1: раніше це був рядок для cmd /c із list2cmdline — шлях без пробілів не брався в
+    лапки, тож «C:\\Users\\Tom&Jerry\\…» розривав команду на дві (а % підставляв змінні). Тут шлях і аргументи —
+    рядки PowerShell (E._psq), запуск — Process.Start без оболонки, з очікуванням коду завершення."""
     import gpubench as GB
-    parts = GB.self_command() + ["--gpu-reset", f"--vendor={t.vendor}", f"--index={t.index}"]
-    return subprocess.list2cmdline(parts)
+    cmd = GB.self_command()
+    exe, args = cmd[0], subprocess.list2cmdline(cmd[1:] + _reset_args(t))
+    return ("$i=New-Object Diagnostics.ProcessStartInfo;"
+            f"$i.FileName={E._psq(exe)};$i.Arguments={E._psq(args)};$i.UseShellExecute=$false;"
+            "$p=[Diagnostics.Process]::Start($i);$p.WaitForExit();exit $p.ExitCode")
 
 
 TEST_MODE = True  # 6.15: розділ у тестовому режимі — вмикається лише самим користувачем (enabled у налаштуваннях)
@@ -929,7 +977,7 @@ def remember_original(cfg, t: Tuner) -> dict:
     tid = journal_id(t)
     if not E.DRY_RUN and not E.JOURNAL.has(tid):
         try:
-            E.JOURNAL.put(tid, [{"t": "cmd", "c": reset_command(t)}], title=tr("gt.journal", gpu=t.name),
+            E.JOURNAL.put(tid, [{"t": "ps", "c": reset_command(t)}], title=tr("gt.journal", gpu=t.name),
                           group="gpu")
         except Exception as e:  # журнал недоступний — змін не робимо (без запису їх не було б як повернути)
             raise RuntimeError(tr("gt.err.journal", e=e))
@@ -1014,7 +1062,10 @@ def startup(cfg, log=lambda *_: None) -> dict:
     if not st.get("pending") and not (st.get("on_start") and st.get("profile") and enabled(cfg)):
         return out
     prof = st.get("profile") or {}
-    t = SESSION.open((prof.get("gpu") or "::").split(":", 2)[-1])
+    # 7.1.1: після збою — саме та карта, яку змінювали (позначка «перевіряється»), а не карта з профілю
+    key = (st.get("pending") or {}).get("key") or prof.get("gpu") or "::"
+    vendor, idx, name = (str(key).split(":", 2) + ["", ""])[:3]
+    t = SESSION.open(name, vendor=vendor, index=int(idx) if idx.isdigit() else None)
     out["tuner"] = t
     if not t.ok():
         return out
@@ -1044,11 +1095,12 @@ def reset_main(argv) -> int:
         if vendor == "amd":
             t = AdlxTuner(index=index)
         elif vendor == "nvidia":
-            import gpubench as GB
-            nv = GB.Nvml()
-            names = {i: n for i, n, _ in nv.devices()}
-            nv.close()
-            t = NvmlTuner(names.get(index, ""))
+            # 7.1.1: за номером NVML (і UUID), а не за назвою — з двома однаковими картами назва вела на першу.
+            # UUID не знайшовся (карту замінили) — заводські значення тому, що стоїть під цим номером.
+            t = NvmlTuner(index=index, uuid=a.get("uuid", ""))
+            if not t.ok() and a.get("uuid"):
+                t.close()
+                t = NvmlTuner(index=index)
         if t is None or not t.ok():
             return 2
         snap = ((F.CFG["gpu_tune"] or {}).get("orig") or {}).get(t.key)
@@ -1148,7 +1200,11 @@ class FanController:
 def start_watchdog(t: Tuner):
     """Окремий процес: чекає, доки OptimaX завершиться, і тоді повертає вентилятори NVIDIA драйверу."""
     import gpubench as GB
-    cmd = GB.self_command() + ["--gpu-watchdog", f"--parent={os.getpid()}", f"--name={t.name}"]
+    cmd = GB.self_command() + ["--gpu-watchdog", f"--parent={os.getpid()}", f"--name={t.name}",
+                               f"--index={int(t.index)}"]
+    uuid = getattr(t, "uuid", "") or ""
+    if uuid and all(c.isalnum() or c == "-" for c in uuid):
+        cmd.append(f"--uuid={uuid}")
     here = None if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
     try:
         return subprocess.Popen(cmd, cwd=here, creationflags=E.CREATE_NO_WINDOW if E.IS_WIN else 0,
@@ -1184,7 +1240,9 @@ def watchdog_main(argv) -> int:
             while k32.WaitForSingleObject(h, 1000) == 0x102:  # WAIT_TIMEOUT — OptimaX ще працює; інше — завершилась
                 pass
             k32.CloseHandle(ctypes.c_void_p(h))
-    t = NvmlTuner(a.get("name") or "")
+    # 7.1.1: та сама карта за номером і UUID (стара команда без них — за назвою, як раніше)
+    idx = a.get("index", "")
+    t = NvmlTuner(index=int(idx), uuid=a.get("uuid", "")) if idx.isdigit() else NvmlTuner(a.get("name") or "")
     try:
         return 0 if t.ok() and t.fan_auto() else 1
     finally:
@@ -1199,12 +1257,14 @@ class Session:
         self.fans = None
         self.lock = threading.RLock()
 
-    def open(self, gpu_name: str = "") -> Tuner:
+    def open(self, gpu_name: str = "", vendor: str = "", index: int = None) -> Tuner:
         with self.lock:
-            if self.tuner is None or (gpu_name and gpu_name.lower() not in (self.tuner.name or "").lower()
-                                      and self.tuner.ok()):
+            other = self.tuner is not None and self.tuner.ok() and (
+                (gpu_name and gpu_name.lower() not in (self.tuner.name or "").lower())
+                or (index is not None and (self.tuner.vendor, self.tuner.index) != (vendor, index)))
+            if self.tuner is None or other:
                 self.close()
-                self.tuner = open_tuner(gpu_name)
+                self.tuner = open_tuner(gpu_name, vendor, index) if index is not None else open_tuner(gpu_name)
             return self.tuner
 
     def set_fans(self, cfg, mode: str, curve=None, fixed: int = None) -> bool:
@@ -1263,6 +1323,26 @@ def startup_fans(cfg) -> bool:
 
 
 # ───────────────────────── автопідбір андервольту ─────────────────────────
+TUNE_HANG_GRACE = 120  # с понад тривалість кроку: тест так і не завершився — вважаємо збоєм (зависання драйвера)
+
+
+def wrong_gpu(res: dict) -> bool:
+    """7.1.1: стрес-тест малювала не та карта, яку налаштовуємо: NVIDIA простоювала (idle_gpu), OpenGL віддав іншу
+    карту (render_match == other) чи лічильники GPU Engine показали іншу (gpu_check: wrong)."""
+    res = res or {}
+    return bool(res.get("idle_gpu")) or res.get("render_match") == "other" or \
+        (res.get("gpu_check") or {}).get("status") == "wrong"
+
+
+def run_ok(st: dict) -> tuple:
+    """Підсумок стрес-тесту для автопідбору й перевірки -> (стабільно?, причина невдачі або "")."""
+    res = (st or {}).get("result") or {}
+    if (st or {}).get("state") == "done" and wrong_gpu(res):
+        return False, "gt.tune.wrong_gpu"
+    ok = (st or {}).get("state") == "done" and res.get("verdict") not in ("errors", "crash") and not res.get("errors")
+    return ok, ""
+
+
 class AutoTune:
     """Пошук андервольту кроками зі стрес-тестом на кожному.
 
@@ -1317,6 +1397,7 @@ class AutoTune:
 
     def _launch(self, seconds: int) -> None:
         self.samples = []
+        self.launched, self.launch_s = time.time(), seconds
         self.run = self.run_fn(seconds)
 
     def stop(self) -> None:
@@ -1339,19 +1420,31 @@ class AutoTune:
             pass
         st = self.run.poll() if self.run else {"state": "error"}
         if st.get("state") in ("starting", "running", "warmup", "allocating"):
-            return self.phase
+            # 7.1.1: тест не завершився й через тривалість + TUNE_HANG_GRACE — зависання, а не «ще йде»: зупиняємо
+            # і рахуємо збоєм (далі — як після будь-якого збою: відступ або заводські значення)
+            if self.stopped or time.time() - getattr(self, "launched", time.time()) <= \
+                    getattr(self, "launch_s", 0) + TUNE_HANG_GRACE:
+                return self.phase
+            try:
+                self.run.stop()
+            except Exception:
+                pass
+            st = dict(state="crash", hang=True, result=dict(verdict="crash", hang=True))
         try:
             self.run.cleanup()
         except Exception:
             pass
         res = st.get("result") or {}
-        ok = st.get("state") == "done" and res.get("verdict") not in ("errors", "crash") and not res.get("errors")
+        ok, why = run_ok(st)
         if self.stopped or st.get("state") == "cancelled":
             return self._finish("cancelled")
         rec = dict(value=self.value, ok=ok, power=_avg(self.samples, "power"), temp=_max(self.samples, "temp"),
                    score=res.get("score") or res.get("avg"))
         self.steps.append(rec)
         self.log(tr("gt.tune.step", v=self._label(self.value), st=tr("gt.tune.ok" if ok else "gt.tune.bad")))
+        if why:
+            # 7.1.1: тест малювала інша карта — про стабільність цієї він нічого не каже: не «перевірено», а заводські
+            return self._finish("failed", why=why)
         if self.phase == "baseline":
             if not ok:
                 return self._finish("failed", why="gt.tune.base_bad")

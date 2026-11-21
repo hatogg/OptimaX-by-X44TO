@@ -148,16 +148,21 @@ class Config:
     def __setitem__(self, k, v):
         with self._lock:
             self.data[k] = v
-            self.save()
+            self.save(skip_same=True)
 
-    def save(self) -> bool:
+    def save(self, skip_same: bool = False) -> bool:
         """6.15: по черзі (блокування) і зі знімка. Раніше два потоки, що зберігали одночасно, ділили один .tmp: один
         переносив його на місце, а другий уже не знаходив свого — і користувач бачив «Не вдається зберегти
         налаштування»; запис із відступами (повільний, на Python) ще й міг зловити зміну словника посеред обходу."""
         with self._lock:
             try:
                 os.makedirs(os.path.dirname(self.path), exist_ok=True)
-                snap = json.loads(json.dumps(self.data, ensure_ascii=False))  # одним кроком, до повільного запису
+                text = json.dumps(self.data, ensure_ascii=False)  # одним кроком, до повільного запису
+                # 7.1.1: те саме, що вже записано, не переписуємо (запис з fsync — у потоці інтерфейсу). Порівнюємо
+                # зі знімком на диску, а не старе значення з новим: списки й словники часто змінюють на місці
+                if skip_same and text == getattr(self, "_saved_text", None) and os.path.exists(self.path):
+                    return True
+                snap = json.loads(text)
                 tmp = self.path + ".tmp"
                 with open(tmp, "w", encoding="utf-8") as f:
                     json.dump(snap, f, ensure_ascii=False, indent=1)
@@ -170,6 +175,7 @@ class Config:
                     except (OSError, ValueError):
                         pass
                 os.replace(tmp, self.path)
+                self._saved_text = text
                 self.save_error = None
                 return True
             except Exception as e:  # noqa: BLE001 — налаштування не повинні валити програму, але й мовчати не мають
@@ -212,9 +218,10 @@ BOOST_PROFILES = {
 }
 BOOST_KEYS = ("power", "services", "kill", "purge", "timer", "dnd", "balance")
 HIGH_PRIORITY = 0x80
-# класи пріоритету Windows, які режим гри може повертати процесу: idle, below normal, normal, above normal, high,
-# realtime
-PRIORITY_CLASSES = (0x40, 0x4000, 0x20, 0x8000, 0x80, 0x100)
+# класи пріоритету Windows, які режим гри може повертати процесу: idle, below normal, normal, above normal, high.
+# 7.1.1: без realtime (0x100) — клас береться з settings.json (пише будь-яка програма користувача), а realtime
+# від імені адміністратора може «покласти» систему; режим гри сам ставить лише high
+PRIORITY_CLASSES = (0x40, 0x4000, 0x20, 0x8000, 0x80)
 
 
 def boost_profile(game_path: str = None) -> str:
@@ -334,9 +341,12 @@ class GameBooster:
                 if not (isinstance(item, (list, tuple)) and len(item) == 3):
                     continue
                 pid, name, old = item
-                if not (isinstance(pid, int) and isinstance(name, str) and old in PRIORITY_CLASSES):
+                if not (isinstance(pid, int) and not isinstance(pid, bool) and isinstance(name, str)
+                        and old in PRIORITY_CLASSES):
                     continue
-                if alive.get(pid) == name.lower():  # той самий процес ще працює — повертаємо пріоритет
+                # той самий процес ще працює — повертаємо пріоритет. 7.1.1: лише якщо в нього досі high, який
+                # поставив режим гри: інакше чужий запис у settings.json міняв би пріоритет будь-якого процесу
+                if alive.get(pid) == name.lower() and M._get_priority(pid) == HIGH_PRIORITY:
                     M._set_priority(pid, old)
         self.cfg["booster_state"] = None
         log(tr("g.restored"))

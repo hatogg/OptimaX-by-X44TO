@@ -287,7 +287,13 @@ def regression(hist: list) -> dict:
 SHADER_EXTRA = [r"%LOCALAPPDATA%\..\LocalLow\NVIDIA\PerDriverVersion\GLCache",
                 r"%LOCALAPPDATA%\..\LocalLow\Intel\ShaderCache", r"%LOCALAPPDATA%\mesa_shader_cache",
                 r"%LOCALAPPDATA%\mesa_shader_cache_db"]
-BACKUP_DIR = os.path.join(E.DATA_DIR, "shader-backup")
+
+
+# 7.1.1: резервна копія кешу — у захищеній %ProgramData%\OptimaX\shader-backup (лише адміністратори). Стара папка
+# в %APPDATA% (туди пише будь-яка програма користувача) не читається взагалі: її index.txt підказував, куди з правами
+# адміністратора переносити файли, тобто дозволяв покласти будь-що будь-куди.
+def backup_dir() -> str:
+    return E.admin_dir("shader-backup", users_read=False)
 
 
 def shader_dirs() -> list:
@@ -298,6 +304,38 @@ def shader_dirs() -> list:
             seen.add(p.lower())
             out.append(p)
     return out
+
+
+def _cache_roots() -> list:
+    """Де можуть лежати кеші шейдерів: %LOCALAPPDATA%, сусідня LocalLow і кеш NVIDIA у ProgramData."""
+    import secfs as SF
+    la = SF.local_appdata()
+    roots = [la, os.path.join(os.path.dirname(la), "LocalLow")] if la else []
+    pd = SF.program_data()
+    if pd:
+        roots.append(os.path.join(pd, "NVIDIA Corporation", "NV_Cache"))
+    return roots
+
+
+def _safe_cache_dir(path: str) -> bool:
+    """7.1.1: папку кешу переносимо (і відновлюємо) з правами адміністратора, а її шлях — у папках користувача.
+    Посилання будь-де на шляху (junction на системну папку) чи шлях поза місцями кешів — не чіпаємо."""
+    import secfs as SF
+    if not path or E._has_link(path):
+        return False
+    real = os.path.realpath(path)
+    return any(SF.is_under(path, r) and SF.is_under(real, os.path.realpath(r)) for r in _cache_roots())
+
+
+def _walk_files(root: str):
+    """Файли без переходу за посиланнями: підпапки-посилання відкидаємо, файли-посилання не переносимо."""
+    import secfs as SF
+    for dp, dns, fns in os.walk(root, followlinks=False):
+        dns[:] = [d for d in dns if not SF.is_reparse(os.path.join(dp, d))]
+        for n in fns:
+            s = os.path.join(dp, n)
+            if not SF.is_reparse(s):
+                yield s
 
 
 def _scan(path: str) -> dict:
@@ -343,13 +381,14 @@ def shader_scan(driver: str = "") -> dict:
 
 
 def last_backup() -> dict:
+    root = backup_dir()
     try:
-        items = sorted(d for d in os.listdir(BACKUP_DIR) if d.isdigit())
+        items = sorted(d for d in os.listdir(root) if d.isdigit())
     except OSError:
         return {}
     if not items:
         return {}
-    folder = os.path.join(BACKUP_DIR, items[-1])
+    folder = os.path.join(root, items[-1])
     size = sum(os.path.getsize(os.path.join(dp, n)) for dp, _d, fns in os.walk(folder) for n in fns)
     return dict(ts=int(items[-1]), dir=folder, size=size)
 
@@ -362,28 +401,28 @@ def shader_backup_clear(log) -> dict:
         return dict(moved=sum(c["files"] for c in DEMO_CACHES), size=sum(c["size"] for c in DEMO_CACHES), skipped=0)
     old = last_backup()
     stamp = str(int(time.time()))
-    dest_root = os.path.join(BACKUP_DIR, stamp)
+    dest_root = os.path.join(backup_dir(), stamp)
     moved = skipped = size = 0
-    index = []
-    for i, src in enumerate(p for p in shader_dirs() if os.path.isdir(p)):
+    # 7.1.1: ключ підпапки — номер у фіксованому списку shader_dirs(); відновлення бере шлях звідти ж, а не з файлу
+    for i, src in enumerate(shader_dirs()):
+        if not os.path.isdir(src):
+            continue
+        if not _safe_cache_dir(src):
+            log(tr("sc.link_skip", path=src))
+            continue
         dest = os.path.join(dest_root, str(i))
-        index.append((str(i), src))
-        for dp, _dns, fns in os.walk(src):
-            for n in fns:
-                s = os.path.join(dp, n)
-                d = os.path.join(dest, os.path.relpath(s, src))
-                try:
-                    os.makedirs(os.path.dirname(d), exist_ok=True)
-                    sz = os.path.getsize(s)
-                    shutil.move(s, d)
-                    moved += 1
-                    size += sz
-                except OSError:
-                    skipped += 1
+        for s in _walk_files(src):
+            d = os.path.join(dest, os.path.relpath(s, src))
+            try:
+                os.makedirs(os.path.dirname(d), exist_ok=True)
+                sz = os.path.getsize(s)
+                shutil.move(s, d)
+                moved += 1
+                size += sz
+            except OSError:
+                skipped += 1
         log(f"  · {src}")
     os.makedirs(dest_root, exist_ok=True)
-    with open(os.path.join(dest_root, "index.txt"), "w", encoding="utf-8") as f:
-        f.write("\n".join(f"{k}\t{v}" for k, v in index))
     if old and moved:
         shutil.rmtree(old["dir"], ignore_errors=True)
     log(tr("sc.cleared", n=moved, mb=f"{size / 2**20:.0f}", skipped=skipped))
@@ -399,28 +438,31 @@ def shader_restore(log) -> dict:
         log("  [dry-run] restore " + b["dir"])
         return dict(restored=1)
     restored = kept = 0
-    try:
-        with open(os.path.join(b["dir"], "index.txt"), encoding="utf-8") as f:
-            index = dict(line.rstrip("\n").split("\t", 1) for line in f if "\t" in line)
-    except OSError:
-        index = {}
-    for key, target in index.items():
+    dirs = shader_dirs()
+    for key in sorted(os.listdir(b["dir"])):
         src_root = os.path.join(b["dir"], key)
-        if not os.path.isdir(src_root) or not target:
+        # 7.1.1: куди повертати — лише з власного списку папок кешу за номером, ніколи не з файлу в резервній копії
+        if not key.isdigit() or int(key) >= len(dirs) or not os.path.isdir(src_root):
             continue
-        for dp, _dns, fns in os.walk(src_root):
-            for n in fns:
-                s = os.path.join(dp, n)
-                d = os.path.join(target, os.path.relpath(s, src_root))
-                try:
-                    if os.path.exists(d):
-                        kept += 1
-                        continue
-                    os.makedirs(os.path.dirname(d), exist_ok=True)
-                    shutil.move(s, d)
-                    restored += 1
-                except OSError:
+        target = dirs[int(key)]
+        if not _safe_cache_dir(target):
+            log(tr("sc.link_skip", path=target))
+            continue
+        for s in _walk_files(src_root):
+            d = os.path.join(target, os.path.relpath(s, src_root))
+            try:
+                if os.path.lexists(d):
                     kept += 1
+                    continue
+                os.makedirs(os.path.dirname(d), exist_ok=True)
+                # підпапка цілі могла стати посиланням уже під час відновлення — тоді файл туди не кладемо
+                if not _safe_cache_dir(os.path.dirname(d)):
+                    kept += 1
+                    continue
+                shutil.move(s, d)
+                restored += 1
+            except OSError:
+                kept += 1
     shutil.rmtree(b["dir"], ignore_errors=True)
     log(tr("sc.restored", n=restored, kept=kept))
     return dict(restored=restored, kept=kept)

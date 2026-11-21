@@ -111,7 +111,9 @@ def cpu_family(name: str) -> dict:
     m = re.search(r"i[3579]-(\d{4,5})([A-Z]{0,2})", n)
     if m:
         num, suffix = m.group(1), m.group(2)
-        gen = int(num[:2]) if len(num) == 5 else int(num[0])
+        # 7.1.1: 4-значні моделі на «1» (i5-1135G7, i7-1255U, i7-1360P) — це 10–14 покоління ноутбучних, а не 1-ше
+        # (у 1-го покоління номери тризначні): раніше їх читали як gen 1 і радили андервольтинг заблокованим чипам
+        gen = int(num[:2]) if len(num) == 5 or num[0] == "1" else int(num[0])
         mobile = suffix.startswith(("H", "U", "P", "G")) or "HX" in suffix
         if gen >= 10 and mobile:
             return dict(vendor="intel", gen=gen, mobile=True, state="locked_likely")

@@ -19,6 +19,7 @@ import features as F
 import freezecatch as FZ
 import i18n
 import phonemon as PH
+import secfs as SF
 import transfer as TR
 import whatsnew as WN
 from i18n import tr
@@ -249,7 +250,7 @@ class FreezeCard:
 
     def open_etl(self, path: str):
         if E.IS_WIN and os.path.isfile(path):
-            subprocess.Popen(["explorer.exe", "/select,", path])
+            subprocess.Popen([SF.explorer_exe(), "/select,", path])  # 7.1.1: повний шлях, не за ім'ям
         else:
             self.open_folder()
 

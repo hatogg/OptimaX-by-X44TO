@@ -87,7 +87,12 @@ def test_resume_after_reboot():
     s.next()
     s.ok(applied=["a", "b", "c"])
     assert s.next()["do"] == "reboot"
-    s2 = AB.Session.from_dict(json.loads(json.dumps(s.to_dict())))
+    # 7.1.1: from_dict бере id лише з каталогу — тут каталог тестовий
+    from types import SimpleNamespace as NS
+    cat = {i: NS(group="perf", reversible=True, custom=False, reboot=i == "c", risky="", retired="", p="F")
+           for i in ("a", "b", "c")}
+    s2 = AB.Session.from_dict(json.loads(json.dumps(s.to_dict())), tweaks=cat)
+    assert (s2.live, s2.boot) == (["a", "b"], ["c"])
     assert s2.next()["do"] == "reboot"
     s2.ok()
     nxt = s2.next()

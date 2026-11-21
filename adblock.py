@@ -485,19 +485,48 @@ class Doh:
         raise OSError(f"DoH {self.host}: {last}")
 
 
+def _question(msg: bytes) -> bytes:
+    """Секція запитань повідомлення DNS (імена без стиснення, як у запиті) у нижньому регістрі; b"" — не розібрано."""
+    try:
+        i = 12
+        for _ in range(struct.unpack(">H", msg[4:6])[0]):
+            while msg[i]:
+                if msg[i] & 0xC0:
+                    return b""
+                i += msg[i] + 1
+            i += 5
+        return msg[12:i].lower() if i <= len(msg) else b""
+    except (IndexError, struct.error):
+        return b""
+
+
+def _same_ip(a: str, b: str) -> bool:
+    try:
+        return ipaddress.ip_address(str(a).split("%")[0]) == ipaddress.ip_address(str(b).split("%")[0])
+    except ValueError:
+        return a == b
+
+
 def udp_query(server: str, wire: bytes, timeout: float = 2.0, port: int = 53) -> bytes:
     fam = socket.AF_INET6 if ":" in server else socket.AF_INET
     s = socket.socket(fam, socket.SOCK_DGRAM)
     s.settimeout(timeout)
+    # 7.1.1: власний випадковий ID на кожен запит до сервера (ID клієнта повертаємо у відповідь) і приймаємо лише
+    # відповідь від того самого сервера й порту з тим самим запитанням — інакше підроблену відповідь з будь-якої
+    # адреси, що вгадала ID клієнта, фільтр поклав би в кеш для всього ПК
+    qid = secrets.randbits(16)
+    out = with_id(wire, qid)
+    want = _question(wire)
     try:
-        s.sendto(wire, (server, port))
+        s.sendto(out, (server, port))
         end = time.time() + timeout
         while time.time() < end:
-            data, _ = s.recvfrom(65535)
-            if data[:2] == wire[:2]:
+            data, addr = s.recvfrom(65535)
+            if (len(data) >= 12 and data[:2] == out[:2] and _same_ip(addr[0], server) and addr[1] == port
+                    and _question(data) == want):
                 if data[2] & 0x02:  # усічено — повторюємо по TCP
                     return tcp_query(server, wire, timeout + 1, port)
-                return data
+                return with_id(data, struct.unpack(">H", wire[:2])[0])
         raise socket.timeout()
     finally:
         s.close()
@@ -754,6 +783,10 @@ def _bind_ok(ip: str) -> bool:
     return any(a.version == n.version and a in n for n in BIND_NETS)
 
 
+TCP_MAX = 16       # 7.1.1: одночасних TCP-з'єднань із клієнтами; зайві закриваються одразу
+TCP_IDLE = 3.0     # 7.1.1: скільки чекати наступного запиту в TCP-з'єднанні
+
+
 class DnsServer:
     def __init__(self, filt: Filter, resolver: Resolver, stats: Stats, cfg: dict):
         self.filter = filt
@@ -762,6 +795,10 @@ class DnsServer:
         self.cfg = cfg
         self.cache = Cache()
         self.pool = ThreadPoolExecutor(48, thread_name_prefix="dns")
+        # 7.1.1: TCP — окремо й з обмеженням: раніше 48 «мовчазних» TCP-з'єднань (по 10 с очікування, що
+        # поновлювалося з кожним запитом) займали весь спільний пул, і UDP-запити всього ПК стояли
+        self.tcp_pool = ThreadPoolExecutor(TCP_MAX, thread_name_prefix="dns-tcp")
+        self.tcp_slots = threading.BoundedSemaphore(TCP_MAX)
         self.socks = []
         self.binds = []
         self.errors = []
@@ -856,13 +893,17 @@ class DnsServer:
                     return
                 time.sleep(0.05)
                 continue
-            if not _client_ok(addr[0]):
+            if not _client_ok(addr[0]) or not self.tcp_slots.acquire(blocking=False):
                 conn.close()
                 continue
-            self.pool.submit(self._tcp_conn, conn, addr)
+            try:
+                self.tcp_pool.submit(self._tcp_conn, conn, addr)
+            except RuntimeError:  # пул уже зупинено (stop)
+                self.tcp_slots.release()
+                conn.close()
 
     def _tcp_conn(self, conn, addr):
-        conn.settimeout(10)
+        conn.settimeout(TCP_IDLE)
         try:
             while self.running:
                 head = conn.recv(2)
@@ -877,6 +918,7 @@ class DnsServer:
             pass
         finally:
             conn.close()
+            self.tcp_slots.release()
 
     def stop(self):
         self.running = False
@@ -886,6 +928,7 @@ class DnsServer:
             except OSError:
                 pass
         self.pool.shutdown(wait=False)
+        self.tcp_pool.shutdown(wait=False)
 
 
 # ───────────────────────── системні DNS Windows ─────────────────────────
@@ -919,6 +962,25 @@ def adapters() -> dict:
     return d
 
 
+def _ps_servers(servers: list) -> str:
+    """7.1.1: список DNS для PowerShell — лише справжні IP-адреси, кожна в лапках secfs.psq. Адреси беруться з
+    реєстру адаптерів і dns-backup.json — це дані, а не частина команди."""
+    import secfs as SF
+    ok = []
+    for s in servers:
+        try:
+            ipaddress.ip_address(str(s).split("%")[0])
+        except ValueError:
+            continue
+        ok.append(SF.psq(s))
+    return ",".join(ok)
+
+
+def _ps_idx(idx):
+    """Номер інтерфейсу — лише ціле число (у dns-backup.json міг опинитися будь-який рядок); None — недійсний."""
+    return int(idx) if isinstance(idx, int) and not isinstance(idx, bool) or str(idx).isdigit() else None
+
+
 def _ours(servers: list) -> bool:
     return bool(servers) and servers[0] in ("127.0.0.1", "::1")
 
@@ -941,9 +1003,9 @@ def point_system_dns(slog, ipv6: bool, strict: bool) -> dict:
             servers += [s for s in fb if ":" not in s and s not in ("127.0.0.1", "::1")][:1] or ["1.1.1.1"]
         if ns4 == [s for s in servers if ":" not in s]:
             continue
-        if E.IS_WIN and not E.DRY_RUN:
-            lst = ",".join(f"'{s}'" for s in servers)
-            E.ps(f"Set-DnsClientServerAddress -InterfaceIndex {a['idx']} -ServerAddresses ({lst})", 30)
+        if E.IS_WIN and not E.DRY_RUN and _ps_idx(a.get("idx")) is not None and _ps_servers(servers):
+            E.ps(f"Set-DnsClientServerAddress -InterfaceIndex {_ps_idx(a['idx'])} "
+                 f"-ServerAddresses ({_ps_servers(servers)})", 30)
         slog(f"dns: {a.get('alias')} -> {', '.join(servers)}")
     if changed:
         _write_json(_path("dns-backup.json"), backup)
@@ -961,14 +1023,14 @@ def restore_system_dns(log=lambda *_: None) -> int:
     n = 0
     for guid, b in backup.items():
         a = cur.get(guid)
-        idx = (a or {}).get("idx") or b.get("idx")
+        idx = _ps_idx((a or {}).get("idx") or b.get("idx"))
         if not idx:
             continue
         ns4 = [s for s in b.get("ns4") or [] if s not in ("127.0.0.1", "::1")]
         ns6 = [s for s in b.get("ns6") or [] if s not in ("127.0.0.1", "::1")]
+        lst = _ps_servers(ns4 + ns6)
         if E.IS_WIN and not E.DRY_RUN:
-            if ns4 or ns6:
-                lst = ",".join(f"'{s}'" for s in ns4 + ns6)
+            if lst:
                 E.ps(f"Set-DnsClientServerAddress -InterfaceIndex {idx} -ServerAddresses ({lst})", 30)
             else:
                 E.ps(f"Set-DnsClientServerAddress -InterfaceIndex {idx} -ResetServerAddresses", 30)
@@ -1259,7 +1321,9 @@ def _self_command() -> list:
 
 
 def _ps_quote(s: str) -> str:
-    return "'" + s.replace("'", "''") + "'"
+    # 7.1.1: secfs.psq подвоює й типографські лапки ‘ ’ ‚ ‛ — PowerShell теж закінчує ними рядок
+    import secfs as SF
+    return SF.psq(s)
 
 
 def install_task(log) -> bool:
@@ -1324,6 +1388,17 @@ def port_owner(port: int = 53) -> str:
                      "if ($e) { @{name=(Get-Process -Id $e.OwningProcess -ErrorAction SilentlyContinue).ProcessName;"
                      " pid=$e.OwningProcess} | ConvertTo-Json -Compress }", 20)
     return f"{data.get('name')} (PID {data.get('pid')})" if isinstance(data, dict) and data.get("pid") else ""
+
+
+
+def _refresh_rescue() -> None:
+    """7.1.1: OptimaX-Rescue.cmd повертає й DNS фільтра (резервна копія dns-backup.json) — перегенерувати його
+    одразу, а не при наступному записі журналу: інакше аварійний відкат після ввімкнення фільтра DNS не повернув би."""
+    try:
+        import rescue
+        rescue.write_rescue()
+    except Exception:  # noqa: BLE001 — Rescue перегенерується й при наступному записі журналу
+        pass
 
 
 class Backend:
@@ -1428,6 +1503,7 @@ class Backend:
             if st and st.get("binds"):
                 self._set_ui(mode="filter", light=None, since=int(time.time()))
                 log(tr("ab.started", binds=", ".join(st["binds"]), n=f"{st['domains']:,}".replace(",", " ")))
+                _refresh_rescue()
                 return {"ok": True}
             s = _read_json(_path("status.json"), {}) or {}
             if s.get("ok") is False:
@@ -1456,6 +1532,7 @@ class Backend:
         restore_system_dns(log)  # якщо служба не встигла — повертаємо самі (резервна копія вже порожня — нічого)
         set_firewall(False, log)
         self._set_ui(mode="off")
+        _refresh_rescue()
         log(tr("ab.stopped"))
         return {"ok": True}
 

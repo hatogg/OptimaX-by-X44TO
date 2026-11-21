@@ -269,9 +269,19 @@ class HwCenterPage(QWidget):
     def on_show(self):
         if self.current == "overview":
             self.refresh_overview()
+        elif self.current == "gputune":
+            self._show_gputune()  # 7.1.1: таймер живих показників зупиняється, коли сторінку сховали, — запустити знову
         page = self.built.get(self.current)
         if page is not None and hasattr(page, "_on_show"):
             page._on_show()
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        # 7.1.1: вікно знову показали з трею — on_show тоді не викликається, а таймер відеокарти зупинився
+        if self.current == "gputune" and "gputune" in self.built and not e.spontaneous():
+            gt = getattr(self, "gt_timer", None)
+            if gt is not None and not gt.isActive():
+                self._show_gputune()
 
     def set_hw(self, hw: dict) -> None:
         if self.current == "overview":
@@ -1093,6 +1103,10 @@ class HwCenterPage(QWidget):
             return
         mode = self.STRESS_MODES[self.st_mode_i]
         minutes = HT.CPU_MINUTES[self.st_min_i]
+        ram_mb = HT.ram_plan(self._ram_avail(), 50) if mode == "ram" else 0
+        if mode == "ram" and not ram_mb:  # 7.1.1: 0 МБ процес тесту раніше перетворював на 256 МБ
+            Ask.info(self, tr("hwc.ram.title"), tr("hwc.ram.too_little"))
+            return
         if not Ask.ask(self, tr("hwc.warn_t"), tr("hwc.warn_q", m=minutes), tr("hwc.start"), "danger"):
             return
         seconds = minutes * 60
@@ -1104,7 +1118,7 @@ class HwCenterPage(QWidget):
         if mode in ("gpu", "cpu_gpu"):
             runs["gpu"] = GB.start("1080p", "stress", minutes, adapter=plan or None)
         if mode == "ram":
-            runs["ram"] = HT.start("ram", dict(mb=HT.ram_plan(self._ram_avail(), 50), passes=max(1, minutes)))
+            runs["ram"] = HT.start("ram", dict(mb=ram_mb, passes=max(1, minutes)))
         if mode == "vram":
             runs["vram"] = VT.start(50, plan or None, 0, plan.get("kind") == "igpu")
         if mode == "storage":

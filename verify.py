@@ -147,7 +147,8 @@ def signer(path: str) -> str:
     """Видавець (Subject сертифіката), лише для файлів із дійсним підписом. '' — не вдалося дізнатися."""
     if not E.IS_WIN:
         return ""
-    lit = "'" + os.path.abspath(path).replace("'", "''") + "'"
+    import secfs as SF
+    lit = SF.psq(os.path.abspath(path))  # 7.1.1: з типографськими лапками ‘ ’ ‚ ‛ теж
     _rc, out = E.ps(f"(Get-AuthenticodeSignature -LiteralPath {lit}).SignerCertificate.Subject", 30, ro=True)
     return (out or "").strip().splitlines()[0].strip() if (out or "").strip() else ""
 

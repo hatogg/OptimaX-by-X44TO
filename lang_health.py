@@ -2,6 +2,31 @@
 (українська, російська, англійська)."""
 
 STRINGS = {
+    # ── «Що нового» 7.1.1 ──
+    "wn.711.safety": ("Безпека: OptimaX більше не довіряє папкам, куди може писати будь-яка програма (TEMP, "
+                      "%LOCALAPPDATA%, кеш шейдерів), і не запускає програми за самим ім'ям.",
+                      "Безопасность: OptimaX больше не доверяет папкам, куда может писать любая программа (TEMP, "
+                      "%LOCALAPPDATA%, кэш шейдеров), и не запускает программы по одному имени.",
+                      "Security: OptimaX no longer trusts folders any program can write to (TEMP, %LOCALAPPDATA%, "
+                      "the shader cache) and no longer starts programs by bare name."),
+    "wn.711.fps": ("Чесніший тест FPS: фрізи довші за секунду більше не випадають зі статистики, перерваний замір "
+                   "не стає «до / після», а A/B-тест підтверджує винуватця другим заміром.",
+                   "Честнее тест FPS: фризы дольше секунды больше не выпадают из статистики, прерванный замер "
+                   "не становится «до / после», а A/B-тест подтверждает виновника вторым замером.",
+                   "A more honest FPS test: freezes over a second are no longer dropped from the stats, a stopped "
+                   "run no longer becomes a before / after result, and the A/B test confirms a culprit twice."),
+    "wn.711.gpu": ("Відеокарта: автопідбір андервольту зупиняється, якщо тест ішов на іншій відеокарті; вентилятори "
+                   "надійно повертаються в авто; дві однакові карти більше не плутаються.",
+                   "Видеокарта: автоподбор андервольта останавливается, если тест шёл на другой видеокарте; "
+                   "вентиляторы надёжно возвращаются в авто; две одинаковые карты больше не путаются.",
+                   "GPU: undervolt auto-tune stops if the stress test ran on another GPU; fans reliably go back to "
+                   "auto; two identical cards are no longer mixed up."),
+    "wn.711.fast": ("Легша в треї: головна не анімується, коли вікно сховане, сторінки будуються лише при першому "
+                    "відкритті, а пошук winget і обкладинок ігор більше не підвішує вікно.",
+                    "Легче в трее: главная не анимируется, когда окно скрыто, страницы строятся лишь при первом "
+                    "открытии, а поиск winget и обложек игр больше не подвешивает окно.",
+                    "Lighter in the tray: Home doesn't animate while hidden, pages are built when the window first "
+                    "opens, and looking up winget and game covers no longer freezes the window."),
     # ── «Що нового» 7.1.0 ──
     "wn.710.cpuz": ("«Процесор» у Hardware Center — як CPU-Z: кодове ім'я, техпроцес, інструкції, кеш, плата, "
                     "пам'ять і слоти. З безкоштовним драйвером PawnIO — ще множник, напруга й таймінги з SPD.",
@@ -669,4 +694,8 @@ STRINGS = {
                             "сделать?». Открывайте их через Проводник.",
                             "USB sticks, discs and phones no longer open anything themselves or show the “What to "
                             "do?” menu. Open them from File Explorer."),
+    # 7.1.1 (група measure)
+    "fps.pm_timeout": ("PresentMon не завершився за {s} с — замір перервано",
+                       "PresentMon не завершился за {s} с — замер прерван",
+                       "PresentMon didn't finish within {s} s — measurement aborted"),
 }

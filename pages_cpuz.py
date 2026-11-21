@@ -96,7 +96,8 @@ class CpuzPanel(QWidget):
         self.timer.start()
 
     def _tick(self) -> None:
-        if not self.isVisible() or not self.data:
+        # 7.1.1: згорнуте вікно лишає isVisible() — без читання датчиків щосекунди (як у diskinfo)
+        if not self.isVisible() or self.window().isMinimized() or not self.data:
             return
         if self.meter and self.meter.q:
             self.clock = self.meter.mhz() or self.clock

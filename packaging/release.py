@@ -197,6 +197,27 @@ DXVK_FILES = ("d3d9.dll", "d3d8.dll", "dxgi.dll", "d3d11.dll", "d3d10core.dll") 
 DXVK_DIRS = {"x64": "x64", "x86": "x32"}  # розрядність у OptimaX -> папка в архіві DXVK
 
 
+# 7.1.1: SHA-256 архівів закріплених версій (ci.yml: OPTIMAX_MESA_TAG / OPTIMAX_DXVK_TAG). Тег на GitHub можна
+# перевипустити з іншим файлом — тоді збірка падає, а не кладе в реліз чужі DLL. Нова версія → нова сума тут.
+PINNED_SHA256 = {
+    (MESA_REPO, "mesa3d-26.2.0-release-msvc.7z"): "dcb2719ef346dab5b609fcb193a5f13cfc4b0502e3f4de1ad43d349477402f47",
+    (DXVK_REPO, "dxvk-2.6.2.tar.gz"): "17761876556afd55736cb895d184f5a1c55d43350f1b1e3b129f8d28706d7992",
+}
+
+
+def _check_digest(repo: str, name: str, digest, sha: str) -> None:
+    """Звіряє завантажений архів із digest GitHub (обов'язковий) і з закріпленою сумою, якщо вона є."""
+    digest = str(digest or "")
+    # 7.1.1: без digest перевірки немає зовсім — раніше її мовчки пропускали; тепер це помилка збірки
+    if not digest.lower().startswith("sha256:"):
+        raise SystemExit(f"{name}: GitHub gives no sha256 digest for this asset — refusing to use it")
+    if digest[7:].lower() != sha:
+        raise SystemExit(f"{name}: SHA-256 differs from the GitHub digest")
+    want = PINNED_SHA256.get((repo, name))
+    if want and want != sha:
+        raise SystemExit(f"{name}: SHA-256 {sha} differs from the pinned {want}")
+
+
 def _release_asset(repo: str, tag: str, rx, work: str) -> tuple:
     """Реліз repo (тег або останній), ресурс за rx, завантажений у work і звірений з digest GitHub.
     -> (шлях, версія, тег, sha256)."""
@@ -212,9 +233,7 @@ def _release_asset(repo: str, tag: str, rx, work: str) -> tuple:
         for chunk in iter(lambda: r.read(1 << 20), b""):
             h.update(chunk)
             f.write(chunk)
-    digest = str(asset.get("digest") or "")
-    if digest.lower().startswith("sha256:") and digest[7:].lower() != h.hexdigest():
-        raise SystemExit(f"{asset['name']}: SHA-256 differs from the GitHub digest")
+    _check_digest(repo, asset["name"], asset.get("digest"), h.hexdigest())
     return path, rx.match(asset["name"]).group(1), rel.get("tag_name"), h.hexdigest()
 
 
@@ -278,9 +297,7 @@ def build_mesa(out_dir: str) -> str:
         for chunk in iter(lambda: r.read(1 << 20), b""):
             h.update(chunk)
             f.write(chunk)
-    digest = str(asset.get("digest") or "")
-    if digest.lower().startswith("sha256:") and digest[7:].lower() != h.hexdigest():
-        raise SystemExit(f"{asset['name']}: SHA-256 differs from the GitHub digest")
+    _check_digest(MESA_REPO, asset["name"], asset.get("digest"), h.hexdigest())
     out_dir_x = os.path.join(work, "out")
     subprocess.run([_seven_zip(), "x", arc, f"-o{out_dir_x}", "-y"] + [f"{a}/{n}" for a in MESA_ARCHES for n in MESA_FILES],
                    check=False, stdout=subprocess.DEVNULL)

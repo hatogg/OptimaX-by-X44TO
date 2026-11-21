@@ -40,6 +40,11 @@ def repo() -> str:
 
 
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+# 7.1.1: IP-адреси й секретний сегмент адреси «монітора на телефоні» (http://<ip>:<порт>/<токен>/): за токеном
+# будь-хто в тій самій мережі бачить датчики ПК, а звіт — публічний issue на GitHub
+IPV4 = re.compile(r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])")
+IPV6 = re.compile(r"(?<![\w:.])(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}(?:%\w+)?(?![\w:])")
+URL_TOKEN = re.compile(r"(\bhttps?://[^/\s?#]+:\d+/)[A-Za-z0-9_-]{8,}(?=[/?#\s\"'<>)\]]|$)")
 
 
 def sanitize(text: str) -> str:
@@ -57,7 +62,24 @@ def sanitize(text: str) -> str:
     for name, mark in ((_user(), "<user>"), (os.environ.get("COMPUTERNAME", ""), "<pc>")):
         if name and len(name) >= 3:
             out = re.sub(r"(?<![\w])" + re.escape(name) + r"(?![\w])", mark, out, flags=re.I)
+    out = URL_TOKEN.sub(r"\1<token>", out)
+    out = IPV4.sub(_mask_ip, out)
+    out = IPV6.sub(_mask_ip, out)
     return EMAIL.sub("<email>", out)
+
+
+def _mask_ip(m) -> str:
+    """Справжня адреса -> <ip> (крім 127.0.0.1, ::1, 0.0.0.0 — вони нічого не кажуть про людину); версії на зразок
+    10.0.19045 чи час 12:30:45 — не адреси, лишаються як є."""
+    import ipaddress
+    s = m.group(0)
+    if ":" in s and s.count(":") < 3 and not re.search(r"[0-9A-Fa-f]{3}", s):
+        return s  # «1::2», «a::b» — зріз списку чи ім'я з коду, а не адреса
+    try:
+        a = ipaddress.ip_address(s.split("%")[0])
+    except ValueError:
+        return s
+    return s if a.is_loopback or a.is_unspecified else "<ip>"
 
 
 def _user() -> str:
@@ -109,8 +131,16 @@ def issue_url(title: str, body: str) -> str:
 def open_issue(title: str, body: str) -> str:
     url = issue_url(title, body)
     if E.IS_WIN and not E.DRY_RUN:
-        import webbrowser
-        webbrowser.open(url)
+        # 7.1.1: браузер — від імені користувача, а не з правами адміністратора OptimaX: explorer.exe (повний шлях)
+        # передає адресу вже запущеній оболонці користувача, як library.launch. schtasks (E.start_as_user) тут не
+        # годиться — команда задачі обмежена 261 символом, а адреса issue — до MAX_URL
+        import secfs as SF
+        try:
+            import subprocess
+            subprocess.Popen([SF.explorer_exe(), url])
+        except OSError:
+            import webbrowser
+            webbrowser.open(url)
     return url
 
 

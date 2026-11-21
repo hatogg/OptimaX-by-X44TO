@@ -145,6 +145,9 @@ def child_main(argv) -> int:
     return 0
 
 
+STOP_GRACE = 8.0  # с: стільки процес тесту має, щоб зупинитися сам після «Зупинити», далі — примусово
+
+
 class TestProc:
     """Запущений процес тесту: старт, читання стану, зупинка, прибирання. Процес зник без підсумку — збій (crash)."""
 
@@ -166,6 +169,9 @@ class TestProc:
                 data = json.load(f)
         except (OSError, ValueError):
             data = {"state": "starting"}
+        if self.stopped and self.kill_at and time.time() >= self.kill_at and self.alive:
+            self.kill_at = 0.0
+            E.kill_tree(self.proc)  # не зупинився сам за STOP_GRACE с — разом із дочірнім процесом onefile
         rc = self.proc.poll()
         if rc is not None and data.get("state") not in ("done", "error", "cancelled"):
             data = dict(data, state="cancelled" if self.stopped else "crash", exit_code=rc)
@@ -175,17 +181,21 @@ class TestProc:
     def alive(self) -> bool:
         return self.proc.poll() is None
 
+    kill_at = 0.0
+
     def stop(self) -> None:
+        """7.1.1: не чекаємо до 8 с у потоці інтерфейсу. Просимо процес зупинитися (він сам прибере тимчасовий файл
+        диска) і даємо йому STOP_GRACE с; якщо не встиг — poll(), який інтерфейс викликає й далі, його завершить."""
         self.stopped = True
         try:
             open(self.out + ".stop", "w").close()  # процес тесту сам прибере за собою (тимчасовий файл диска)
         except OSError:
             pass
-        deadline = time.time() + 8
+        deadline = time.time() + 0.3
         while self.alive and time.time() < deadline:
             time.sleep(0.05)
         if self.alive:
-            self.proc.kill()
+            self.kill_at = time.time() + STOP_GRACE
 
     def cleanup(self) -> None:
         for p in (self.out, self.out + ".tmp", self.out + ".stop"):
@@ -405,7 +415,9 @@ def danger(samples: list) -> str:
     tail = samples[-HOT_SECONDS:]
     if len(tail) < HOT_SECONDS:
         return ""
-    if all((s.get("temp") or 0) >= CPU_TEMP_STOP for s in tail):
+    # 7.1.1: Core Temp (не Global-ім'я спільної пам'яті) і вебсервер 127.0.0.1:8085 може підробити будь-яка програма
+    # користувача — і занизити температуру. Для аварійної зупинки — більше з двох: джерело чи теплова зона ACPI.
+    if all(max(s.get("temp") or 0, s.get("zone") or 0) >= CPU_TEMP_STOP for s in tail):
         return "cpu"
     if all((s.get("gpu_temp") or 0) >= GPU_TEMP_STOP for s in tail):
         return "gpu"
@@ -604,9 +616,10 @@ def diff_bytes(a: bytes, b: bytes, limit: int = 64) -> int:
 
 
 def ram_child(a: dict, out: str) -> None:
-    mb = int(a.get("mb") or 256)
+    # 7.1.1: явний 0 МБ (замало вільної пам'яті) — нічого не виділяємо; раніше «0» ставав 256 МБ чи одним блоком
+    mb = int(a["mb"]) if str(a.get("mb", "")).strip() not in ("", "None") else 256
     passes = max(1, int(a.get("passes") or 1))
-    nchunks = max(1, (mb << 20) // RAM_CHUNK)
+    nchunks = max(0, (mb << 20) // RAM_CHUNK)
     state = dict(state="allocating", kind="ram", mb=mb, done_mb=0, total_mb=0, errors=0, bad_bytes=0, pattern="",
                  t=0.0, pid=os.getpid(), log=[])
     _write(out, state)
@@ -681,6 +694,10 @@ def ram_result(state: dict, hw: dict, avail_mb: float) -> dict:
     if st == "error":
         status = NA
         findings.append((WARN, "hwc.f.error", dict(err=state.get("error", "?"))))
+    elif st == "done" and not tested and status == PASS:
+        # 7.1.1: пам'ять не виділилась (MemoryError на першому ж блоці) — перевірено 0 МБ, це не «без помилок»
+        status = NA
+        findings.append((WARN, "hwc.f.nothing_tested", {}))
     rows = [("hwc.r.tested", f"{tested} {tr('u.mb')}"), ("hwc.r.ram_total", f"{total_gb:.1f} GB" if total_gb else None),
             ("hwc.r.errors", state.get("errors", 0)), ("hwc.r.patterns", len(ram_patterns())),
             ("hwc.r.speed", f"{state.get('speed')} {tr('u.mb')}/{tr('hwc.u.s')}" if state.get("speed") else None),
@@ -829,10 +846,21 @@ def disk_child(a: dict, out: str) -> None:
     _write(out, state)
     if mode == "scan":
         return _surface_scan(a, out, state)
+    # 7.1.1: X:\OptimaX-DiskTest у корені диска може заздалегідь створити будь-який користувач — junction на системну
+    # папку чи власну папку з підкладеними файлами. Посилання (до й після створення) чи чужий власник — не тестуємо.
+    if not _disk_dir_ok(folder):
+        state.update(state="error", error="link")
+        _write(out, state)
+        return
     os.makedirs(folder, exist_ok=True)
+    if not _disk_dir_ok(folder):
+        state.update(state="error", error="link")
+        _write(out, state)
+        return
     path = os.path.join(folder, f"bench-{os.getpid()}.tmp")
     res = {}
     f = None
+    created = False
     try:
         if disk_free_mb(folder) - (size >> 20) < DISK_FREE_MARGIN_MB:
             state.update(state="error", error="space")
@@ -842,6 +870,7 @@ def disk_child(a: dict, out: str) -> None:
         small = mmap.mmap(-1, 4096)
         small.write(random.Random(6).randbytes(4096))
         f = _RawFile(path, create=True)
+        created = True  # лише після CREATE_NEW: файл із таким іменем, якого ми не створювали, не видаляємо
         state["cached"] = f.cached
         state["phase"] = "seq_write"
         res["seq_write"] = _bench_seq(f, size, True, mm, state, out)
@@ -860,9 +889,22 @@ def disk_child(a: dict, out: str) -> None:
     finally:
         if f is not None:
             f.close()
-        _remove_own(path, folder)
-        state["cleaned"] = not os.path.exists(path)
+        if created:
+            _remove_own(path, folder)
+        state["cleaned"] = not created or not os.path.exists(path)
         _write(out, state)
+
+
+def _disk_dir_ok(folder: str) -> bool:
+    """Папка тесту диска: не посилання (ніде на шляху) і, якщо вже є, — не чужа (власник — адміністратори/SYSTEM)."""
+    import secfs as SF
+    if SF.is_reparse(folder) or E._has_link(folder):
+        return False
+    if E.IS_WIN and os.path.isdir(folder):
+        sid = SF.owner_sid(folder)
+        if sid is not None and sid not in SF.TRUSTED_OWNERS:
+            return False
+    return True
 
 
 def _remove_own(path: str, folder: str) -> None:
@@ -1001,8 +1043,8 @@ def disk_result(state: dict, disk: dict) -> dict:
     r = state.get("result") or {}
     findings = []
     if st == "error":
-        findings.append((WARN, "hwc.f.disk_space" if state.get("error") == "space" else "hwc.f.error",
-                         dict(err=state.get("error", "?"), m=DISK_FREE_MARGIN_MB)))
+        key = {"space": "hwc.f.disk_space", "link": "hwc.f.disk_link"}.get(state.get("error"), "hwc.f.error")
+        findings.append((WARN, key, dict(err=state.get("error", "?"), m=DISK_FREE_MARGIN_MB, dir=DISK_DIR)))
     if state.get("cached"):
         findings.append(("info", "hwc.f.disk_cached", {}))
     media = (disk or {}).get("media") or ""
