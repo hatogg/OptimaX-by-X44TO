@@ -281,7 +281,11 @@ BYTE, BYTE_DATA, PROC_CALL = 1, 2, 4
 
 
 class BusLock:
-    """Загальний м'ютекс шини SMBus (ним користуються HWiNFO, CPU-Z, LibreHardwareMonitor, OpenRGB)."""
+    """Загальний м'ютекс шини SMBus (ним користуються HWiNFO, CPU-Z, LibreHardwareMonitor, OpenRGB).
+    name — інший загальний м'ютекс тих самих програм (датчики: Global\\Access_PCI для індексу SMN на AMD)."""
+
+    def __init__(self, name: str = "Global\\Access_SMBUS.HTP.Method"):
+        self.name = name
 
     def __enter__(self):
         import ctypes
@@ -290,7 +294,7 @@ class BusLock:
         k32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
         k32.ReleaseMutex.argtypes = k32.CloseHandle.argtypes = [ctypes.c_void_p]
         self.k32 = k32
-        self.h = k32.CreateMutexW(None, False, "Global\\Access_SMBUS.HTP.Method")
+        self.h = k32.CreateMutexW(None, False, self.name)
         self.held = bool(self.h) and k32.WaitForSingleObject(self.h, 3000) in (0, 0x80)
         return self
 

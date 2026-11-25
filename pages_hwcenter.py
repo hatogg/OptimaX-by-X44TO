@@ -26,8 +26,8 @@ from pages_extra import page_body, log_strip
 from ui_kit import (T, label, button, card, vbox, hbox, badge, style_badge, dot, scroller, page_header, clear_layout,
                     section_card, Segmented, Ask, Spark, Worker, LOG, chip, FlowLayout)
 
-SECTIONS = ("overview", "info", "build", "cpu", "gpu", "vram", "ram", "storage", "display", "laptop", "peripherals",
-            "stress", "latency", "gputune", "procs", "windiag", "inspect", "reports", "overlay")
+SECTIONS = ("overview", "info", "sensors", "build", "cpu", "gpu", "vram", "ram", "storage", "display", "laptop",
+            "peripherals", "stress", "latency", "gputune", "procs", "windiag", "inspect", "reports", "overlay")
 STATUS_KIND = {HT.PASS: "ok", HT.WARN: "warn", HT.FAIL: "bad", HT.SKIPPED: "muted", HT.NA: "muted"}
 LEVEL_COLOR = {HT.FAIL: "bad", HT.WARN: "warn", "info": "sub"}
 
@@ -515,6 +515,13 @@ class HwCenterPage(QWidget):
                                                  if b.get("design") else None),
                 ("hwc.i.full", f"{b['full']:,} mWh".replace(",", " ") if b.get("full") else None),
                 ("hwc.i.wear", f"{b['wear']:.0f}%" if b.get("design") else None), ("hwc.i.cycles", b.get("cycles") or None)]
+
+    # ───────────────────────── Датчики ─────────────────────────
+    def _build_sensors(self, v):
+        # 7.2: усі датчики однією таблицею, як в AIDA64 / HWiNFO; таймер сам стоїть, поки розділ не на екрані
+        from pages_sensors import SensorsPanel
+        self.sensor_panel = SensorsPanel(self)
+        v.addWidget(self.sensor_panel)
 
     # ───────────────────────── Процесор ─────────────────────────
     # ───────────────────────── Перевірка збірки (колишня сторінка «Залізо») ─────────────────────────

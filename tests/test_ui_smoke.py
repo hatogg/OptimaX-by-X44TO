@@ -57,11 +57,23 @@ def check_66(st: dict) -> None:
     assert st["report"] == ["ok", "ok"], st["report"]
 
 
+def hwc_sections() -> tuple:
+    """SECTIONS із pages_hwcenter.py без імпорту Qt (кількість розділів міняється з кожною версією)."""
+    import ast
+    import os
+    from _util import ROOT
+    tree = ast.parse(open(os.path.join(ROOT, "pages_hwcenter.py"), encoding="utf-8").read())
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "SECTIONS":
+            return ast.literal_eval(node.value)
+    return ()
+
+
 def check_hwc(st: dict) -> None:
-    """Hardware Center: 19 розділів (з перевіркою збірки, затримками й кулерами), тести на демо-залізі пройдені, звіт і
-    перевірка перед покупкою, кулери й андервольт демо-карти."""
+    """Hardware Center: усі розділи SECTIONS (з перевіркою збірки, затримками, кулерами й датчиками), тести на
+    демо-залізі пройдені, звіт і перевірка перед покупкою, кулери й андервольт демо-карти."""
     h = st["hwc"]
-    assert h["built"] == 19, h
+    assert h["built"] == len(hwc_sections()) >= 20, h
     g = h["gputune"]
     assert g["off"] == [True, False, False], ("test mode: the driver must not be touched until turned on", g)
     assert g["enabled"] and g["name"] and g["caps"] == 5 and g["fans"], g
