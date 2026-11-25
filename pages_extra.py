@@ -23,6 +23,7 @@ import monitor as M
 import netlab as N
 import report as RP
 import secfs as SF
+import wingetfix as WF
 from i18n import tr
 from ui_kit import (T, label, button, card, vbox, hbox, badge, style_badge, dot, scroller, page_header, clear_layout,
                     section_card, Switch, Check, Segmented, chip, Ask, RunDialog, LogView, Spark, Worker, LOG)
@@ -839,9 +840,14 @@ class AppsPage(QWidget):
         self.no_wg.setObjectName("bannerWarn")
         nv = vbox(self.no_wg, (18, 12, 18, 12), 4)
         nv.addWidget(label(tr("apps.no_winget"), "h3"))
-        nv.addWidget(label(tr("apps.no_winget_d"), "desc", wrap=True))
-        nv.addWidget(button(tr("apps.get_winget"), "ghost", lambda: webbrowser.open(
-            "ms-windows-store://pdp/?productid=9NBLGGH4NNS1")), 0, Qt.AlignmentFlag.AlignLeft)
+        nv.addWidget(label(tr("wg.banner_d"), "desc", wrap=True))
+        # 7.2: «Відновити winget» — OptimaX сама реєструє чи встановлює «Інсталятор програм» (wingetfix.py)
+        wr = hbox(spacing=8)
+        wr.addWidget(button(tr("wg.btn"), "primary", self.restore_winget))
+        wr.addWidget(button(tr("apps.get_winget"), "ghost", lambda: webbrowser.open(
+            "ms-windows-store://pdp/?productid=9NBLGGH4NNS1")))
+        wr.addStretch()
+        nv.addLayout(wr)
         # 7.1.1: пошук winget — PowerShell Get-AppxPackage до 30 с; раніше він ішов у потоці інтерфейсу під час
         # фонової побудови сторінок (і під час автозапуску в трей). Тепер — фоном, банер з'явиться за результатом.
         self.no_wg.setVisible(False)
@@ -906,6 +912,13 @@ class AppsPage(QWidget):
         if not self.loaded:
             self.loaded = True
             self.scan_installed()
+
+    def restore_winget(self):
+        def done(res):
+            if isinstance(res, dict) and res.get("ok"):
+                self.no_wg.setVisible(False)
+                self.scan_installed()
+        WF.offer(self.main, done)
 
     # ── оновлення ──
     def check_updates(self):

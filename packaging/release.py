@@ -11,6 +11,8 @@ OptimaX — допоміжний скрипт збірки релізу.
                                                        x64- і x86-бібліотеки з релізу pal1000/mesa-dist-win + mesa.json
     python packaging/release.py dxvk <папка>         — OptimaX-DXVK-<версія>.zip: бібліотеки DirectX (x64, x86) з релізу
                                                        doitsujin/dxvk + dxvk.json
+    python packaging/release.py winget-app <папка>   — OptimaX-WinGet-<версія>.zip: «Інсталятор програм» (winget) і його
+                                                       залежності з релізу microsoft/winget-cli + winget.json
 
 Версія береться лише з engine.py (VERSION = "..."), тож змінювати її треба в одному місці.
 """
@@ -332,6 +334,131 @@ def build_mesa(out_dir: str) -> str:
     return out
 
 
+# 7.2: «Інсталятор програм» (winget) для систем, де пакета немає зовсім (LTSC, Server, видалений). OptimaX бере його
+# лише з власного релізу (wingetfix.py), тож сюди кладемо офіційні файли релізу microsoft/winget-cli, звірені з digest
+# GitHub, з закріпленою сумою (release.yml: OPTIMAX_WINGET_TAG) і з сумою з Microsoft.DesktopAppInstaller_*.txt.
+WINGET_REPO = "microsoft/winget-cli"
+WINGET_BUNDLE = "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"  # як у wingetfix.BUNDLE
+WINGET_BUNDLE_SUM = "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.txt"
+WINGET_DEPS_ZIP = "DesktopAppInstaller_Dependencies.zip"
+WINGET_DEPS_JSON = "DesktopAppInstaller_Dependencies.json"
+WINGET_ARCHES = ("x64", "x86", "arm64")  # як у wingetfix.ARCHES
+WINGET_DEP_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,150}\.(appx|msix)$", re.I)  # як у wingetfix.DEP_RE
+PINNED_SHA256.update({
+    (WINGET_REPO, "v1.29.380/" + WINGET_BUNDLE): "65dea9c01ce08ee7b763366b27c0e651f97db857c11ca9b9c301826c10092f2e",
+    (WINGET_REPO, "v1.29.380/" + WINGET_DEPS_ZIP): "ba875afe9d190f61218985ac0292a99d1db710bf93e13c68944ca9d89f0d82d1",
+})
+
+
+def _download_asset(repo: str, tag: str, rel: dict, name: str, work: str) -> tuple:
+    """Ресурс name з уже отриманого релізу rel, звірений з digest GitHub і закріпленою сумою. -> (шлях, sha256)."""
+    asset = next((a for a in rel.get("assets") or [] if a.get("name") == name), None)
+    if not asset:
+        raise SystemExit(f"{repo} {rel.get('tag_name')}: no asset {name}")
+    path = os.path.join(work, name)
+    h = hashlib.sha256()
+    with _get(asset["browser_download_url"]) as r, open(path, "wb") as f:
+        for chunk in iter(lambda: r.read(1 << 20), b""):
+            h.update(chunk)
+            f.write(chunk)
+    # закріплена сума — за тегом і ім'ям (імена файлів winget-cli однакові в усіх релізах)
+    _check_digest(repo, f"{tag}/{name}", asset.get("digest"), h.hexdigest())
+    return path, h.hexdigest()
+
+
+def winget_dependencies(text: str) -> list:
+    """Імена пакетів-залежностей з DesktopAppInstaller_Dependencies.json (VCLibs, UI.Xaml, WindowsAppRuntime…)."""
+    import json
+    names = []
+
+    def walk(x):
+        if isinstance(x, dict):
+            n = x.get("Name") or x.get("name")
+            if isinstance(n, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,120}", n):
+                names.append(n)
+            for v in x.values():
+                walk(v)
+        elif isinstance(x, list):
+            for v in x:
+                walk(v)
+    walk(json.loads(text))
+    return sorted(set(names))
+
+
+def winget_dep_files(names) -> dict:
+    """Імена файлів з DesktopAppInstaller_Dependencies.zip -> {"<arch>/<файл>": ім'я в архіві}: лише .appx / .msix
+    з папки x64 / x86 / arm64 (будь-якої глибини), без «..» і чужих розширень."""
+    out = {}
+    for n in names:
+        parts = n.replace("\\", "/").split("/")
+        if len(parts) < 2 or ".." in parts or not WINGET_DEP_RE.match(parts[-1]):
+            continue
+        arch = parts[-2].lower()
+        if arch in WINGET_ARCHES:
+            out[f"{arch}/{parts[-1]}"] = n
+    return out
+
+
+def build_winget(out_dir: str) -> str:
+    """OptimaX-WinGet-<версія>.zip: msixbundle «Інсталятора програм» і залежності для x64 / x86 / arm64 з релізу
+    microsoft/winget-cli + winget.json із сумою кожного файлу. OPTIMAX_WINGET_TAG=<тег> — конкретний реліз."""
+    import json
+    import tempfile
+    import zipfile
+    tag = os.environ.get("OPTIMAX_WINGET_TAG", "").strip()
+    with _get(f"https://api.github.com/repos/{WINGET_REPO}/releases/" + (f"tags/{tag}" if tag else "latest"),
+              True) as r:
+        rel = json.load(r)
+    tag = rel.get("tag_name") or tag
+    m = re.fullmatch(r"v?(\d+(?:\.\d+){1,3})", tag or "")
+    if not m:
+        raise SystemExit(f"{WINGET_REPO}: unexpected tag {tag!r}")
+    ver = m.group(1)
+    work = tempfile.mkdtemp(prefix="winget_")
+    bundle, bundle_sha = _download_asset(WINGET_REPO, tag, rel, WINGET_BUNDLE, work)
+    deps_zip, deps_sha = _download_asset(WINGET_REPO, tag, rel, WINGET_DEPS_ZIP, work)
+    deps_json, _ = _download_asset(WINGET_REPO, tag, rel, WINGET_DEPS_JSON, work)
+    txt, _ = _download_asset(WINGET_REPO, tag, rel, WINGET_BUNDLE_SUM, work)
+    with open(txt, encoding="utf-8-sig") as f:  # третє джерело суми: файл, який Microsoft кладе поруч із bundle
+        listed = re.findall(r"\b[0-9a-fA-F]{64}\b", f.read())
+    if bundle_sha not in {s.lower() for s in listed}:
+        raise SystemExit(f"{WINGET_BUNDLE}: SHA-256 differs from {WINGET_BUNDLE_SUM}")
+    with open(deps_json, encoding="utf-8-sig") as f:
+        need = winget_dependencies(f.read())
+    if not need:
+        raise SystemExit(f"{WINGET_DEPS_JSON}: no dependencies listed")
+    files = {WINGET_BUNDLE: bundle_sha}
+    os.makedirs(out_dir, exist_ok=True)
+    out = os.path.join(out_dir, f"OptimaX-WinGet-{ver}.zip")
+    with zipfile.ZipFile(deps_zip) as dz:
+        picked = winget_dep_files(dz.namelist())
+        for arch in WINGET_ARCHES:
+            have = [k.split("/", 1)[1].lower() for k in picked if k.startswith(arch + "/")]
+            missing = [n for n in need if not any(h.startswith(n.lower() + "_") for h in have)]
+            if missing and arch == "x64":
+                raise SystemExit(f"{WINGET_DEPS_ZIP}: x64 lacks {', '.join(missing)}")
+            if missing:
+                print(f"::warning::WinGet: {arch} lacks {', '.join(missing)} — that arch gets no offline install",
+                      file=sys.stderr)
+                picked = {k: v for k, v in picked.items() if not k.startswith(arch + "/")}
+        # msix — уже стиснуті архіви: ZIP_STORED, щоб не витрачати час на повторне стискання
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as z:
+            z.write(bundle, WINGET_BUNDLE)
+            for key, src in sorted(picked.items()):
+                data = dz.read(src)
+                files[key] = hashlib.sha256(data).hexdigest()
+                z.writestr(key, data)
+            man = {"winget": ver, "source": f"https://github.com/{WINGET_REPO}/releases/tag/{tag}",
+                   "bundle": WINGET_BUNDLE, "dependencies": need, "archives": {WINGET_DEPS_ZIP: deps_sha},
+                   "files": files}
+            z.writestr("winget.json", json.dumps(man, indent=1))
+            z.writestr("README.txt", f"Windows Package Manager (winget) {ver}, App Installer and its dependencies\n"
+                                     f"from {man['source']} (MIT license, Microsoft-signed packages)\n"
+                                     "OptimaX installs them only when App Installer is missing from Windows "
+                                     "(LTSC, Server, removed) and the user asks to restore winget.\n")
+    return out
+
+
 def write_checksums(paths) -> str:
     out = os.path.join(ROOT, "Output", "SHA256SUMS.txt")
     os.makedirs(os.path.dirname(out), exist_ok=True)
@@ -361,6 +488,8 @@ if __name__ == "__main__":
         print(build_mesa(sys.argv[2]))
     elif cmd == "dxvk" and len(sys.argv) > 2:
         print(build_dxvk(sys.argv[2]))
+    elif cmd == "winget-app" and len(sys.argv) > 2:
+        print(build_winget(sys.argv[2]))
     else:
         print(__doc__)
         sys.exit(1)
