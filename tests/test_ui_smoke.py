@@ -57,11 +57,24 @@ def check_66(st: dict) -> None:
     assert st["report"] == ["ok", "ok"], st["report"]
 
 
+def hwc_sections() -> tuple:
+    """SECTIONS із pages_hwcenter.py без імпорту Qt (кількість розділів міняється з кожною версією)."""
+    import ast
+    import os
+    from _util import ROOT
+    tree = ast.parse(open(os.path.join(ROOT, "pages_hwcenter.py"), encoding="utf-8").read())
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "SECTIONS":
+            return ast.literal_eval(node.value)
+    return ()
+
+
 def check_hwc(st: dict) -> None:
-    """Hardware Center: 20 розділів (з перевіркою збірки, затримками, кулерами й мишею), тести на демо-залізі
-    пройдені, звіт і перевірка перед покупкою, кулери й андервольт демо-карти, частота опитування й відкат миші."""
+    """Hardware Center: усі розділи SECTIONS (з перевіркою збірки, затримками, кулерами, датчиками й мишею), тести
+    на демо-залізі пройдені, звіт і перевірка перед покупкою, кулери й андервольт демо-карти, частота опитування й
+    відкат миші."""
     h = st["hwc"]
-    assert h["built"] == 20, h
+    assert h["built"] == len(hwc_sections()) >= 21, h
     mo = h["mouse"]
     assert mo["poll"]["ok"] and mo["poll"]["demo"] and mo["poll"]["nearest"] in (125, 500, 1000), mo
     assert mo["applied"] == [True, True, True], ("speed 10 + no acceleration goes through the rollback journal", mo)
