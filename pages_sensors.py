@@ -14,7 +14,7 @@ import os
 import threading
 import time
 
-from PyQt6.QtCore import QRectF, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QEvent, QRectF, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import QApplication, QFileDialog, QSpinBox, QWidget
 
@@ -123,6 +123,8 @@ class SensorsPanel(QWidget):
         self.rec_cols = []
         self._job = None
         self._hw_seen = bool(page.main.hw)
+        self._restart = False  # 7.2: залізо визначилось — новий Hub, щойно поточне читання закінчиться
+        self._win = None
         self.got.connect(self._consume)
         v = vbox(self, spacing=12)
         c, cv = section_card(tr("sn.title"), tr("sn.sub"))
@@ -211,33 +213,54 @@ class SensorsPanel(QWidget):
     def _active(self) -> bool:
         return self.rec is not None or (self.isVisible() and not self.window().isMinimized())
 
-    def showEvent(self, e):
-        super().showEvent(e)
-        if not self.timer.isActive():
+    def _resume(self) -> None:
+        if not self.timer.isActive() and self._active():
             self.timer.start()
             self._tick()
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        win = self.window()
+        if win is not self and win is not self._win:
+            # 7.2: згорнуте вікно лишає isVisible() — сам таймер не мав би тікати; стан вікна чуємо фільтром
+            if self._win is not None:
+                self._win.removeEventFilter(self)
+            self._win = win
+            win.installEventFilter(self)
+        self._resume()
 
     def hideEvent(self, e):
         super().hideEvent(e)
         if self.rec is None:
             self.timer.stop()
 
+    def eventFilter(self, obj, e):
+        if obj is self._win and e.type() == QEvent.Type.WindowStateChange:
+            if self._win.isMinimized():
+                if self.rec is None:
+                    self.timer.stop()
+            elif self.isVisible():
+                self._resume()
+        return False
+
     def _tick(self) -> None:
         if not self._active():
-            if not self.isVisible() and self.rec is None:
+            if self.rec is None:
                 self.timer.stop()
             return
         if not self._hw_seen and self.page.main.hw:  # залізо визначилось після відкриття розділу
             self._hw_seen = True
-            self._restart_hub()
+            self._restart = True
         if self._job is not None and self._job.is_alive():
             return  # попереднє читання ще йде (повільне джерело) — пропускаємо такт, а не множимо потоки
+        if self._restart:
+            self._restart_hub()
         self._job = threading.Thread(target=self._read, daemon=True, name="optimax-sensors")
         self._job.start()
 
     def _restart_hub(self) -> None:
-        if self._job is not None and self._job.is_alive():
-            self._job.join(2.0)
+        """Лише коли фонового читання немає (див. _tick): Hub не закривається посеред читання."""
+        self._restart = False
         self.hub.close()
         self.hub = S.Hub(self.page.main.hw or {})
 
@@ -349,7 +372,7 @@ class SensorsPanel(QWidget):
         self.btn_rec.setObjectName("primary")
         self.btn_rec.style().polish(self.btn_rec)
         self.rec_state.setText("")
-        if not self.isVisible():
+        if not self._active():  # сховано чи згорнуто — без запису опитування не потрібне
             self.timer.stop()
 
     def shutdown(self) -> None:
@@ -357,4 +380,4 @@ class SensorsPanel(QWidget):
         self.stop_record()
         if self._job is not None and self._job.is_alive():
             self._job.join(2.0)
-        self.hub.close()
+        self.hub.close()  # читання ще йде — джерела закриє сам потік, коли дочитає (Hub.close)

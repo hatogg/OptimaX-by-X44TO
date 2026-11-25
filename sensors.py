@@ -25,6 +25,7 @@ import math
 import os
 import random
 import re
+import threading
 import time
 
 import engine as E
@@ -203,21 +204,77 @@ def csv_line(row: list) -> str:
     return buf.getvalue()
 
 
+NAME_SURROGATE = 0x20000000  # біт тегу точки повторного розбору: symlink, junction, mount point — «веде деінде»
+
+
+def link_like(path: str) -> bool:
+    """Ланка шляху, що веде деінде. 7.2: не будь-яка точка повторного розбору (secfs.is_reparse лишається суворою
+    для своїх папок у ProgramData): «Файли на вимогу» OneDrive (Робочий стіл / Документи в OneDrive) мають тег
+    хмари без біта name surrogate — це звичайна папка, і запис у неї не відхиляємо."""
+    import stat
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return False
+    if stat.S_ISLNK(st.st_mode):
+        return True
+    attrs = getattr(st, "st_file_attributes", 0)
+    if not attrs & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400):
+        return False
+    return bool(getattr(st, "st_reparse_tag", NAME_SURROGATE) & NAME_SURROGATE)  # тег невідомий — як посилання
+
+
 def unsafe_target(path: str) -> bool:
     """OptimaX працює як адміністратор: файл, папка на шляху до нього чи сам шлях-посилання (symlink, junction)
     могли вести в системну папку — туди писати не можна. Перевіряємо кожну ланку."""
-    import secfs as SF
     p = os.path.abspath(path)
     if os.path.isdir(p):
         return True
     cur = p
     while True:
-        if SF.is_reparse(cur):
+        if link_like(cur):
             return True
         parent = os.path.dirname(cur)
         if parent == cur:
             return False
         cur = parent
+
+
+def _long_path(p: str) -> str:
+    """Windows: повні імена замість 8.3 (RUNNER~1), щоб порівнювати з тим, що каже дескриптор."""
+    if not E.IS_WIN:
+        return p
+    import ctypes
+    buf = ctypes.create_unicode_buffer(32768)
+    n = ctypes.windll.kernel32.GetLongPathNameW(p, buf, 32768)
+    return buf.value if 0 < n < 32768 else p
+
+
+def final_path(f):
+    """Справжній шлях відкритого файла — за дескриптором, а не за іменем (None — невідомо)."""
+    try:
+        if E.IS_WIN:
+            import ctypes
+            import msvcrt
+            k32 = ctypes.windll.kernel32
+            k32.GetFinalPathNameByHandleW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint32,
+                                                      ctypes.c_uint32]
+            buf = ctypes.create_unicode_buffer(32768)
+            n = k32.GetFinalPathNameByHandleW(msvcrt.get_osfhandle(f.fileno()), buf, 32768, 0)
+            if not 0 < n < 32768:
+                return None
+            v = buf.value
+            if v.startswith("\\\\?\\UNC\\"):
+                return "\\\\" + v[8:]  # \\?\UNC\сервер\ресурс -> \\сервер\ресурс
+            return v[4:] if v.startswith("\\\\?\\") else v
+        link = f"/proc/self/fd/{f.fileno()}"
+        return os.readlink(link) if os.path.exists(link) else None
+    except Exception:
+        return None
+
+
+def same_path(a: str, b: str) -> bool:
+    return bool(a and b) and os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
 
 
 class CsvLog:
@@ -229,8 +286,21 @@ class CsvLog:
         import secfs as SF
         if unsafe_target(path):
             raise PermissionError(path)
+        p = os.path.abspath(path)
+        expected = os.path.join(_long_path(os.path.dirname(p)), os.path.basename(p))
         self.path, self.cols, self.rows = path, cols, 0
         self.f = SF.remove_then_create(path, "w", encoding="utf-8-sig", newline="")  # BOM — Excel бачить кирилицю
+        # 7.2: між перевіркою й відкриттям папку на шляху могли підмінити посиланням — тоді файл створено деінде.
+        # Звіряємо, куди насправді веде дескриптор; не туди — закриваємо й прибираємо створене (воно порожнє).
+        real = final_path(self.f)
+        if real is not None and not same_path(real, expected):
+            self.f.close()
+            self.f = None
+            try:
+                os.remove(real)
+            except OSError:
+                pass
+            raise PermissionError(path)
         self.f.write(csv_line(csv_header(cols)))
         self.f.flush()
 
@@ -274,9 +344,14 @@ def energy_unit(units):
     return 1.0 / (1 << esu) if esu else None
 
 
-def rapl_watts(prev, cur, unit, dt):
-    """Два покази 32-бітного лічильника енергії -> Вт (лічильник переповнюється — враховуємо)."""
-    if prev is None or cur is None or not unit or not dt or dt <= 0:
+RAPL_MAX_GAP = 3 * INTERVAL_MS / 1000  # с
+
+
+def rapl_watts(prev, cur, unit, dt, max_gap: float = RAPL_MAX_GAP):
+    """Два покази 32-бітного лічильника енергії -> Вт (одне переповнення між ними враховуємо).
+    7.2: між показами — пауза (розділ ховали, вікно згортали) довша за max_gap — None: середнє за всю паузу не є
+    «зараз» (65 Вт показувало 2,6 Вт), а за кілька хвилин лічильник AMD може переповнитись не раз."""
+    if prev is None or cur is None or not unit or not dt or dt <= 0 or dt > max_gap:
         return None
     d = (cur - prev) & 0xFFFFFFFF
     w = d * unit / dt
@@ -361,7 +436,7 @@ class MsrReader:
         try:
             now, raw = time.monotonic(), self.live.msr(self.e_reg)
             raw = raw & 0xFFFFFFFF if raw is not None else None
-            if self.prev and raw is not None:
+            if self.prev and raw is not None:  # після паузи rapl_watts дасть None — лише нова точка відліку
                 d["power"] = rapl_watts(self.prev[1], raw, self.unit, now - self.prev[0])
             self.prev = (now, raw) if raw is not None else None
         except Exception:
@@ -699,7 +774,9 @@ class DemoReader:
 
 # ───────────────────────── усе разом ─────────────────────────
 class Hub:
-    """read() — у фоновому потоці (по одному за раз); feed() / reset() — у потоці інтерфейсу."""
+    """read() — у фоновому потоці (по одному за раз); feed() / reset() / close() — у потоці інтерфейсу.
+    7.2: close() під час читання не закриває джерела під ногами в потоку (PDH, PawnIO): їх закриє сам потік, щойно
+    дочитає, — і ні читач, створений уже після close(), не лишиться відкритим."""
 
     def __init__(self, hw: dict):
         self.hw = hw or {}
@@ -707,11 +784,23 @@ class Hub:
         self.stats = {}
         self.seen = set()
         self.rows = []  # останній знімок, що показуємо (лише показники, які хоч раз мали значення, або always)
+        self._lock = threading.Lock()
+        self._busy = self._closed = False
 
     def read(self) -> list:
-        if self.reader is None:
-            self.reader = WinReader(self.hw) if E.IS_WIN else DemoReader(self.hw)
-        return self.reader.read()
+        with self._lock:
+            if self._closed:
+                return []
+            self._busy = True
+        try:
+            if self.reader is None:
+                self.reader = WinReader(self.hw) if E.IS_WIN else DemoReader(self.hw)
+            return self.reader.read()
+        finally:
+            with self._lock:
+                self._busy = False
+                if self._closed:
+                    self._close_reader()
 
     def feed(self, readings: list) -> list:
         rows = []
@@ -729,10 +818,16 @@ class Hub:
         for s in self.stats.values():
             s.reset()
 
-    def close(self) -> None:
+    def _close_reader(self) -> None:
         if self.reader:
             try:
                 self.reader.close()
             except Exception:
                 pass
             self.reader = None
+
+    def close(self) -> None:
+        with self._lock:
+            self._closed = True
+            if not self._busy:
+                self._close_reader()

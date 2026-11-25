@@ -157,9 +157,108 @@ def test_msr_decoders():
     assert S.rapl_watts(1000, 1000 + 2**14 * 65, unit, 1.0) == 65.0
     assert S.rapl_watts(0xFFFFFF00, 0x100, unit, 1.0) == round(0x200 * unit, 1), "32-bit counter wraps"
     assert S.rapl_watts(None, 5, unit, 1.0) is None and S.rapl_watts(1, 5, unit, 0) is None
+    # 7.2: після паузи (розділ ховали) — не середнє за всю паузу і не сміття від переповнення
+    assert S.rapl_watts(1000, 1000 + 2**14 * 65 * 4200, unit, 4200.0) is None
+    assert S.rapl_watts(1000, 1000 + 2**14 * 65 * 3, unit, 3.0) == 65.0
     assert S.amd_tctl(int(65.5 * 8) << 21) == 65.5
     assert S.amd_tctl((int(60 * 8) << 21) | 1 << 19) == 11.0, "range select: −49 °C"
     assert S.amd_tctl(0) is None
+
+
+def test_msr_power_reseeds_after_pause():
+    class Live:
+        drv = None
+        energy = 0
+
+        def msr(self, reg):
+            return {0xC0010299: 0x000A0E03, 0xC001029B: self.energy}.get(reg)
+
+        def read(self):
+            return {}
+    live, clock = Live(), [100.0]
+    real = S.time.monotonic
+    S.time.monotonic = lambda: clock[0]
+    try:
+        m = S.MsrReader(live, "AMD")
+        unit = 1 / 2**14
+        powers = []
+        for dt, watts in ((1, 0), (1, 65), (1, 65), (4200, 65), (1, 65)):
+            clock[0] += dt
+            live.energy = (live.energy + int(watts * dt / unit)) & 0xFFFFFFFF
+            powers.append(m.read().get("power"))
+    finally:
+        S.time.monotonic = real
+    assert powers == [None, 65.0, 65.0, None, 65.0], powers
+
+
+def test_hub_close_during_read_closes_reader_after_it():
+    import threading
+    started, go, closed = threading.Event(), threading.Event(), []
+
+    class Reader:
+        def read(self):
+            started.set()
+            go.wait(5)
+            return [r("cpu.temp", 50)]
+
+        def close(self):
+            closed.append(1)
+    hub = S.Hub({})
+    hub.reader = Reader()
+    out = []
+    t = threading.Thread(target=lambda: out.append(hub.read()))
+    t.start()
+    assert started.wait(5)
+    hub.close()
+    assert not closed, "must not close sources under a running read"
+    go.set()
+    t.join(5)
+    assert closed == [1] and hub.reader is None and out and out[0]
+    assert hub.read() == [] and hub.reader is None, "no new reader after close"
+
+
+def test_link_like_only_name_surrogates():
+    import stat
+
+    class St:
+        st_mode = stat.S_IFDIR
+
+        def __init__(self, attrs, tag):
+            self.st_file_attributes, self.st_reparse_tag = attrs, tag
+    real = S.os.lstat
+    try:
+        for tag, want in ((0xA000000C, True), (0xA0000003, True), (0x9000001A, False), (0x9000601A, False),
+                          (0x8000001B, False)):  # symlink, junction, OneDrive (cloud), AppExecLink
+            S.os.lstat = lambda p, t=tag: St(0x400, t)
+            assert S.link_like("x") is want, hex(tag)
+        S.os.lstat = lambda p: St(0x10, 0)
+        assert S.link_like("x") is False
+    finally:
+        S.os.lstat = real
+
+
+def test_csv_log_detects_parent_swapped_after_check():
+    if IS_WIN:
+        skip("symlink needs a privilege on Windows; GetFinalPathNameByHandle path is checked on CI")
+    import secfs as SF
+    d = tempfile.mkdtemp(prefix="oxsn_")
+    sub, elsewhere = os.path.join(d, "sub"), tempfile.mkdtemp(prefix="oxsn_other_")
+    os.mkdir(sub)
+    real = SF.remove_then_create
+
+    def swap_then_open(path, *a, **k):  # підміна між перевіркою і відкриттям
+        os.rename(sub, sub + "_moved")
+        os.symlink(elsewhere, sub)
+        return real(path, *a, **k)
+    SF.remove_then_create = swap_then_open
+    try:
+        S.CsvLog(os.path.join(sub, "x.csv"), COLS)
+        assert False, "must refuse"
+    except PermissionError:
+        pass
+    finally:
+        SF.remove_then_create = real
+    assert os.listdir(elsewhere) == [], "the redirected file must be removed"
 
 
 def test_pdh_gpu_counters_by_luid():
@@ -262,6 +361,15 @@ res["hidden_reads"] = len(reads) - n
 p.show()
 spin(1300)
 res["shown_again"] = p.timer.isActive() and len(reads) > n
+w.showMinimized()
+spin(300)
+n = len(reads)
+spin(1300)
+res["min_timer"] = p.timer.isActive()
+res["min_reads"] = len(reads) - n
+w.showNormal()
+spin(1300)
+res["restored"] = p.timer.isActive() and len(reads) > n
 out = os.path.join(tempfile.mkdtemp(), "rec.csv")
 QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: (out, ""))
 p.toggle_record()
@@ -294,6 +402,7 @@ def test_panel_polls_only_while_visible_and_records():
     assert res["active"] and res["reads"] >= 2 and res["groups"] >= 5 and res["h"] > 300, res
     assert not res["hidden_timer"] and res["hidden_reads"] == 0, f"no polling while hidden: {res}"
     assert res["shown_again"], res
+    assert not res["min_timer"] and res["min_reads"] == 0 and res["restored"], f"minimized: no timer: {res}"
     assert res["rec_hidden_timer"] and res["rec_rows"] >= 2, f"recording keeps polling while hidden: {res}"
     assert not res["after_stop_timer"], res
     assert res["reset_max"] == [], res
