@@ -101,7 +101,7 @@ R["needs_before"] = GP.MANAGER.needs_sync()
 r1 = GP.MANAGER.sync(log)
 R["a_on"] = {"res": r1, "plan": plan(), "prio": [PRIO[100], PRIO[101]], "boost": F.BOOSTER.active,
              "boost_plan": (F.CFG["booster_state"] or {}).get("plan"), "ids": ids(),
-             "state": F.CFG["game_profile_state"], "needs_after": GP.MANAGER.needs_sync()}
+             "state": GP.load_state(), "needs_after": GP.MANAGER.needs_sync()}
 
 # ── 3. гра B (Ultimate) поверх A: схема — найсильніша, початкова лишається тією самою ──
 GP.save(B, {"power": "ultimate", "prio": "above"}, log)
@@ -114,7 +114,7 @@ GP.MANAGER.sync(log)
 R["a_off"] = {"plan": FW.SCHEMES.get(plan()), "boost": F.BOOSTER.active, "active": sorted(GP.MANAGER.active_keys())}
 stop(200)
 GP.MANAGER.sync(log)
-R["b_off"] = {"plan": plan(), "ids": ids(), "state": F.CFG["game_profile_state"],
+R["b_off"] = {"plan": plan(), "ids": ids(), "state": GP.load_state(),
               "schemes": sorted(FW.SCHEMES.values()), "hist": sorted(GP.hist_all())}
 
 # ── 4. навпаки: B першою, закривається першою — схема переходить на потрібну A, а потім — початкова ──
@@ -153,17 +153,20 @@ SET_FAIL.clear()
 # ── 7. аварія посеред гри → наступний запуск ──
 start(105, "alpha.exe", A["main"])
 GP.MANAGER.sync(log)
-crash_state = json.loads(json.dumps(F.CFG["game_profile_state"]))
+crash_state = GP.load_state() or {}
+R["state_file"] = GP.state_path().startswith(os.environ["ProgramData"])
 R["crash_mid"] = {"plan": plan(), "prio": PRIO[105], "state_prio": crash_state.get("prio")}
 GP.MANAGER = GP.Manager()  # новий процес OptimaX: пам'яті про сесію немає
 F.BOOSTER.stop(log)  # режим гри відновлюється своїм механізмом (optimizer: booster_state)
 R["needs_recovery"] = GP.needs_recovery()
 R["sync_before_recover"] = GP.MANAGER.needs_sync()  # до відновлення нічого не застосовуємо
 rr = GP.MANAGER.recover(log)
-R["recovered"] = {"res": rr, "plan": plan(), "prio": PRIO[105], "ids": ids(), "state": F.CFG["game_profile_state"]}
+R["recovered"] = {"res": rr, "plan": plan(), "prio": PRIO[105], "ids": ids(), "state": GP.load_state()}
 GP.MANAGER.sync(log)  # гра ще працює — профіль застосовується знову
 R["reapplied"] = {"plan": plan(), "prio": PRIO[105]}
-GP.MANAGER.stop_all(log)  # OptimaX закривається
+E.stop_all()  # OptimaX закривається: спершу скасовуються всі дії (closeEvent), потім — прибирання профілів
+GP.MANAGER.stop_all(log)
+E._SHUTDOWN.clear()
 R["closed"] = {"plan": plan(), "prio": PRIO[105], "ids": ids(), "boost": F.BOOSTER.active}
 stop(105)
 
@@ -190,14 +193,49 @@ F.CFG["library"] = {"games": [A, dict(B, dir="C:\\Windows\\System32", key="evil"
 F.CFG["game_profiles"] = dict(F.CFG["game_profiles"], evil={"prio": "high"}, root={"prio": "high"},
                               bad={"prio": "high"})
 R["tampered"] = {"profiles": GP.profiles(), "watched": sorted(GP.watched())}
-F.CFG["game_profile_state"] = {"prio": [[300, "lsass.exe", 0x20, 0x80], [301, "alpha.exe", 0x100, 0x80],
-                                        "junk", [302, "alpha.exe", 0x20, 0x100]]}
+# підмінений стан сесії: лише захищений файл, і навіть з нього — лише процес з папки гри з нашим пріоритетом
+F.CFG["library"] = {"games": [A, B]}
+F.CFG["game_profiles"] = {A["key"]: {"prio": "high"}}
+F.CFG["game_profile_state"] = {"prio": [[305, "alpha.exe", 0x40, 0x80]]}  # settings.json — не джерело стану
+GP.write_state({"prio": [[300, "lsass.exe", 0x20, 0x80], [301, "alpha.exe", 0x100, 0x80], "junk",
+                         [302, "alpha.exe", 0x20, 0x100], [303, "alpha.exe", 0x40, 0x80],
+                         [304, "alpha.exe", 0x40, 0x20], [306, "alpha.exe", 0x20, 0x80]]})
 start(300, "lsass.exe", r"C:\Windows\System32\lsass.exe", 0x80)
 start(301, "alpha.exe", A["main"], 0x80)
 start(302, "alpha.exe", A["main"], 0x100)
+start(303, "alpha.exe", r"C:\Users\x\Downloads\alpha.exe", 0x80)  # не з папки гри
+start(304, "alpha.exe", A["main"], 0x20)  # «повернути» звичайний на idle — профіль normal не ставить
+start(305, "alpha.exe", A["main"], 0x80)
+start(306, "alpha.exe", A["main"], 0x80)  # справжній запис — повертається
 GP.MANAGER = GP.Manager()
 GP.MANAGER.recover(log)
-R["tampered_state"] = [PRIO[300], PRIO[301], PRIO[302]]
+R["tampered_state"] = [PRIO[p] for p in (300, 301, 302, 303, 304, 305, 306)]
+PROCS.clear()
+
+# ── 9a. повернути схему не вдалося — повтор пізніше (needs_sync через RETRY_AFTER) ──
+F.CFG["game_profiles"] = {A["key"]: {"power": "high"}}
+start(107, "alpha.exe", A["main"])
+GP.MANAGER.sync(log)
+real_run = E.run
+
+
+def failing_run(cmd, *a, **k):
+    text = cmd if isinstance(cmd, str) else " ".join(cmd)
+    if "-setactive" in text:
+        return 1, "Access denied"
+    return real_run(cmd, *a, **k)
+
+
+E.run = failing_run
+stop(107)
+r = GP.MANAGER.sync(log)
+R["retry_fail"] = {"fail": r["fail"], "held": GP.POWER_ID in ids(), "plan": plan(),
+                   "needs_now": GP.MANAGER.needs_sync()}
+E.run = real_run
+GP.MANAGER.retry_at = 1.0  # час повтору настав
+R["retry_due"] = GP.MANAGER.needs_sync()
+GP.MANAGER.sync(log)
+R["retry_ok"] = {"held": GP.POWER_ID in ids(), "plan": plan(), "needs": GP.MANAGER.needs_sync()}
 
 # ── 10. профіль прибрали — «Графіка» як до OptimaX (чужий параметр лишився) ──
 F.CFG["library"] = {"games": [A, B]}

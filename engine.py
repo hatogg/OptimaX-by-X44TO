@@ -98,6 +98,34 @@ def stop_all() -> None:
     _SHUTDOWN.set()
 
 
+class _CleanupToken(CancelToken):
+    """Токен прибирання під час закриття: діє лише «Зупинити» самої дії, а не закриття програми (_SHUTDOWN)."""
+
+    def __init__(self, outer: CancelToken):
+        super().__init__()
+        self._ev = outer._ev
+
+    def is_set(self) -> bool:
+        return self._ev.is_set()
+
+
+def shutdown_cleanup(fn: Callable) -> Callable:
+    """7.2: повернення тимчасових змін під час закриття програми (профіль гри). stop_all() скасовує всі дії, тож
+    відкат після нього не виконувався б (undo_ids зупиняється на CANCEL, довгі команди обриваються) і зміна лишалася
+    б у системі до наступного запуску. Така функція працює з токеном, на який закриття програми не діє."""
+    import functools
+
+    @functools.wraps(fn)
+    def wrapper(*a, **kw):
+        prev = getattr(_TLS, "token", None)
+        _TLS.token = _CleanupToken(prev or _DEFAULT_TOKEN)
+        try:
+            return fn(*a, **kw)
+        finally:
+            _TLS.token = prev
+    return wrapper
+
+
 class _CurrentCancel:
     """E.CANCEL — токен поточного потоку; інтерфейс той самий, що в threading.Event."""
 

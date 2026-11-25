@@ -11,8 +11,11 @@ from _util import IS_WIN, ROOT, SCRIPTS, env_for, has_qt, skip, tail
 
 DEMO_CODE = r"""
 import json, sys, threading, time
-sys.argv = ["x", "--lang=en"]
-import engine as E, features as F, gameprof as GP, library as LB
+sys.argv = ["x", "--dry-run", "--lang=en"]
+import engine as E
+E.IS_WIN = False  # демо-поведінка й на справжній Windows (CI): демо-бібліотека, нічого не змінюється
+E.DRY_RUN = True
+import features as F, gameprof as GP, library as LB
 R = {}
 # ── сміття в профілі: лише білі списки, ніколи realtime ──
 junk = [None, 5, "x", [], {"power": "powercfg -h off", "gpu": 2, "prio": "realtime", "boost": "yes", "enabled": 0},
@@ -67,7 +70,7 @@ LB.add_fps("cs2.exe", {"avg": 240.0, "low1": 180.0})
 procs.clear()
 r = GP.MANAGER.sync(print)
 R["off"] = {"ended": r["ended"], "power": E.JOURNAL.has(GP.POWER_ID), "boost": F.BOOSTER.active,
-            "state": F.CFG["game_profile_state"], "busy": GP.MANAGER.busy()}
+            "state": GP.load_state(), "busy": GP.MANAGER.busy()}
 info = GP.fps_info(cs)
 R["fps"] = {"before": info["before"].get("avg"), "after": info["after"].get("avg"),
             "verdict": info["cmp"].get("verdict"), "rows": [(x["avg"], x["prof"]) for x in info["rows"]]}
@@ -83,7 +86,10 @@ print("RESULT " + json.dumps(R))
 
 UI_CODE = r"""
 import json, sys
-sys.argv = ["x", "--lang=uk"]
+sys.argv = ["x", "--dry-run", "--lang=uk"]
+import engine as E
+E.IS_WIN = False  # демо-бібліотека й на справжній Windows
+E.DRY_RUN = True
 from PyQt6.QtWidgets import QApplication
 app = QApplication(sys.argv)
 import features as F, gameprof as GP, library as LB, pages_gameprof as PG
@@ -250,5 +256,24 @@ def test_fake_tampered_settings():
     assert all(p["prio"] in ("keep", "normal", "above", "high") for p in profs.values())
     assert profs["c:\\games\\alpha"]["power"] == "keep"
     assert r["tampered"]["watched"] == [], "system folders, drive roots and bad exe names are never watched"
-    assert r["tampered_state"] == [0x80, 0x80, 0x100], "forged session state changes no process priority"
+    assert r["tampered_state"] == [0x80, 0x80, 0x100, 0x80, 0x20, 0x80, 0x20], \
+        "only a verified in-folder process with our above/high priority is restored; settings.json is ignored"
+
+
+def test_fake_state_in_protected_folder():
+    r = fake_report()
+    assert r["state_file"] is True, "session state lives in %ProgramData%\\OptimaX\\state, not settings.json"
+
+
+def test_fake_close_after_stop_all_restores_power():
+    r = fake_report()
+    assert r["closed"]["plan"] == BALANCED and "gprof:power" not in r["closed"]["ids"], \
+        "E.stop_all() (closeEvent) must not block the profile's cleanup"
+
+
+def test_fake_failed_power_undo_is_retried():
+    r = fake_report()
+    assert r["retry_fail"] == {"fail": 1, "held": True, "plan": HIGH, "needs_now": False}
+    assert r["retry_due"] is True
+    assert r["retry_ok"] == {"held": False, "plan": BALANCED, "needs": False}
     assert r["removed"]["pref"] == "SwapEffectUpgradeEnable=1;" and r["removed"]["ids"] == []
