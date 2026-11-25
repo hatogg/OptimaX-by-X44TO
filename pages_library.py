@@ -12,9 +12,11 @@ from PyQt6.QtWidgets import QWidget, QFrame, QLabel, QGridLayout, QFileIconProvi
 
 import engine as E
 import fpstest as FT
+import gameprof as GP
 import library as LB
 from i18n import tr
-from ui_kit import T, label, button, card, vbox, hbox, badge, scroller, page_header, Switch, Spark, Ask, make_font
+from ui_kit import (T, label, button, card, vbox, hbox, badge, style_badge, scroller, page_header, Switch, Spark, Ask,
+                    make_font)
 
 TILE_W, TILE_H = 150, 225
 _COVERS: dict = {}
@@ -66,6 +68,18 @@ def cover_pixmap(g: dict, w: int = TILE_W, h: int = TILE_H) -> QPixmap:
     return out
 
 
+def sync_profile_badge(lb, g: dict) -> None:
+    """Позначка профілю гри: «● Профіль активний» (гра запущена, профіль застосовано), «Профіль» або нічого."""
+    if g.get("key") in GP.MANAGER.active_keys():
+        style_badge(lb, tr("gprof.badge_on"), "ok")
+    elif GP.has_profile(g):
+        style_badge(lb, tr("gprof.badge_set"), "acc")
+    else:
+        lb.hide()
+        return
+    lb.show()
+
+
 class GameTile(QFrame):
     clicked = pyqtSignal(object)
 
@@ -87,6 +101,8 @@ class GameTile(QFrame):
         v.addWidget(name)
         self.sub = label("", "muted")
         v.addWidget(self.sub)
+        self.prof = badge("", "muted")  # профіль гри: є / активний зараз (gameprof.py)
+        v.addWidget(self.prof)
         self.sync()
 
     def sync(self):
@@ -96,6 +112,7 @@ class GameTile(QFrame):
         if fps and fps[-1].get("avg"):
             parts.append(f"{fps[-1]['avg']:.0f} FPS")
         self.sub.setText(" · ".join(parts) or tr(f"mg.store.{self.g['store']}"))
+        sync_profile_badge(self.prof, self.g)
 
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
@@ -128,6 +145,8 @@ class LibraryPage(QWidget):
         top = hbox(spacing=8)
         self.det_name = label("", "h1", wrap=True)
         top.addWidget(self.det_name, 1)
+        self.det_prof = badge("", "muted")
+        top.addWidget(self.det_prof, 0, Qt.AlignmentFlag.AlignTop)
         self.det_store = badge("", "muted")
         top.addWidget(self.det_store, 0, Qt.AlignmentFlag.AlignTop)
         dv.addLayout(top)
@@ -139,6 +158,8 @@ class LibraryPage(QWidget):
         bh.addWidget(self.btn_play)
         self.btn_folder = button(tr("lib.folder"), "ghost", self.open_folder)
         bh.addWidget(self.btn_folder)
+        self.btn_profile = button(tr("gprof.btn"), "ghost", self.open_profile)
+        bh.addWidget(self.btn_profile)
         self.btn_mining = button(tr("lib.mining"), "ghost", self.open_mining)
         bh.addWidget(self.btn_mining)
         bh.addStretch()
@@ -258,7 +279,11 @@ class LibraryPage(QWidget):
             info.append(tr("lib.sessions", n=n))
         if g.get("anticheat"):
             info.append(tr("lib.anticheat", name=g["anticheat"]))
+        if GP.has_profile(g):
+            info.append(tr("gprof.title_short") + ": " + GP.summary(GP.profile(g)))
         self.det_info.setText(" · ".join(info))
+        sync_profile_badge(self.det_prof, g)
+        self.btn_profile.setEnabled(bool(GP.sane_game(g)))
         self.btn_play.setEnabled(bool(LB.launch_target(g)))
         hist = LB.fps_history(g["exes"])
         self.chart.set_series([([r["avg"] for r in hist if r.get("avg")], T["acc"]),
@@ -292,6 +317,27 @@ class LibraryPage(QWidget):
         if not g:
             return
         self.main.launch_game(g, self.btn_play)
+
+    def open_profile(self):
+        """«Профіль»: вікно профілю гри; збереження й відкат налаштування «Графіка» — у фоні, через журнал."""
+        import pages_gameprof as PG
+        g = self.sel
+        if not g or not GP.sane_game(g):
+            return
+        dlg = PG.ProfileDialog(self, g, self.main.hw, on_fps=lambda: self.main.open_fps_test(g))
+        self.main.profile_dialog = dlg  # для перевірки інтерфейсу (ui_smoke)
+        if dlg.exec() != dlg.DialogCode.Accepted or not dlg.action:
+            return
+        if dlg.action == "remove":
+            job = lambda log, p: GP.remove(g, log)  # noqa: E731
+        else:
+            prof = dlg.profile()
+            job = lambda log, p: GP.save(g, prof, log)  # noqa: E731
+
+        def done(_r):
+            self.main.gameprof_tick(force=True)  # профіль змінено під час гри — одразу звіряємо
+            self.on_show()
+        self.main.run_quick(tr("gprof.title", game=g["name"]), job, busy=self.btn_profile, on_done=done)
 
     def open_folder(self):
         if self.sel and E.IS_WIN and not E.DRY_RUN:

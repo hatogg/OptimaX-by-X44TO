@@ -102,6 +102,7 @@ def _load() -> None:
     from lang_winget import STRINGS as winget
     from lang_gpuz import STRINGS as gpuz
     from lang_mouse import STRINGS as mouse
+    from lang_gameprof import STRINGS as gameprof
     from lang_tweaks import TEXTS
     STR.update(eng)
     STR.update(ui)
@@ -122,6 +123,7 @@ def _load() -> None:
     STR.update(winget)
     STR.update(gpuz)
     STR.update(mouse)
+    STR.update(gameprof)
     TWEAK_TEXT.update(TEXTS)
 
 

@@ -84,6 +84,11 @@ DEFAULTS = {
     # чи застосовано зараз, позначка «перевіряється» (pending) і «застосовувати під час запуску». 6.15 — тестовий
     # режим: поки enabled не ввімкнули самі, бібліотеки драйвера (NVML, ADLX) навіть не завантажуються
     "gpu_tune": {"profile": None, "orig": {}, "active": False, "on_start": False, "enabled": False},
+    # профілі ігор (gameprof.py): {ключ гри бібліотеки: {enabled, power, gpu, prio, boost}}, стан сесії для
+    # відновлення після аварії й проміжки, коли профіль був активний (для історії FPS)
+    "game_profiles": {},
+    "game_profile_state": None,
+    "game_profile_hist": {},
 }
 
 
@@ -224,6 +229,21 @@ HIGH_PRIORITY = 0x80
 # 7.1.1: без realtime (0x100) — клас береться з settings.json (пише будь-яка програма користувача), а realtime
 # від імені адміністратора може «покласти» систему; режим гри сам ставить лише high
 PRIORITY_CLASSES = (0x40, 0x4000, 0x20, 0x8000, 0x80)
+# запис журналу схеми живлення профілів ігор (gameprof.py): поки він є, схему тримає профіль, і режим гри її не чіпає
+PROFILE_POWER_ID = "gprof:power"
+# 7.2: режим гри вмикають кнопка, автоматичний режим, «Бібліотека» і профілі ігор — з різних фонових потоків. Дві
+# одночасні спроби увімкнути перезаписували б стан одна одної (і з ним — що повертати), тож по черзі
+_BOOST_LOCK = threading.RLock()
+
+
+def _boost_locked(fn):
+    import functools
+
+    @functools.wraps(fn)
+    def wrapper(*a, **kw):
+        with _BOOST_LOCK:
+            return fn(*a, **kw)
+    return wrapper
 
 
 def boost_profile(game_path: str = None) -> str:
@@ -254,11 +274,17 @@ class GameBooster:
     def active(self) -> bool:
         return bool(self.cfg["booster_state"])
 
-    def start(self, log, game: str = None) -> dict:
-        """game — шлях exe гри, через яку режим увімкнувся автоматично (для її профілю)."""
+    @_boost_locked
+    def start(self, log, game: str = None, skip: tuple = ()) -> dict:
+        """game — шлях exe гри, через яку режим увімкнувся автоматично (для її профілю); skip — дії, які на цей раз
+        не виконувати (профіль гри сам задає схему живлення чи пріоритет)."""
         if self.active:
             return {"ok": True}
-        opt = boost_options(game) if self.cfg is CFG else self.cfg["booster"]
+        opt = dict(boost_options(game) if self.cfg is CFG else self.cfg["booster"])
+        for k in skip:
+            opt[k] = False
+        if E.JOURNAL.has(PROFILE_POWER_ID):  # схему живлення вже тримає профіль гри — повертати її буде він
+            opt["power"] = False
         state = {"ts": int(time.time()), "services": [], "onedrive": False, "plan": None, "timer": False,
                  "dnd": None, "profile": boost_profile(game), "game": game or "", "prio": []}
         self.cfg["booster_state"] = state  # одразу зберігаємо, щоб відновити після аварійного закриття
@@ -309,6 +335,7 @@ class GameBooster:
         self.cfg["booster_state"] = state
         return {"ok": True}
 
+    @_boost_locked
     def stop(self, log) -> dict:
         state = self.cfg["booster_state"]
         if not isinstance(state, dict) or not state:
