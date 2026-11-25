@@ -27,7 +27,7 @@ from ui_kit import (T, label, button, card, vbox, hbox, badge, style_badge, dot,
                     section_card, Segmented, Ask, Spark, Worker, LOG, chip, FlowLayout)
 
 SECTIONS = ("overview", "info", "build", "cpu", "gpu", "vram", "ram", "storage", "display", "laptop", "peripherals",
-            "stress", "latency", "gputune", "procs", "windiag", "inspect", "reports", "overlay")
+            "mouse", "stress", "latency", "gputune", "procs", "windiag", "inspect", "reports", "overlay")
 STATUS_KIND = {HT.PASS: "ok", HT.WARN: "warn", HT.FAIL: "bad", HT.SKIPPED: "muted", HT.NA: "muted"}
 LEVEL_COLOR = {HT.FAIL: "bad", HT.WARN: "warn", "info": "sub"}
 
@@ -1331,6 +1331,14 @@ class HwCenterPage(QWidget):
         self.main.run_quick(tr(f"hwc.wd.{key}"), lambda log, p: DA.repair(key, log))
 
     # ── розділи наступних етапів (процеси, перевірка перед покупкою, звіти, оверлей) підключаються нижче ──
+    def _build_mouse(self, v):
+        import pages_mouse as PM
+        PM.build(self, v)
+
+    def _show_mouse(self):
+        import pages_mouse as PM
+        PM.show(self)
+
     def _build_procs(self, v):
         import pages_hwc2 as P2
         P2.build_procs(self, v)
