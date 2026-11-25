@@ -47,23 +47,53 @@ STRINGS = {
                    "  · could not tell who owns the desktop — registering for {me}"),
     "wg.q_register": (
         "Крок 1, без завантаження: «Інсталятор програм» уже є в Windows — OptimaX повторно зареєструє його для "
-        "{me} (Add-AppxPackage -RegisterByFamilyName) і перевірить, що winget запускається.",
+        "{me} (Add-AppxPackage -RegisterByFamilyName) і перевірить, що winget запускається. Зміна записується в "
+        "журнал: відкат прибере реєстрацію для {me}, а сам пакет лишиться в Windows, як і був.",
         "Шаг 1, без загрузки: «Установщик приложений» уже есть в Windows — OptimaX повторно зарегистрирует его "
-        "для {me} (Add-AppxPackage -RegisterByFamilyName) и проверит, что winget запускается.",
+        "для {me} (Add-AppxPackage -RegisterByFamilyName) и проверит, что winget запускается. Изменение "
+        "записывается в журнал: откат уберёт регистрацию для {me}, а сам пакет останется в Windows, как и был.",
         "Step 1, no download: App Installer is already in Windows — OptimaX will re-register it for {me} "
-        "(Add-AppxPackage -RegisterByFamilyName) and check that winget starts."),
+        "(Add-AppxPackage -RegisterByFamilyName) and check that winget starts. The change goes into the journal: "
+        "undo removes the registration for {me}, while the package itself stays in Windows as before."),
+    "wg.q_repair": (
+        "Крок 1, без завантаження: «Інсталятор програм» уже зареєстрований для {me}, але winget не працює. OptimaX "
+        "зареєструє його повторно (Add-AppxPackage -RegisterByFamilyName) — це лише відновлює пакет. У журнал "
+        "відкату така зміна не записується: стан «зареєстровано» той самий, що й до неї, повертати нічого.",
+        "Шаг 1, без загрузки: «Установщик приложений» уже зарегистрирован для {me}, но winget не работает. OptimaX "
+        "зарегистрирует его повторно (Add-AppxPackage -RegisterByFamilyName) — это лишь восстанавливает пакет. В "
+        "журнал отката такое изменение не записывается: состояние «зарегистрирован» то же, что и до него, "
+        "возвращать нечего.",
+        "Step 1, no download: App Installer is already registered for {me}, but winget does not work. OptimaX will "
+        "register it again (Add-AppxPackage -RegisterByFamilyName) — this only repairs the package. It is not "
+        "written to the undo journal: the package stays registered just as before, so there is nothing to undo."),
     "wg.q_install": (
         "Крок 2: «Інсталятора програм» у Windows немає (LTSC, Server або його видалили). OptimaX завантажить "
         "близько {mb} МБ з власного релізу на GitHub — офіційні пакети Microsoft з релізу winget-cli "
         "(App Installer, VCLibs, UI.Xaml), перевірить SHA-256 кожного файлу і встановить їх для вашого "
-        "облікового запису.",
+        "облікового запису. Відкат із журналу прибере «Інсталятор програм»; фреймворки VCLibs і UI.Xaml "
+        "лишаться — ними можуть користуватися інші програми.",
         "Шаг 2: «Установщика приложений» в Windows нет (LTSC, Server или его удалили). OptimaX загрузит около "
         "{mb} МБ из собственного релиза на GitHub — официальные пакеты Microsoft из релиза winget-cli "
         "(App Installer, VCLibs, UI.Xaml), проверит SHA-256 каждого файла и установит их для вашей учётной "
-        "записи.",
+        "записи. Откат из журнала уберёт «Установщик приложений»; фреймворки VCLibs и UI.Xaml останутся — ими "
+        "могут пользоваться другие программы.",
         "Step 2: App Installer is missing from Windows (LTSC, Server or removed). OptimaX will download about "
         "{mb} MB from its own GitHub release — the official Microsoft packages from the winget-cli release "
-        "(App Installer, VCLibs, UI.Xaml), check the SHA-256 of every file and install them for your account."),
+        "(App Installer, VCLibs, UI.Xaml), check the SHA-256 of every file and install them for your account. "
+        "Undo from the journal removes App Installer; the VCLibs and UI.Xaml frameworks stay — other apps may "
+        "use them."),
+    "wg.t_register": ("winget: реєстрація «Інсталятора програм»", "winget: регистрация «Установщика приложений»",
+                      "winget: App Installer registration"),
+    "wg.t_install": ("winget: «Інсталятор програм» з релізу OptimaX",
+                     "winget: «Установщик приложений» из релиза OptimaX",
+                     "winget: App Installer from the OptimaX release"),
+    "wg.repair_no_undo": ("  · пакет уже зареєстрований — повторна реєстрація лише відновлює його (без запису відкату)",
+                          "  · пакет уже зарегистрирован — повторная регистрация лишь восстанавливает его (без "
+                          "записи отката)",
+                          "  · the package is already registered — registering it again only repairs it (no undo "
+                          "record)"),
+    "wg.cleaned": ("  · розпаковані файли видалено з ProgramData", "  · распакованные файлы удалены из ProgramData",
+                   "  · the unpacked files were removed from ProgramData"),
     "wg.btn_register": ("Зареєструвати", "Зарегистрировать", "Register"),
     "wg.btn_install": ("Завантажити й встановити", "Загрузить и установить", "Download and install"),
     "wg.s_check": ("Перевірка winget", "Проверка winget", "Checking winget"),
