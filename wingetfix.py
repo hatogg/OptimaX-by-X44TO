@@ -146,6 +146,50 @@ def install_script(bundle: str, deps) -> str:
             "'OK'}catch{$_.Exception.Message;exit 1}")
 
 
+def undo_user_script(sid: str) -> str:
+    """Відкат кроку 1: прибрати реєстрацію лише для цього користувача (SID із журналу, а не «поточний» — Rescue може
+    запустити інший адміністратор). Пакет лишається в Windows, як і був до OptimaX."""
+    return ("try{" + f"$s={E._psq(sid)};@(Get-AppxPackage -User $s -Name {A.WINGET_PKG}) | ForEach-Object {{"
+            " Remove-AppxPackage -Package $_.PackageFullName -User $s -ErrorAction Stop }}"
+            "catch{$_.Exception.Message;exit 1}")
+
+
+def undo_all_script() -> str:
+    """Відкат кроку 2: до OptimaX «Інсталятора програм» не було в Windows зовсім — прибираємо його для всіх
+    користувачів. Фреймворки (VCLibs, UI.Xaml) не чіпаємо: їх могли встановити й інші програми."""
+    return ("try{" + f"@(Get-AppxPackage -AllUsers -Name {A.WINGET_PKG}) | ForEach-Object {{"
+            " Remove-AppxPackage -Package $_.PackageFullName -AllUsers -ErrorAction Stop }}"
+            "catch{$_.Exception.Message;exit 1}")
+
+
+TWEAK_ID = "winget_app"  # запис у журналі відкату (і в OptimaX-Rescue.cmd)
+
+
+def appx_tweak(script: str, undo: str, title: str, timeout: int) -> E.Tweak:
+    """Зміна через журнал (правило 1): запис відкату — до Add-AppxPackage; прибираємо його, лише якщо команда точно
+    відмовила (не за тайм-аутом)."""
+    def op(ctx):
+        rec = {"t": "ps", "c": undo}
+        ctx.undo.append(rec)
+        rc, out = E.ps(script, timeout, ctx.log, stoppable=False)
+        if E.DRY_RUN:
+            return
+        if not _ps_ok(rc, out):
+            ctx.log(tr("wg.ps_fail", err=E.first_line(out, 200) or tr("e.code", rc=rc)))
+            ctx.fail("Add-AppxPackage")
+            if rc != E.TIMEOUT_RC:
+                ctx.undo.discard(rec)
+    op.cmd = "Add-AppxPackage " + FAMILY
+    t = E.Tweak(TWEAK_ID, "system", [E.F(op)], custom=True)
+    t._title = title
+    return t
+
+
+def _apply(t: E.Tweak, log) -> bool:
+    res = E.apply_tweaks([t], log, header=False)
+    return bool(res.get("ok")) and not res.get("error")
+
+
 def _ps_ok(rc: int, out: str) -> bool:
     return rc == 0 and "OK" in (out or "").splitlines()[-1:]
 
@@ -191,11 +235,19 @@ def register(log, progress=None) -> dict:
     if progress:
         progress(1, 3, tr("wg.s_register"))
     log(tr("wg.registering", me=state["me_name"]))
-    rc, out = E.ps(register_script(), 180, log, stoppable=False)
+    if state["reg"]:
+        # пакет уже зареєстрований для цього користувача (зламаний чи без winget) — повторна реєстрація лише
+        # відновлює його; відкочувати нічого (стан «зареєстровано» той самий), тож у журнал не пишемо
+        log(tr("wg.repair_no_undo"))
+        rc, out = E.ps(register_script(), 180, log, stoppable=False)
+        ok = E.DRY_RUN or _ps_ok(rc, out)
+        if not ok:
+            log(tr("wg.ps_fail", err=E.first_line(out, 200) or tr("e.code", rc=rc)))
+    else:
+        ok = _apply(appx_tweak(register_script(), undo_user_script(state["me"]), tr("wg.t_register"), 180), log)
     if E.DRY_RUN:
         return {"ok": True, "decision": d, "dry": True}
-    if not _ps_ok(rc, out):
-        log(tr("wg.ps_fail", err=E.first_line(out, 200) or tr("e.code", rc=rc)))
+    if not ok:
         return {"error": tr("wg.reg_fail"), "decision": d}
     if progress:
         progress(2, 3, tr("wg.s_verify"))
@@ -268,9 +320,9 @@ def verified_files(folder: str, arch: str) -> dict:
         return {}
 
 
-def unpack(path: str, log) -> str:
-    """Розпаковує перевірений OptimaX-WinGet-*.zip: лише bundle і залежності з відомими іменами, кожен файл — за
-    сумою з winget.json. -> папка версії."""
+def unpack(path: str, log, arch: str) -> str:
+    """Розпаковує перевірений OptimaX-WinGet-*.zip: лише bundle і залежності для arch з відомими іменами, кожен
+    файл — за сумою з winget.json. -> папка версії."""
     with zipfile.ZipFile(path) as z:
         man = json.loads(z.read("winget.json").decode("utf-8"))
         ver = str((man or {}).get("winget") or "")
@@ -287,8 +339,8 @@ def unpack(path: str, log) -> str:
                 m = DEP_RE.match(str(name))
                 if name == BUNDLE:
                     rel = (BUNDLE,)
-                elif m:
-                    rel = (m.group(1).lower(), m.group(2))
+                elif m and m.group(1).lower() == arch:
+                    rel = (arch, m.group(2))
                 else:
                     continue  # лише відомі імена: ні шляхів за межі папки, ні сторонніх файлів
                 out = os.path.join(tmp, *rel)
@@ -341,23 +393,28 @@ def install(log, progress=None) -> dict:
     try:
         if progress:
             progress(2, 4, tr("wg.s_unpack"))
-        folder = unpack(path, log)
+        folder = unpack(path, log, arch)
     finally:
         try:
             os.remove(path)
         except OSError:
             pass
-    got = verified_files(folder, arch)  # суми ще раз — безпосередньо перед встановленням
-    if not got:
-        return {"error": tr("wg.bad_file", name=os.path.basename(folder)), "decision": d}
-    if not got["deps"]:
-        log(tr("wg.no_deps", arch=arch))
-    if progress:
-        progress(3, 4, tr("wg.s_install"))
-    log(tr("wg.installing", me=state["me_name"]))
-    rc, out = E.ps(install_script(got["bundle"], got["deps"]), 900, log, stoppable=False)
-    if not _ps_ok(rc, out):
-        log(tr("wg.ps_fail", err=E.first_line(out, 200) or tr("e.code", rc=rc)))
+    try:
+        got = verified_files(folder, arch)  # суми ще раз — безпосередньо перед встановленням
+        if not got:
+            return {"error": tr("wg.bad_file", name=os.path.basename(folder)), "decision": d}
+        if not got["deps"]:
+            log(tr("wg.no_deps", arch=arch))
+        if progress:
+            progress(3, 4, tr("wg.s_install"))
+        log(tr("wg.installing", me=state["me_name"]))
+        ok = _apply(appx_tweak(install_script(got["bundle"], got["deps"]), undo_all_script(), tr("wg.t_install"),
+                               900), log)
+    finally:
+        # для відкату файли не потрібні (Remove-AppxPackage) — ~300 МБ у ProgramData не лишаємо
+        shutil.rmtree(folder, ignore_errors=True)
+        log(tr("wg.cleaned"))
+    if not ok:
         return {"error": tr("wg.inst_fail"), "decision": d}
     ver = _verify(log)
     if not ver:
@@ -404,7 +461,8 @@ def offer(main, on_done=None) -> None:
             Ask.info(main, tr("wg.title"), _refuse(d, state)["error"])
             return finish({})
         if d == "register":
-            if Ask.ask(main, tr("wg.title"), tr("wg.q_register", me=state["me_name"]), tr("wg.btn_register")):
+            q = tr("wg.q_repair" if state["reg"] else "wg.q_register", me=state["me_name"])
+            if Ask.ask(main, tr("wg.title"), q, tr("wg.btn_register")):
                 return run(register, tr("wg.title"))
             return finish({})
         ask_install()

@@ -86,40 +86,109 @@ def test_powershell_runs_encoded(monkeypatch):
     assert W.register_script() in base64.b64decode(cmd[cmd.index("-EncodedCommand") + 1]).decode("utf-16-le")
 
 
-def test_register_flow(monkeypatch):
+def _fake_windows(monkeypatch, ps_answers):
+    """Справжня Windows без Windows: PowerShell — заглушка, журнал — тимчасовий файл (не журнал користувача),
+    apply_tweaks -> справжній run_tweak (запис відкату до команди, discard лише при точній відмові)."""
     calls = []
-    monkeypatch.setattr(E, "win_build", lambda: 19045)
-    monkeypatch.setattr(E, "DRY_RUN", False)
+    jr = E.Journal(os.path.join(tempfile.mkdtemp(prefix="oxwgj_"), "back.json"))
     monkeypatch.setattr(E, "IS_WIN", True)
+    monkeypatch.setattr(E, "DRY_RUN", False)
+    monkeypatch.setattr(E, "is_admin", lambda: True)
+    monkeypatch.setattr(E, "win_build", lambda: 19045)
+    monkeypatch.setattr(W.time, "sleep", lambda *_: None)
+    answers = iter(ps_answers)
+
+    def ps(script, *a, **k):
+        calls.append((script, k))
+        return next(answers)
+
+    def apply(items, log, header=True):
+        r = E.run_tweak(items[0], E.Ctx(log, journal=jr))
+        return {"ok": int(r is True), "partial": int(r == "partial"), "fail": int(r is False)}
+    monkeypatch.setattr(E, "ps", ps)
+    monkeypatch.setattr(E, "apply_tweaks", apply)
+    return calls, jr
+
+
+def test_register_goes_through_the_journal(monkeypatch):
+    calls, jr = _fake_windows(monkeypatch, [(0, "OK")])
     vers = iter(["", "v1.29.380"])
     monkeypatch.setattr(W, "winget_version", lambda: next(vers))
     monkeypatch.setattr(W, "read_state", lambda: _state(prov=True))
-    monkeypatch.setattr(E, "ps", lambda script, *a, **k: calls.append((script, k)) or (0, "OK"))
     res = W.register(lambda *_: None)
     assert res["ok"] and res["version"] == "v1.29.380", res
     assert calls == [(W.register_script(), {"stoppable": False})]
-    # інший користувач — нічого не запускаємо, чесна відмова
-    calls.clear()
+    assert jr.get(W.TWEAK_ID)["undo"] == [{"t": "ps", "c": W.undo_user_script(ME)}]
+    assert f"-User $s" in W.undo_user_script(ME) and f"'{ME}'" in W.undo_user_script(ME)
+
+
+def test_register_failures_are_honest(monkeypatch):
+    # команда точно відмовила — запису відкату немає, результат — помилка
+    calls, jr = _fake_windows(monkeypatch, [(1, "Deployment failed with HRESULT: 0x80073CF3")])
     monkeypatch.setattr(W, "winget_version", lambda: "")
+    monkeypatch.setattr(W, "read_state", lambda: _state(prov=True))
+    assert W.register(lambda *_: None).get("error") and jr.get(W.TWEAK_ID) is None
+    # тайм-аут — невідомо, чи зареєстровано: запис відкату лишається
+    calls, jr = _fake_windows(monkeypatch, [(E.TIMEOUT_RC, "[TIMEOUT]")])
+    assert W.register(lambda *_: None).get("error") and jr.get(W.TWEAK_ID)["undo"]
+    # зареєстровано, але winget так і не знайшовся
+    calls, jr = _fake_windows(monkeypatch, [(0, "OK")])
+    assert W.register(lambda *_: None).get("error")
+    # інший користувач — нічого не запускаємо, чесна відмова
+    calls, jr = _fake_windows(monkeypatch, [])
     monkeypatch.setattr(W, "read_state", lambda: _state(prov=True, desk=[OTHER], desk_name=["PC\\other"]))
     res = W.register(lambda *_: None)
     assert res.get("error") and "PC\\other" in res["error"] and not calls
-    # команда відмовила — помилка, а не «готово»
-    monkeypatch.setattr(W, "read_state", lambda: _state(prov=True))
-    monkeypatch.setattr(E, "ps", lambda *a, **k: (1, "Deployment failed with HRESULT: 0x80073CF3"))
-    assert W.register(lambda *_: None).get("error")
-    # зареєстровано, але winget так і не знайшовся
-    monkeypatch.setattr(E, "ps", lambda *a, **k: (0, "OK"))
-    monkeypatch.setattr(W.time, "sleep", lambda *_: None)
-    assert W.register(lambda *_: None).get("error")
-    # пакета немає — крок 1 не підходить
+    # пакета немає — крок 1 не підходить; стара Windows — відмова
     monkeypatch.setattr(W, "read_state", lambda: _state())
     assert W.register(lambda *_: None).get("need_install")
     monkeypatch.setattr(E, "win_build", lambda: 17134)
-    assert W.register(lambda *_: None).get("decision") == "unsupported"
+    assert W.register(lambda *_: None).get("decision") == "unsupported" and not calls
 
 
-def test_demo_needs_no_windows():
+def test_repair_of_registered_package_is_not_journaled(monkeypatch):
+    calls, jr = _fake_windows(monkeypatch, [(0, "OK")])
+    vers = iter(["", "v1.29.380"])
+    monkeypatch.setattr(W, "winget_version", lambda: next(vers))
+    monkeypatch.setattr(W, "read_state", lambda: _state(reg="1.29.380.0"))
+    assert W.register(lambda *_: None)["ok"]
+    assert len(calls) == 1 and jr.get(W.TWEAK_ID) is None
+
+
+def test_install_journals_removes_files_and_keeps_frameworks(monkeypatch):
+    import updater as U
+    calls, jr = _fake_windows(monkeypatch, [(0, "OK")])
+    vers = iter(["", "v1.29.380"])
+    monkeypatch.setattr(W, "winget_version", lambda: next(vers))
+    monkeypatch.setattr(W, "read_state", lambda: _state())
+    root = tempfile.mkdtemp(prefix="oxwgi_")
+    monkeypatch.setattr(W, "root_dir", lambda: root)
+    z = os.path.join(tempfile.mkdtemp(prefix="oxwgz_"), "OptimaX-WinGet-1.29.380.zip")
+    _zip(z, {W.BUNDLE: b"bundle", "x64/Microsoft.VCLibs.140.00.UWPDesktop_14.0.33728.0_x64.appx": b"vc",
+             "arm64/Microsoft.VCLibs.140.00.UWPDesktop_14.0.33728.0_arm64.appx": b"vca"})
+    monkeypatch.setattr(W, "find_asset", lambda log=None: {"name": os.path.basename(z), "size": 5})
+    monkeypatch.setattr(U, "download", lambda *a, **k: z)
+    res = W.install(lambda *_: None)
+    assert res["ok"], res
+    script = calls[0][0]
+    assert "-Path" in script and "x64" in script and "arm64" not in script
+    assert jr.get(W.TWEAK_ID)["undo"] == [{"t": "ps", "c": W.undo_all_script()}]
+    assert "VCLibs" not in W.undo_all_script() and "UI.Xaml" not in W.undo_all_script()  # фреймворки лишаються
+    assert os.listdir(root) == [] and not os.path.exists(z)  # ні розпакованих ~300 МБ, ні архіву
+
+
+def test_undo_is_expressible_in_rescue():
+    import rescue as RS
+    for code in (W.undo_all_script(), W.undo_user_script(ME)):
+        rec = {"t": "ps", "c": code}
+        assert E.valid_undo(rec)
+        lines = RS.undo_lines(rec)
+        assert len(lines) == 1 and "-EncodedCommand" in lines[0] and "Remove-AppxPackage" not in lines[0]
+
+
+def test_demo_needs_no_windows(monkeypatch):
+    monkeypatch.setattr(E, "IS_WIN", False)  # демо — і на справжній Windows (CI): правило CLAUDE.md
+    monkeypatch.setattr(E, "DRY_RUN", True)
     assert W.diagnose()["decision"] == "ok"
     assert W.register(lambda *_: None)["ok"]
 
@@ -168,20 +237,22 @@ def test_unpack_checks_every_sum(monkeypatch):
     files = {W.BUNDLE: b"bundle", "x64/Microsoft.VCLibs.140.00.UWPDesktop_14.0.33728.0_x64.appx": b"vc",
              "arm64/Microsoft.UI.Xaml.2.8_8.2310.30001.0_arm64.appx": b"xaml"}
     _zip(p, dict(files, **{"../evil.appx": b"x", "x64/run.exe": b"x"}))
-    folder = W.unpack(p, lambda *_: None)
-    assert sorted(os.listdir(folder)) == sorted([W.BUNDLE, "x64", "arm64", "winget.json"])
+    folder = W.unpack(p, lambda *_: None, "x64")
+    assert sorted(os.listdir(folder)) == sorted([W.BUNDLE, "x64", "winget.json"])  # лише потрібна архітектура
     got = W.verified_files(folder, "x64")
     assert got["bundle"].endswith(W.BUNDLE) and [os.path.basename(x) for x in got["deps"]] == [
         "Microsoft.VCLibs.140.00.UWPDesktop_14.0.33728.0_x64.appx"]
-    assert len(W.verified_files(folder, "arm64")["deps"]) == 1 and W.verified_files(folder, "x86")["deps"] == []
+    assert W.verified_files(folder, "x86")["deps"] == []
     with open(os.path.join(folder, "x64", "Microsoft.VCLibs.140.00.UWPDesktop_14.0.33728.0_x64.appx"), "wb") as f:
         f.write(b"swapped")
     assert W.verified_files(folder, "x64") == {}  # підмінили після розпакування — не встановлюємо
+    arm = W.unpack(p, lambda *_: None, "arm64")
+    assert len(W.verified_files(arm, "arm64")["deps"]) == 1 and not os.path.exists(os.path.join(arm, "x64"))
     bad = os.path.join(root, "b.zip")
     _zip(bad, {W.BUNDLE: b"bundle"}, {W.BUNDLE: "0" * 64})
     import pytest
     with pytest.raises(RuntimeError):
-        W.unpack(bad, lambda *_: None)
+        W.unpack(bad, lambda *_: None, "x64")
     assert not os.path.exists(os.path.join(root, "1.29.380.part"))
 
 
@@ -247,8 +318,9 @@ def test_release_builds_zip_the_client_accepts(monkeypatch):
     assert os.path.basename(out) == "OptimaX-WinGet-9.9.1.zip" and W.ASSET_RE.match(os.path.basename(out))
     root = tempfile.mkdtemp(prefix="oxwgc_")
     monkeypatch.setattr(W, "root_dir", lambda: root)
-    folder = W.unpack(out, lambda *_: None)
+    folder = W.unpack(out, lambda *_: None, "x64")
     assert len(W.verified_files(folder, "x64")["deps"]) == 2
+    folder = W.unpack(out, lambda *_: None, "x86")
     assert W.verified_files(folder, "x86")["deps"] == []  # неповний набір для x86 не кладемо
     # сума bundle не збіглася з файлом .txt від Microsoft — збірка падає
     blobs[REL.WINGET_BUNDLE_SUM] = b"0" * 64
