@@ -200,9 +200,34 @@ jobs:
             Output/winget
           if-no-files-found: error
 
+  # 7.2: «Інсталятор програм» (winget) для «Відновити winget» (wingetfix.py) на системах без нього (LTSC, Server).
+  # Сторонні файли — у job з токеном лише для читання: офіційний реліз microsoft/winget-cli, звірений з digest GitHub,
+  # закріпленою сумою (packaging/release.py PINNED_SHA256) і сумою з Microsoft.DesktopAppInstaller_*.txt.
+  # Не вдалося — реліз виходить без цього файлу (OptimaX тоді пропонує Microsoft Store).
+  winget_app:
+    name: WinGet (App Installer) for systems without it
+    needs: version
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - name: Mirror the official winget-cli release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OPTIMAX_WINGET_TAG: "v1.29.380"  # закріплена версія: нова → нова сума в PINNED_SHA256
+        run: |
+          zip="$(python3 packaging/release.py winget-app Output | tail -n 1)"
+          echo "**WinGet**: $(basename "$zip"), $(( $(stat -c %s "$zip") / 1048576 )) MB" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: optimax-winget-app
+          path: Output/OptimaX-WinGet-*.zip
+          retention-days: 1
+          if-no-files-found: error
+
   publish:
     name: GitHub release
-    needs: [version, ci, sign]
+    needs: [version, ci, sign, winget_app]
     # без SignPath job sign пропускається, і реліз виходить з непідписаних файлів, як раніше
     if: ${{ !cancelled() && needs.ci.result == 'success' && (needs.sign.result == 'success' || needs.sign.result == 'skipped') }}
     runs-on: ubuntu-24.04
@@ -257,3 +282,27 @@ jobs:
           gh release create "$TAG" "${where[@]}" "${pre[@]}" --title "OptimaX $v" --notes-file notes.md \
             "dist/OptimaX-Setup-$v.exe" "dist/OptimaX-$v-portable.exe" dist/OptimaX-Rescue.cmd \
             dist/SHA256SUMS.txt "OptimaX-$v-winget-manifests.zip" "${mesa[@]}"
+      # 7.2: winget для «Відновити winget» — окремим кроком: файл додається й до вже створеного релізу, якщо його там
+      # немає (сума — digest GitHub, який клієнт звіряє перед встановленням)
+      - uses: actions/download-artifact@v8
+        if: ${{ needs.winget_app.result == 'success' }}
+        continue-on-error: true
+        with:
+          name: optimax-winget-app
+          path: winget-app
+      - name: Attach WinGet (App Installer) to the release
+        if: ${{ needs.winget_app.result == 'success' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          shopt -s nullglob
+          for f in winget-app/OptimaX-WinGet-*.zip; do
+            name="$(basename "$f")"
+            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -qxF "$name"; then
+              echo "::notice::$name is already in $TAG"
+            else
+              gh release upload "$TAG" "$f" --repo "$GITHUB_REPOSITORY"
+            fi
+          done

@@ -18,6 +18,7 @@ import features as F
 import gpubench as GB
 import gpuselect as GS
 import mining as MG
+import wingetfix as WF
 from i18n import tr
 from pages_extra import page_body, log_strip, stat_cell, PickRow
 from ui_kit import (T, label, button, card, vbox, hbox, badge, style_badge, dot, scroller, page_header, clear_layout,
@@ -599,7 +600,12 @@ class BenchPage(QWidget):
         if not Ask.ask(self, tr("gb.install_t", name=item["name"]), tr("gb.install_q", name=item["name"], pkg=item["pkg"]),
                        tr("gb.install")):
             return
-        RunDialog(self.main, tr("gb.install_t", name=item["name"]), lambda log, prog: BT.install(item, log, prog)).exec()
+        dlg = RunDialog(self.main, tr("gb.install_t", name=item["name"]),
+                        lambda log, prog: BT.install(item, log, prog))
+        dlg.exec()
+        if (dlg.res or {}).get("error") == tr("apps.no_winget"):  # 7.2: winget немає — запропонувати відновити
+            WF.offer(self.main, lambda res: self.scan())
+            return
         self.scan()
 
     def run_furmark(self):
