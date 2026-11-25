@@ -39,7 +39,9 @@ DEFAULTS = {
     "fps_tests": {},  # {exe: {before, after}}
     "diag_last": None,
     "net": {},
-    "updates": {"auto": True, "last_check": 0, "last_try": 0, "latest": None, "snooze": None, "notified": None},
+    # channel: stable | beta (7.2; інше значення updater.channel() вважає stable)
+    "updates": {"auto": True, "last_check": 0, "last_try": 0, "latest": None, "snooze": None, "notified": None,
+                "channel": "stable"},
     "bench": [],  # результати тестів відеокарти
     "bench_gpu": "auto",  # на якій карті малює GPU-тест: auto (висока продуктивність) або ключ карти (gpuselect.py)
     "adblock": {"mode": "off", "light": None},  # off | filter | light

@@ -1337,6 +1337,22 @@ class SettingsPage(QWidget):
         self.btn_upd = button(tr("guard.check"), None, lambda: main.check_updates(auto=False, btn=self.btn_upd))
         ur.addWidget(self.btn_upd)
         uv.addLayout(ur)
+        # 7.2: канал оновлень — «стабільний» (типово) або «бета» для тестувальників
+        cr = hbox(margins=(14, 4, 14, 2), spacing=12)
+        cr.addWidget(label(tr("ch.title"), "rowTitle"))
+        self.chan_seg = Segmented([tr("ch.stable"), tr("ch.beta")])
+        self.chan_seg.select(U.CHANNELS.index(U.channel(F.CFG["updates"])))
+        self.chan_seg.changed.connect(lambda i: self.set_channel(U.CHANNELS[i]))
+        cr.addWidget(self.chan_seg)
+        cr.addStretch()
+        uv.addLayout(cr)
+        self.chan_desc = label("", "desc", wrap=True)
+        self.chan_desc.setContentsMargins(14, 0, 14, 0)
+        uv.addWidget(self.chan_desc)
+        self.chan_note = label("", "desc", wrap=True)  # бета встановлена, а вибрано стабільний — без відкату версії
+        self.chan_note.setContentsMargins(14, 2, 14, 0)
+        uv.addWidget(self.chan_note)
+        self.sync_channel()
         ur2 = hbox(margins=(14, 2, 14, 8), spacing=10)
         self.upd_state = label("", "desc", wrap=True)
         ur2.addWidget(self.upd_state, 1)
@@ -1369,8 +1385,13 @@ class SettingsPage(QWidget):
         ac = card()
         av = vbox(ac, (22, 18, 22, 18), 6)
         av.addWidget(label(E.APP_TITLE, "h2"))
-        av.addWidget(label(tr("set.version", v=E.VERSION) + " · " + tr("lc.installed" if L.is_installed() else "lc.portable"),
-                           "desc"))
+        avr = hbox(spacing=8)
+        avr.addWidget(label(tr("set.version", v=E.VERSION) + " · "
+                            + tr("lc.installed" if L.is_installed() else "lc.portable"), "desc"))
+        if U.is_beta(E.VERSION):  # 7.2: бета-збірку видно одразу
+            avr.addWidget(badge(tr("ch.badge"), "warn"))
+        avr.addStretch()
+        av.addLayout(avr)
         mode = tr("set.mode.preview") if E.DRY_RUN else tr("set.mode.admin") if E.is_admin() else tr("set.mode.user")
         av.addWidget(label(mode, "desc"))
         ah = hbox(spacing=8)
@@ -1419,19 +1440,45 @@ class SettingsPage(QWidget):
         c["auto"] = on
         F.CFG["updates"] = c
 
+    def set_channel(self, chan: str):
+        """7.2: інший канал — знайдене раніше оновлення вже не те; перевіряємо заново."""
+        c = dict(F.CFG["updates"] or {})
+        if U.channel(c) == chan:
+            return
+        c.update(channel=chan, latest=None, notified=None, snooze=None, last_check=0)
+        F.CFG["updates"] = c
+        self.main.update_info = None
+        self.main.guard_refresh()
+        self.sync_updates()
+        self.main.toast(tr("ch.switched", ch=tr("ch.beta" if chan == "beta" else "ch.stable")))
+        if U.enabled():
+            self.main.check_updates(auto=False, btn=self.btn_upd)
+
     def sync_updates(self, failed: bool = False):
         info = self.main.update_info
         last = (F.CFG["updates"] or {}).get("last_check")
+        cur = U.shown(E.VERSION)
         if failed and not info:
-            self.upd_state.setText(tr("upd.state_fail", v=E.VERSION))
+            self.upd_state.setText(tr("upd.state_fail", v=cur))
         elif info:
-            self.upd_state.setText(tr("upd.state_new", v=info["version"], cur=E.VERSION))
+            self.upd_state.setText(tr("upd.state_new", v=U.shown(info["version"]), cur=cur))
         elif last:
-            self.upd_state.setText(tr("upd.state_ok", v=E.VERSION,
+            self.upd_state.setText(tr("upd.state_ok", v=cur,
                                       when=datetime.fromtimestamp(last).strftime("%d.%m.%Y, %H:%M")))
         else:
-            self.upd_state.setText(tr("upd.state_never", v=E.VERSION))
+            self.upd_state.setText(tr("upd.state_never", v=cur))
         self.btn_upd_install.setVisible(bool(info))
+        self.sync_channel()
+
+    def sync_channel(self):
+        chan = U.channel(F.CFG["updates"])
+        self.chan_seg.select(U.CHANNELS.index(chan))
+        self.chan_desc.setText(tr(f"ch.{chan}_d"))
+        # бета встановлена, а канал стабільний: старішої версії не пропонуємо — пояснюємо, чого чекати
+        downgrade = chan == "stable" and U.is_beta(E.VERSION)
+        self.chan_note.setVisible(downgrade)
+        if downgrade:
+            self.chan_note.setText(tr("ch.downgrade", v=E.VERSION, base=E.VERSION.split("-")[0]))
 
     def set_hk_state(self, busy: list):
         self.hk_state.setVisible(bool(busy))

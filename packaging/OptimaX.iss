@@ -4,6 +4,12 @@
 #ifndef MyAppVersion
   #define MyAppVersion "7.1.1"
 #endif
+; 7.2: бета (7.2.0-beta.1) — у VersionInfoVersion лише цифри, тож суфікс «-beta.N» відкидаємо
+#if Pos("-", MyAppVersion) > 0
+  #define MyAppVersionNum Copy(MyAppVersion, 1, Pos("-", MyAppVersion) - 1)
+#else
+  #define MyAppVersionNum MyAppVersion
+#endif
 #ifndef AppBuildDir
   #define AppBuildDir "..\dist\OptimaX"
 #endif
@@ -19,7 +25,7 @@ AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppCopyright=© {#MyAppPublisher}
-VersionInfoVersion={#MyAppVersion}
+VersionInfoVersion={#MyAppVersionNum}
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=OptimaX by X44TO Setup
 VersionInfoProductName={#MyAppName}

@@ -98,6 +98,7 @@ def _load() -> None:
     from lang_v613 import STRINGS as v613
     from lang_tune import STRINGS as tune
     from lang_health import STRINGS as health
+    from lang_channel import STRINGS as channel
     from lang_tweaks import TEXTS
     STR.update(eng)
     STR.update(ui)
@@ -114,6 +115,7 @@ def _load() -> None:
     STR.update(v613)
     STR.update(tune)
     STR.update(health)
+    STR.update(channel)
     TWEAK_TEXT.update(TEXTS)
 
 

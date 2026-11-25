@@ -4,6 +4,10 @@ OptimaX — оновлення через GitHub Releases.
 У релізі мають лежати OptimaX-Setup-<версія>.exe (для встановленої програми) і, за бажанням,
 OptimaX-<версія>-portable.exe. Тег релізу — версія: v6.1, 6.1 тощо.
 
+Канали (7.2): «стабільний» — лише релізи без позначки pre-release (releases/latest); «бета» — найновіший з усіх
+опублікованих, зокрема pre-release з тегом v<версія>-beta.<n> (v7.2.0-beta.1). Порядок версій:
+7.2.0-beta.1 < 7.2.0-beta.2 < 7.2.0 < 7.2.1-beta.1 — бета передує своїй стабільній версії.
+
 Безпека (6.4): завантажений файл запускається лише після перевірки (verify.py) — SHA-256 має збігтися з
 сумою з GitHub (digest ресурсу) та/або SHA256SUMS.txt релізу, а цифровий підпис не може бути пошкодженим
 чи чужим. Файл кладеться в папку, куди звичайний користувач не може писати, і перевіряється ще раз
@@ -51,8 +55,9 @@ def _configured_repo() -> str:
 
 UPDATE_REPO = _configured_repo()
 SUMS_NAME = "SHA256SUMS.txt"
-SETUP_RE = re.compile(r"^OptimaX-Setup-[\d.]+\.exe$", re.I)
-PORTABLE_RE = re.compile(r"^OptimaX-[\d.]+-portable\.exe$", re.I)
+# 7.2: необов'язковий суфікс бети — лише «-beta.<число>», без нових символів, якими можна вийти з папки
+SETUP_RE = re.compile(r"^OptimaX-Setup-[\d.]+(?:-beta\.\d{1,4})?\.exe$", re.I)
+PORTABLE_RE = re.compile(r"^OptimaX-[\d.]+(?:-beta\.\d{1,4})?-portable\.exe$", re.I)
 CHECK_EVERY = 6 * 3600   # автоматична перевірка не частіше
 RETRY_AFTER = 30 * 60    # після невдалої спроби (немає мережі, GitHub недоступний)
 SNOOZE = 24 * 3600       # «Пізніше» ховає повідомлення про цю версію на добу
@@ -67,6 +72,79 @@ def enabled() -> bool:
 def vtuple(v: str):
     nums = re.findall(r"\d+", v or "")
     return tuple(int(n) for n in nums[:4]) or (0,)
+
+
+# ───────────────────────── версії й канали (7.2) ─────────────────────────
+CHANNELS = ("stable", "beta")
+VERSION_RE = re.compile(r"^(\d{1,6}(?:\.\d{1,6}){0,3})(?:-beta\.(\d{1,4}))?$")
+
+
+def parse_version(v):
+    """'7.2.0-beta.1' -> ((7, 2, 0, 0), 0, 1); '7.2' -> ((7, 2, 0, 0), 1, 0); інше (сміттєвий тег) -> None.
+    Другий елемент 0 у бети, 1 у стабільної — тож бета менша за свою стабільну версію й більша за попередні."""
+    if not isinstance(v, str):
+        return None
+    m = VERSION_RE.fullmatch(v.strip().lstrip("vV"))
+    if not m:
+        return None
+    nums = tuple(int(n) for n in m.group(1).split("."))
+    nums += (0,) * (4 - len(nums))
+    return (nums, 0, int(m.group(2))) if m.group(2) is not None else (nums, 1, 0)
+
+
+def vkey(v):
+    """Ключ для порівняння. Версія, яку не вдалося розібрати, — найменша (такий реліз ніколи не «новіший»)."""
+    return parse_version(v) or ((-1,), 0, 0)
+
+
+def newer(v, than) -> bool:
+    """Чи v новіша за than. Нерозібрана v — ніколи; нерозібрана than (дивна поточна версія) — за цифрами."""
+    a = parse_version(v)
+    if a is None:
+        return False
+    b = parse_version(than)
+    if b is None:
+        b = ((vtuple(than) + (0,) * 4)[:4], 1, 0)
+    return a > b
+
+
+def is_beta(v) -> bool:
+    p = parse_version(v)
+    return bool(p) and p[1] == 0
+
+
+def channel(cfg: dict = None) -> str:
+    """Канал оновлень. settings.json може переписати будь-яка програма користувача — беремо лише значення з
+    білого списку, усе інше (зокрема відсутнє) — «стабільний»."""
+    if cfg is None:
+        import features as F
+        cfg = F.CFG["updates"]
+    c = cfg.get("channel") if isinstance(cfg, dict) else None
+    return "beta" if isinstance(c, str) and c == "beta" else "stable"
+
+
+def shown(v: str) -> str:
+    """Версія для інтерфейсу: бета — з позначкою «бета»."""
+    v = str(v or "")
+    return tr("ch.ver_beta", v=v) if is_beta(v) else v
+
+
+def release_ok(rel, chan: str) -> bool:
+    """Чи підходить реліз GitHub каналу: не чернетка, тег — версія; стабільний — без pre-release і без «-beta»."""
+    if not isinstance(rel, dict) or rel.get("draft"):
+        return False
+    ver = str(rel.get("tag_name") or "")
+    if parse_version(ver) is None:
+        return False
+    if chan == "beta":
+        return True
+    return not rel.get("prerelease") and not is_beta(ver)
+
+
+def pick_release(rels, chan: str):
+    """Найновіший за порядком версій реліз каналу зі списку GitHub (None — жодного)."""
+    ok = [r for r in (rels if isinstance(rels, list) else []) if release_ok(r, chan)]
+    return max(ok, key=lambda r: vkey(r.get("tag_name")), default=None)
 
 
 def due(cfg: dict, now: float = None) -> bool:
@@ -98,7 +176,9 @@ def cached(cfg: dict):
     дані релізу заново з GitHub."""
     info = (cfg or {}).get("latest")
     ver = info.get("version") if isinstance(info, dict) else None
-    if not isinstance(ver, str) or not re.fullmatch(r"\d[\w.+-]{0,31}", ver) or vtuple(ver) <= vtuple(E.VERSION):
+    if not isinstance(ver, str) or not re.fullmatch(r"\d[\w.+-]{0,31}", ver) or not newer(ver, E.VERSION):
+        return None
+    if is_beta(ver) and channel(cfg) != "beta":  # 7.2: після переходу на стабільний знайдену раніше бету не пропонуємо
         return None
     out = {"version": ver}
     if "notes" in info:
@@ -134,12 +214,44 @@ def _page_latest() -> dict:
     m = re.search(r"/releases/tag/([^/?#]+)", final or "")
     if not m:
         raise RuntimeError(f"no release tag in {final}")
-    tag = urllib.parse.unquote(m.group(1))
+    return _synth(urllib.parse.unquote(m.group(1)), final)
+
+
+def _synth(tag: str, page: str, prerelease: bool = False) -> dict:
+    """Реліз без API: імена файлів відомі заздалегідь, суму дасть SHA256SUMS.txt того самого релізу."""
     ver = tag.lstrip("vV")
     base = f"https://github.com/{UPDATE_REPO}/releases/download/{urllib.parse.quote(tag)}/"
-    return {"tag_name": tag, "html_url": final, "body": "",
+    return {"tag_name": tag, "html_url": page, "body": "", "prerelease": prerelease,
             "assets": [{"name": n, "browser_download_url": base + n, "size": 0}
                        for n in (f"OptimaX-Setup-{ver}.exe", f"OptimaX-{ver}-portable.exe", SUMS_NAME)]}
+
+
+def _api_releases() -> list:
+    """Канал «бета»: список релізів (новіші спершу; чернетки API без токена не показує, але й їх відкидаємо)."""
+    with _open(f"https://api.github.com/repos/{UPDATE_REPO}/releases?per_page=30", 15,
+               "application/vnd.github+json") as r:
+        data = json.load(r)
+    if not isinstance(data, list):
+        raise RuntimeError("API: no release list")
+    return data
+
+
+def _feed_releases() -> list:
+    """Стрічка releases.atom — без ліміту API (CGNAT). Позначки pre-release у ній немає, тож бету впізнаємо за тегом
+    (-beta.N); теги, що не є версіями, відкидаємо одразу, а адресу сторінки будуємо самі — не беремо зі стрічки."""
+    with _open(f"https://github.com/{UPDATE_REPO}/releases.atom", 15) as r:
+        text = r.read(1 << 20).decode("utf-8", "replace")
+    out, seen = [], set()
+    for raw in re.findall(r"/releases/tag/([^\"'<>\s/?#]+)", text):
+        tag = urllib.parse.unquote(raw)
+        if tag in seen or parse_version(tag) is None:
+            continue
+        seen.add(tag)
+        page = f"https://github.com/{UPDATE_REPO}/releases/tag/{urllib.parse.quote(tag)}"
+        out.append(_synth(tag, page, prerelease=is_beta(tag)))
+    if not out:
+        raise RuntimeError("releases.atom: no releases")
+    return out
 
 
 def _ps_quote(s: str) -> str:
@@ -148,24 +260,43 @@ def _ps_quote(s: str) -> str:
     return SF.psq(s)
 
 
-def _ps_api_latest() -> dict:
-    """Через PowerShell (Schannel): Python бачить лише вже завантажені кореневі сертифікати Windows, а на свіжій
-    системі потрібного кореня може ще не бути — тоді urllib падає з CERTIFICATE_VERIFY_FAILED."""
-    url = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
+def _ps_get_json(url: str):
     script = ("[Net.ServicePointManager]::SecurityProtocol=[Net.ServicePointManager]::SecurityProtocol -bor 3072;"
               f"$r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 20 -UserAgent {_ps_quote(UA)} -Uri {_ps_quote(url)};"
               "[Console]::Out.Write($r.Content)")
-    data = E.parse_json_out(E.ps(script, 40, ro=True)[1])
+    return E.parse_json_out(E.ps(script, 40, ro=True)[1])
+
+
+def _ps_api_latest() -> dict:
+    """Через PowerShell (Schannel): Python бачить лише вже завантажені кореневі сертифікати Windows, а на свіжій
+    системі потрібного кореня може ще не бути — тоді urllib падає з CERTIFICATE_VERIFY_FAILED."""
+    data = _ps_get_json(f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest")
     if not isinstance(data, dict) or not data.get("tag_name"):
         raise RuntimeError("PowerShell: no release data")
     return data
 
 
+def _ps_api_releases() -> list:
+    data = _ps_get_json(f"https://api.github.com/repos/{UPDATE_REPO}/releases?per_page=30")
+    if not isinstance(data, list):
+        raise RuntimeError("PowerShell: no release list")
+    return data
+
+
 def latest_release(log=lambda *_: None) -> dict:
     """Дані останнього релізу: API → сторінка релізу → PowerShell. Помилка — лише якщо не спрацювало жодне."""
+    return _first((_api_latest, _page_latest, _ps_api_latest), log)
+
+
+def all_releases(log=lambda *_: None) -> list:
+    """Канал «бета»: список релізів — API → releases.atom → PowerShell."""
+    return _first((_api_releases, _feed_releases, _ps_api_releases), log)
+
+
+def _first(fns, log):
     errors = []
-    for fn in (_api_latest, _page_latest, _ps_api_latest):
-        if fn is _ps_api_latest and not E.IS_WIN:
+    for fn in fns:
+        if fn in (_ps_api_latest, _ps_api_releases) and not E.IS_WIN:
             continue
         try:
             return fn()
@@ -187,17 +318,22 @@ def clean_notes(body: str, limit: int = 1500) -> str:
     return body
 
 
-def from_release(rel: dict, installed: bool):
-    """Реліз GitHub -> {version, notes, page, url, size, kind} або None, якщо він не новіший за поточну версію."""
-    ver = (rel.get("tag_name") or rel.get("name") or "").lstrip("vV")
-    if vtuple(ver) <= vtuple(E.VERSION):
+def from_release(rel: dict, installed: bool, chan: str = None):
+    """Реліз GitHub -> {version, notes, page, url, size, kind} або None, якщо він не новіший за поточну версію чи
+    не з цього каналу. 7.2: з бети на стабільний канал не «відкочуємося» — стабільна пропонується, лише коли вона
+    новіша за встановлену бету (7.2.0 > 7.2.0-beta.3)."""
+    chan = chan if chan in CHANNELS else channel()
+    if not release_ok(rel, chan):
+        return None
+    ver = str(rel.get("tag_name") or "").lstrip("vV")
+    if not newer(ver, E.VERSION):
         return None
     pattern = SETUP_RE if installed else PORTABLE_RE
     assets = rel.get("assets", [])
     asset = next((a for a in assets if pattern.match(a.get("name", ""))), None)
     sums = next((a for a in assets if a.get("name", "").lower() == SUMS_NAME.lower()), None)
     import verify as V
-    info = dict(version=ver, notes=clean_notes(rel.get("body") or ""), page=rel.get("html_url", ""),
+    info = dict(version=ver, notes=clean_notes(rel.get("body") or ""), page=rel.get("html_url", ""), beta=is_beta(ver),
                 url=asset["browser_download_url"] if asset else "", size=asset.get("size", 0) if asset else 0,
                 kind="setup" if installed else "portable", name=asset.get("name", "") if asset else "",
                 sha256=V.digest_of(asset), sums_url=sums["browser_download_url"] if sums else "")
@@ -207,19 +343,26 @@ def from_release(rel: dict, installed: bool):
     return info
 
 
-def check(log=lambda *_: None):
+def check(log=lambda *_: None, chan: str = None):
     """-> {version, notes, page, url, size, kind} якщо є новіша версія, інакше None. Мережева помилка — виняток."""
+    chan = chan if chan in CHANNELS else channel()
     if not E.IS_WIN:  # демо: показати, як виглядає оновлення
         log(tr("upd.checking"))
         nxt = ".".join(map(str, vtuple(E.VERSION)[:1] + (vtuple(E.VERSION)[1:2] or (0,)))).split(".")
-        nxt = f"{nxt[0]}.{int(nxt[1]) + 1}"
+        nxt = f"{nxt[0]}.{int(nxt[1]) + 1}" + (".0-beta.1" if chan == "beta" else "")
         return dict(version=nxt, notes="• Нові твіки для Windows 11 26H1\n• Швидший аналізатор диска\n• Виправлення",
-                    page="https://github.com/", url="", size=48_200_000, kind="setup")
+                    page="https://github.com/", url="", size=48_200_000, kind="setup", beta=is_beta(nxt))
     if not UPDATE_REPO:
         return None
-    rel = latest_release(log)
-    log(tr("upd.latest", v=(rel.get("tag_name") or "?").lstrip("vV")))
-    return from_release(rel, L.is_installed())
+    log(tr("ch.log", ch=tr(f"ch.{chan}")))
+    if chan == "beta":
+        rel = pick_release(all_releases(log), "beta")
+        if rel is None:
+            return None
+    else:
+        rel = latest_release(log)
+    log(tr("upd.latest", v=shown((rel.get("tag_name") or "?").lstrip("vV"))))
+    return from_release(rel, L.is_installed(), chan)
 
 
 def download_dir() -> str:

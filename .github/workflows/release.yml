@@ -2,6 +2,9 @@
 #   1) кнопка Actions → Release → Run workflow: реліз версії з VERSION у engine.py, тег v<версія> створить сам workflow
 #      (перемикач «full_checks»: вимкнений — реліз одразу після збірки й самоперевірки exe, без годинної перевірки твіків);
 #   2) тег:  git tag v6.3 && git push origin v6.3  (тег має збігатися з VERSION у engine.py).
+# Бета (7.2): VERSION = "7.2.0-beta.1" і перемикач «prerelease» (або тег v7.2.0-beta.1) — реліз позначається
+# pre-release: його бачить лише канал «Бета», стабільний канал (releases/latest) — ні. Без перемикача бету не
+# опублікувати, а з перемикачем — стабільну версію.
 # Спершу проходить увесь CI (зокрема твіки на справжній Windows), і лише тоді на GitHub з'являється реліз
 # з інсталятором, портативною версією, Rescue-запускачем, SHA256SUMS.txt і маніфестами winget.
 # Саме звідси вбудоване оновлення OptimaX бере нові версії.
@@ -24,6 +27,10 @@ on:
         description: "Усі перевірки, зокрема кожен твік на справжній Windows (~1 год). Вимкнено — реліз після збірки, самоперевірки exe та встановлення/видалення (~20 хв)"
         type: boolean
         default: true
+      prerelease:
+        description: "Бета: реліз позначається pre-release (лише для каналу «Бета»). VERSION у engine.py має бути на кшталт 7.2.0-beta.1"
+        type: boolean
+        default: false
 
 # Право писати (створити реліз) — лише в кроку публікації; збірка й перевірки (pip, PyInstaller, сторонні архіви)
 # працюють з токеном лише для читання
@@ -36,17 +43,33 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       tag: ${{ steps.v.outputs.tag }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v7
       - id: v
+        env:
+          PRERELEASE: ${{ inputs.prerelease }}
         run: |
           v="$(python3 packaging/release.py version)"
           if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "v$v" != "$GITHUB_REF_NAME" ]; then
             echo "::error::Tag $GITHUB_REF_NAME does not match VERSION = \"$v\" in engine.py"
             exit 1
           fi
+          # бета — лише за схемою <цифри>-beta.<n> (так її розбирає updater.parse_version); тег бети — pre-release
+          beta=false
+          if [[ "$v" =~ ^[0-9]+(\.[0-9]+){0,3}-beta\.[0-9]+$ ]]; then beta=true; fi
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then pre="$beta"; else pre="${PRERELEASE:-false}"; fi
+          if [ "$pre" = "true" ] && [ "$beta" != "true" ]; then
+            echo "::error::prerelease needs VERSION like 7.2.0-beta.1 in engine.py, got \"$v\""
+            exit 1
+          fi
+          if [ "$pre" != "true" ] && [[ "$v" == *-* ]]; then
+            echo "::error::VERSION \"$v\" is a beta: run the workflow with prerelease (or set a stable VERSION)"
+            exit 1
+          fi
           echo "tag=v$v" >> "$GITHUB_OUTPUT"
-          echo "Release v$v from $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "prerelease=$pre" >> "$GITHUB_OUTPUT"
+          echo "Release v$v from $GITHUB_SHA (prerelease: $pre)" >> "$GITHUB_STEP_SUMMARY"
 
   ci:
     needs: version
@@ -201,6 +224,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.version.outputs.tag }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
         run: |
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             echo "::notice::Release $TAG already exists (published earlier or from a local build): its files stay as they are."
@@ -216,12 +240,20 @@ jobs:
           [ -s notes.md ] || echo "OptimaX $v" > notes.md
           printf '\n---\n\n**Файли · Files:** `OptimaX-Setup-%s.exe` — інсталятор · installer, `OptimaX-%s-portable.exe` — без встановлення · portable, `OptimaX-Rescue.cmd` — аварійний відкат · emergency rollback. Контрольні суми · checksums: `SHA256SUMS.txt`.\n' "$v" "$v" >> notes.md
           fi
+          # бета: попередження першим рядком (його показує й вікно оновлення програми) і позначка pre-release —
+          # такий реліз не стає «останнім» (releases/latest), тож стабільний канал його не бачить
+          pre=()
+          if [ "$PRERELEASE" = "true" ]; then
+            pre=(--prerelease)
+            { printf '**Бета-версія для тестувальників · Beta for testers.** '
+              printf 'Може містити помилки · may have bugs.\n\n'; cat notes.md; } > notes.beta && mv notes.beta notes.md
+          fi
           # з тегу — реліз саме з нього; з кнопки — тег створюється тут, на перевіреному коміті
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then where=(--verify-tag); else where=(--target "$GITHUB_SHA"); fi
           # Mesa і DXVK для майнінгових карт (mining.py): програма завантажує їх з релізу лише на ПК з такою картою
           shopt -s nullglob
           mesa=(dist/OptimaX-Mesa-*.zip dist/OptimaX-DXVK-*.zip)
           shopt -u nullglob
-          gh release create "$TAG" "${where[@]}" --title "OptimaX $v" --notes-file notes.md \
+          gh release create "$TAG" "${where[@]}" "${pre[@]}" --title "OptimaX $v" --notes-file notes.md \
             "dist/OptimaX-Setup-$v.exe" "dist/OptimaX-$v-portable.exe" dist/OptimaX-Rescue.cmd \
             dist/SHA256SUMS.txt "OptimaX-$v-winget-manifests.zip" "${mesa[@]}"

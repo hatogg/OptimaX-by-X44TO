@@ -171,7 +171,9 @@ if ($Release) {
             Run "gh" (@("release", "upload", "v$Version") + $files + @("--repo", $Repo, "--clobber"))
         }
     } elseif (Confirm "Опублікувати реліз v$Version?") {
-        Run "gh" (@("release", "create", "v$Version") + $files + @("--repo", $Repo, "--title", "OptimaX $Version", "--notes-file", $notesPath, "--target", "main"))
+        # 7.2: бета (7.2.0-beta.1) — pre-release, інакше вона стала б «останньою» для стабільного каналу
+        $pre = if ($Version -match '-beta\.\d+$') { @("--prerelease") } else { @() }
+        Run "gh" (@("release", "create", "v$Version") + $files + @("--repo", $Repo, "--title", "OptimaX $Version", "--notes-file", $notesPath, "--target", "main") + $pre)
     }
 }
 

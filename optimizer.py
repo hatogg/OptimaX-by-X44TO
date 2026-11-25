@@ -1218,13 +1218,13 @@ class Main(QWidget):
             home.set_banner("guard", tr("guard.banner_t", n=len(rev)), tr("guard.banner_d"),
                             (tr("guard.reapply"), self.guard_reapply), (tr("guard.details"), lambda: self.go("backup")))
         elif self.update_info and not U.snoozed(F.CFG["updates"], self.update_info["version"]):
-            home.set_banner("update", tr("upd.banner_t", v=self.update_info["version"]), tr("upd.banner_d"),
+            home.set_banner("update", tr("upd.banner_t", v=U.shown(self.update_info["version"])), tr("upd.banner_d"),
                             (tr("upd.install"), self.install_update), (tr("upd.later"), self.skip_update))
         else:
             home.set_banner(None)
         self.upd_side.setVisible(bool(self.update_info))
         if self.update_info:
-            self.upd_side.setText(tr("upd.side", v=self.update_info["version"]))
+            self.upd_side.setText(tr("upd.side", v=U.shown(self.update_info["version"])))
         if self.pages.built("backup"):
             self.pages["backup"].reload_guard()
 
@@ -1383,9 +1383,13 @@ class Main(QWidget):
                 self.notify_update(startup=True)  # версію знайшли раніше, а перевіряти ще зарано
             return
         self._upd_busy = True
+        chan = U.channel(cfg)
 
         def done(info):
             self._upd_busy = False
+            if U.channel(F.CFG["updates"]) != chan:  # 7.2: канал змінили під час перевірки — результат уже не той
+                self.check_updates(auto=auto, btn=btn, startup=startup)
+                return
             c = dict(F.CFG["updates"] or {})
             now = int(time.time())
             c["last_try"] = now
@@ -1406,11 +1410,12 @@ class Main(QWidget):
                 self.pages["settings"].sync_updates()
             self.guard_refresh()
             if not auto:
-                self.toast(tr("upd.found", v=self.update_info["version"]) if self.update_info else tr("upd.none"),
+                self.toast(tr("upd.found", v=U.shown(self.update_info["version"])) if self.update_info
+                           else tr("upd.none"),
                            "warn" if self.update_info else "ok")
             else:
                 self.notify_update(startup=startup)
-        self.run_quick(tr("upd.title"), lambda log, p: U.check(log), busy=btn, silent=True, on_done=done)
+        self.run_quick(tr("upd.title"), lambda log, p: U.check(log, chan), busy=btn, silent=True, on_done=done)
 
     def notify_update(self, startup: bool = False):
         """Спливаюче повідомлення про нову версію: під час запуску програми й один раз для кожної нової версії."""
@@ -1421,9 +1426,9 @@ class Main(QWidget):
         c["notified"] = info["version"]
         F.CFG["updates"] = c
         if self.isVisible():
-            self.toast(tr("upd.banner_t", v=info["version"]), "warn")
+            self.toast(tr("upd.banner_t", v=U.shown(info["version"])), "warn")
         elif self.tray.isVisible():
-            self.tray.showMessage(E.APP_TITLE, tr("upd.banner_t", v=info["version"]) + "\n" + tr("upd.tray_d"),
+            self.tray.showMessage(E.APP_TITLE, tr("upd.banner_t", v=U.shown(info["version"])) + "\n" + tr("upd.tray_d"),
                                   QSystemTrayIcon.MessageIcon.Information, 10000)
 
     def install_update(self):
@@ -1436,8 +1441,10 @@ class Main(QWidget):
             import webbrowser
             webbrowser.open(U.release_page(info.get("page")))
             return
-        text = tr("upd.ask_d", v=info["version"], cur=E.VERSION) + ("\n\n" + info["notes"] if info.get("notes") else "")
-        if not Ask.ask(self, tr("upd.ask_t", v=info["version"]), text, tr("upd.install")):
+        new, cur = U.shown(info["version"]), U.shown(E.VERSION)
+        text = tr("upd.ask_d", v=new, cur=cur) + ("\n\n" + tr("ch.ask_beta") if U.is_beta(info["version"]) else "")
+        text += ("\n\n" + info["notes"]) if info.get("notes") else ""
+        if not Ask.ask(self, tr("upd.ask_t", v=new), text, tr("upd.install")):
             return
         dlg = RunDialog(self, tr("upd.title"), lambda log, prog: U.download_job(info, log, prog))
         dlg.exec()

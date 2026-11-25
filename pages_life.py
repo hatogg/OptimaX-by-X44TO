@@ -460,7 +460,11 @@ def show_whats_new(parent, version: str = None) -> None:
     if not keys:
         return
     text = "\n\n".join("• " + tr(k) for k in keys)
-    Ask.info(parent, tr("wn.title", v=version or E.VERSION), text)
+    import updater as U
+    ver = version or E.VERSION
+    if U.is_beta(ver):  # 7.2: бета — з позначкою й підказкою, куди писати про помилки
+        text = tr("ch.wn_beta") + "\n\n" + text
+    Ask.info(parent, tr("wn.title", v=U.shown(ver)), text)
     WN.mark_seen()
 
 
