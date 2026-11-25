@@ -293,6 +293,9 @@ class HwCenterPage(QWidget):
         di = getattr(self, "diskinfo", None)
         if di is not None and not getattr(di, "disks", None):
             di.load()
+        gz = getattr(self, "gpuz", None)
+        if gz is not None and not (gz.data or {}).get("adapters"):
+            gz.load()
         if getattr(self, "buildcheck", None):
             self.buildcheck.set_hw(hw, self.main.checks or [])
 
@@ -615,6 +618,11 @@ class HwCenterPage(QWidget):
 
     # ───────────────────────── Відеокарта ─────────────────────────
     def _build_gpu(self, v):
+        # 7.2: паспорт кожної відеокарти, як у GPU-Z (шина PCIe зараз / максимум, NVML, ReBAR) — над GPU-тестом
+        from pages_gpuz import GpuzPanel
+        self.gpuz = GpuzPanel(self)
+        v.addWidget(self.gpuz)
+        QTimer.singleShot(0, self.gpuz.load)
         c, cv = self.section(v, tr("hwc.gpu.title"), tr("hwc.gpu.sub"))
         self.gpu_kv = KV(1)
         cv.addWidget(self.gpu_kv)

@@ -100,6 +100,7 @@ def _load() -> None:
     from lang_health import STRINGS as health
     from lang_channel import STRINGS as channel
     from lang_winget import STRINGS as winget
+    from lang_gpuz import STRINGS as gpuz
     from lang_tweaks import TEXTS
     STR.update(eng)
     STR.update(ui)
@@ -118,6 +119,7 @@ def _load() -> None:
     STR.update(health)
     STR.update(channel)
     STR.update(winget)
+    STR.update(gpuz)
     TWEAK_TEXT.update(TEXTS)
 
 
