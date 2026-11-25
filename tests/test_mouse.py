@@ -132,6 +132,7 @@ CODE = r"""
 import json, sys
 sys.argv = ["x", "--dry-run", "--lang=en"]
 import engine as E, mousetools as MT
+E.IS_WIN = False  # 7.2: і на Windows-раннері — демо-шлях: у режимі перегляду справжній реєстр не зміниться
 t = E.BY_ID[MT.ACCEL_TWEAK]
 logs = []
 R = {"before": MT.read_settings()["ok"]}
