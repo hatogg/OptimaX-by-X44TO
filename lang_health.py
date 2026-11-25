@@ -2,6 +2,43 @@
 (українська, російська, англійська)."""
 
 STRINGS = {
+    # ── «Що нового» 7.2.0 ──
+    "wn.720.gpuz": ("«Відеокарта» в Hardware Center — як GPU-Z: драйвер, BIOS, пам'ять, частоти й лінія PCIe — зараз і "
+                    "максимум (видно, якщо карта сидить на райзері x1).",
+                    "«Видеокарта» в Hardware Center — как GPU-Z: драйвер, BIOS, память, частоты и линия PCIe — сейчас и "
+                    "максимум (видно, если карта сидит на райзере x1).",
+                    "GPU in Hardware Center, like GPU-Z: driver, BIOS, memory, clocks and the PCIe link — current and "
+                    "max (you can see if a card runs on an x1 riser)."),
+    "wn.720.sensors": ("«Датчики» — як в AIDA64: температури, частоти, напруги й навантаження з мінімумом, максимумом і "
+                       "середнім, запис у CSV і попередження про перегрів.",
+                       "«Датчики» — как в AIDA64: температуры, частоты, напряжения и нагрузка с минимумом, максимумом "
+                       "и средним, запись в CSV и предупреждение о перегреве.",
+                       "Sensors, like AIDA64: temperatures, clocks, voltages and load with min, max and average, CSV "
+                       "logging and overheating alerts."),
+    "wn.720.gameprof": ("Профіль для кожної гри в «Бібліотеці»: схема живлення, відеокарта й пріоритет вмикаються з "
+                        "грою й повертаються, щойно вона закрилася.",
+                        "Профиль для каждой игры в «Библиотеке»: схема питания, видеокарта и приоритет включаются с "
+                        "игрой и возвращаются, как только она закрылась.",
+                        "A profile for each game in the Library: power plan, GPU and priority switch on with the game "
+                        "and go back as soon as it closes."),
+    "wn.720.mouse": ("«Миша»: справжня частота опитування, налаштування вказівника Windows і перерахунок чутливості "
+                     "між іграми (см/360°).",
+                     "«Мышь»: настоящая частота опроса, настройки указателя Windows и пересчёт чувствительности между "
+                     "играми (см/360°).",
+                     "Mouse: the real polling rate, Windows pointer settings and sensitivity conversion between games "
+                     "(cm/360°)."),
+    "wn.720.winget": ("Немає winget — кнопка «Відновити winget»: спершу без завантаження, а якщо його немає зовсім — "
+                      "з релізу OptimaX із перевіркою контрольних сум.",
+                      "Нет winget — кнопка «Восстановить winget»: сначала без загрузки, а если его нет совсем — из "
+                      "релиза OptimaX с проверкой контрольных сумм.",
+                      "No winget? The Restore winget button: first without any download, and if it's missing "
+                      "entirely, from the OptimaX release with checksums verified."),
+    "wn.720.channel": ("Канал оновлень у «Налаштуваннях»: «Стабільний» — лише перевірені версії, «Бета» — нові "
+                       "функції раніше.",
+                       "Канал обновлений в «Настройках»: «Стабильный» — только проверенные версии, «Бета» — новые "
+                       "функции раньше.",
+                       "Update channel in Settings: Stable gets tested versions only, Beta gets new features "
+                       "earlier."),
     # ── «Що нового» 7.1.1 ──
     "wn.711.safety": ("Безпека: OptimaX більше не довіряє папкам, куди може писати будь-яка програма (TEMP, "
                       "%LOCALAPPDATA%, кеш шейдерів), і не запускає програми за самим ім'ям.",

@@ -2,7 +2,7 @@
 ; Збирається через build_installer.bat; версію та шлях до файлів програми підставляє скрипт збірки.
 
 #ifndef MyAppVersion
-  #define MyAppVersion "7.1.1"
+  #define MyAppVersion "7.2.0"
 #endif
 ; 7.2: бета (7.2.0-beta.1) — у VersionInfoVersion лише цифри, тож суфікс «-beta.N» відкидаємо
 #if Pos("-", MyAppVersion) > 0
