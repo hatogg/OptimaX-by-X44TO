@@ -9,7 +9,7 @@ OptimaX — паспорт відеокарт у розділі «Відеока
 """
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QEvent, Qt, QTimer
 from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import QFrame, QGridLayout, QWidget
 
@@ -28,7 +28,7 @@ class GpuzPanel(QWidget):
     def __init__(self, page):
         super().__init__()
         self.page, self.data, self.cur, self.busy, self.live_busy = page, None, 0, False, False
-        self.lives, self.values, self.notes = {}, {}, None
+        self.lives, self.values, self.notes, self._watching = {}, {}, None, None
         v = vbox(self, spacing=12)
         bar = hbox(spacing=8)
         self.picker_row = hbox(spacing=8)
@@ -86,7 +86,7 @@ class GpuzPanel(QWidget):
             seg.changed.connect(self._pick)
             self.picker_row.addWidget(seg)
         self.show_adapter()
-        self.timer.start()
+        self._sync_timer()
         self._tick()
 
     def adapter(self) -> dict:
@@ -151,9 +151,41 @@ class GpuzPanel(QWidget):
             self.find_box.addLayout(row)
 
     # ── живі показники ──
+    def _active(self) -> bool:
+        return bool(self.data) and self.isVisible() and not self.window().isMinimized()
+
+    def _sync_timer(self) -> None:
+        """7.2: таймер іде лише поки розділ на екрані — інший розділ, трей чи згорнуте вікно його зупиняють."""
+        if self._active():
+            if not self.timer.isActive():
+                self.timer.start()
+        else:
+            self.timer.stop()
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        win = self.window()
+        if win is not self and self._watching is not win:
+            win.installEventFilter(self)  # згортання вікна не ховає дочірні віджети — стежимо за станом вікна
+            self._watching = win
+        self._sync_timer()
+        self._tick()
+
+    def hideEvent(self, e):
+        super().hideEvent(e)
+        self.timer.stop()
+
+    def eventFilter(self, obj, e):
+        if obj is self._watching and e.type() == QEvent.Type.WindowStateChange:
+            self._sync_timer()
+            if self.timer.isActive():
+                self._tick()
+        return super().eventFilter(obj, e)
+
     def _tick(self) -> None:
-        # як у «Процесорі»: згорнуте вікно чи інший розділ — не опитувати NVML
-        if self.live_busy or not self.data or not self.isVisible() or self.window().isMinimized():
+        if self.live_busy or not self._active():
+            if not self._active():
+                self.timer.stop()  # запасний шлях: якщо подію згортання пропустили
             return
         a, i = self.adapter(), self.cur
         if not a or (E.IS_WIN and a.get("nv_index") is None):

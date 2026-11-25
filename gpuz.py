@@ -63,6 +63,11 @@ def current_link(a: dict, live: dict = None) -> dict:
     return lk
 
 
+def live_link(live: dict) -> bool:
+    """Чи поточна лінія — з живого читання NVML (а не з DEVPKEY, який може показувати стан на момент старту)."""
+    return bool((live or {}).get("pcie_gen") and (live or {}).get("pcie_width"))
+
+
 def link_state(link: dict, util=None) -> str:
     """unknown | narrow (менше ліній, ніж уміє карта) | slow_idle (нижче покоління в простої — енергозбереження) |
     slow_load (нижче покоління під навантаженням) | full."""
@@ -587,7 +592,10 @@ def device_rows(a: dict) -> list:
 
 def bus_rows(a: dict, live: dict = None) -> list:
     lk = current_link(a, live)
-    return [("gz.bus_cur", fmt_link(lk.get("cs"), lk.get("cw"))), ("gz.bus_max", fmt_link(lk.get("ms"), lk.get("mw"))),
+    cur = fmt_link(lk.get("cs"), lk.get("cw"))
+    if cur and not live_link(live):
+        cur = f"{cur} ({tr('gz.src_win')})"
+    return [("gz.bus_cur", cur), ("gz.bus_max", fmt_link(lk.get("ms"), lk.get("mw"))),
             ("gz.rebar", rebar_text(a))]
 
 
@@ -634,8 +642,13 @@ def findings(a: dict, live: dict = None) -> list:
         out.append(("warn", tr("gz.f.narrow", cur=lk["cw"], max=lk["mw"])))
     elif st in ("slow_idle", "slow_load"):
         kw = dict(cur=link_gen(lk.get("cs")) or "?", max=link_gen(lk.get("ms")) or "?")
-        out.append(("info", tr("gz.f.slow_idle", **kw)) if st == "slow_idle" else
-                   ("warn", tr("gz.f.slow_load", util=lv.get("util"), **kw)))
+        if not live_link(lv):
+            # 7.2: поточна швидкість лише з DEVPKEY — Windows могла записати її при старті пристрою й не оновлювати,
+            # тож ні «під навантаженням», ні «натисніть «Оновити»» тут не обіцяємо
+            out.append(("info", tr("gz.f.slow_pnp", **kw)))
+        else:
+            out.append(("info", tr("gz.f.slow_idle", **kw)) if st == "slow_idle" else
+                       ("warn", tr("gz.f.slow_load", util=lv.get("util"), **kw)))
     elif st == "full":
         out.append(("ok", tr("gz.f.full", link=fmt_link(lk.get("cs"), lk.get("cw")))))
     elif a.get("kind") == "igpu":

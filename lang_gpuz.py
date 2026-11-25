@@ -78,6 +78,16 @@ STRINGS = {
                        "«Обновить».",
                        "PCIe {cur} instead of {max} right now: at idle the card lowers the link speed to save power. "
                        "That is not a fault — check under load: start a game or the GPU test and press Refresh."),
+    "gz.f.slow_pnp": ("Windows повідомляє PCIe {cur} замість {max}. Це значення може відображати стан на момент "
+                      "запуску пристрою, а в простої карти знижують швидкість лінії, щоб заощадити енергію, — тож це "
+                      "ще не несправність. Стан лінії під навантаженням для цієї карти тут не читається.",
+                      "Windows сообщает PCIe {cur} вместо {max}. Это значение может отражать состояние на момент "
+                      "запуска устройства, а в простое карты снижают скорость линии ради экономии энергии, — так что "
+                      "это ещё не неисправность. Состояние линии под нагрузкой для этой карты здесь не читается.",
+                      "Windows reports PCIe {cur} instead of {max}. This value may reflect the state when the device "
+                      "started, and cards lower the link speed at idle to save power — so it is not a fault by "
+                      "itself. The link state under load is not read for this card here."),
+    "gz.src_win": ("за Windows", "по Windows", "per Windows"),
     "gz.f.slow_load": ("Під навантаженням ({util}%) лінія PCIe {cur} замість {max}: слот чи плата підтримують лише "
                        "{cur}, або покоління обмежене в BIOS.",
                        "Под нагрузкой ({util}%) линия PCIe {cur} вместо {max}: слот или плата поддерживают только "

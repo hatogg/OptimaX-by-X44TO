@@ -197,3 +197,28 @@ def test_real_windows_collect():
             assert isinstance(GZ.live(a), dict)
     finally:
         E.IS_WIN = old
+
+
+def test_windows_reported_slow_link_promises_nothing():
+    """Не NVIDIA: поточна швидкість лише з DEVPKEY (може бути станом на момент старту) — не «натисніть «Оновити»»
+    і не попередження «під навантаженням», навіть якщо щось інше каже про завантаження."""
+    a = dict(kind="dgpu", ven=0x1002, name="AMD Radeon RX 6600", link={"cs": 1, "cw": 16, "ms": 4, "mw": 16})
+    for lv in ({}, {"util": 99}):
+        lvl, text = GZ.findings(a, lv)[0]
+        assert lvl == "info" and text == GZ.tr("gz.f.slow_pnp", cur="1.1", max="4.0")
+    assert "Windows" in dict(GZ.bus_rows(a))["gz.bus_cur"]
+    # NVIDIA з живою лінією NVML — як і раніше: простій — інформація, навантаження — попередження
+    nv = dict(a, ven=0x10DE)
+    assert GZ.findings(nv, {"util": 2, "pcie_gen": 1, "pcie_width": 16})[0] == \
+        ("info", GZ.tr("gz.f.slow_idle", cur="1.1", max="4.0"))
+    assert GZ.findings(nv, {"util": 99, "pcie_gen": 1, "pcie_width": 16})[0][0] == "warn"
+    assert "Windows" not in dict(GZ.bus_rows(nv, {"pcie_gen": 1, "pcie_width": 16}))["gz.bus_cur"]
+
+
+def test_panel_timer_stops_when_hidden():
+    from _util import has_qt
+    if not has_qt():
+        from _util import skip
+        skip("PyQt6 is not installed")
+    src = open(os.path.join(ROOT, "pages_gpuz.py"), encoding="utf-8").read()
+    assert "def hideEvent" in src and "WindowStateChange" in src and "self.timer.stop()" in src
