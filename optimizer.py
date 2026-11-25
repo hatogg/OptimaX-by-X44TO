@@ -68,6 +68,7 @@ import baseline as BL  # noqa: F401  (знімок початкових нала
 import bugreport as BR
 import crashlog as CL
 import freezecatch as FZ
+import gameprof as GP
 import library as LB
 import phonemon as PH
 import updater as U
@@ -186,6 +187,8 @@ class Main(QWidget):
         self.tracker = LB.Tracker()
         self._ticks = 0
         self._fps_try = {}  # exe -> коли востаннє пробували записати FPS
+        self._gp_busy = False  # профілі ігор (gameprof.py): синхронізація вже йде у фоні
+        self.profile_dialog = None
         native = BR.native_crash()
         # через чергу подій: вікно звіту не відкривається всередині обробника помилки чи з фонового потоку
         self.error_caught.connect(lambda trace, nat: PL.ask_report(self, trace, nat), Qt.ConnectionType.QueuedConnection)
@@ -246,6 +249,15 @@ class Main(QWidget):
             E.set_timer_resolution(True)
         if F.CFG["booster_state"]:  # минулого разу програма закрилася з увімкненим режимом гри
             self.run_quick(tr("g.title"), lambda log, p: F.BOOSTER.stop(log), ok_msg=tr("g.recovered"))
+        # профілі ігор: минулого разу OptimaX закрилася посеред гри з профілем — повертаємо схему й пріоритети, і
+        # лише потім профілі знову застосовуються (MANAGER.ready)
+        if GP.needs_recovery():
+            self.run_quick(tr("gprof.title_short"), lambda log, p: GP.MANAGER.recover(log), silent=True,
+                           on_done=lambda r: self.toast(tr("gprof.recovered"), "ok" if isinstance(r, dict) and
+                                                        not r.get("fail") else "warn")
+                           if isinstance(r, dict) and r.get("did") else None)
+        else:
+            GP.MANAGER.ready = True
         lim = F.CFG["charge_limit"]
         if lim and lim.get("method"):  # частина ноутбуків скидає ліміт після перезавантаження
             self.run_quick("charge", lambda log, p: PW.set_charge_limit(lim["method"], lim["pct"], log), silent=True)
@@ -406,7 +418,8 @@ class Main(QWidget):
     def launch_game(self, g: dict, btn=None):
         """Запуск із «Бібліотеки»: режим гри (якщо ввімкнено) — до запуску, вимкнеться сам, коли гра закриється."""
         main_exe = g.get("main") or ""
-        if LB.setting("boost", True) and not F.BOOSTER.active:
+        # гра з профілем: режим гри вмикає (чи ні) сам профіль, коли гра запуститься (gameprof.py)
+        if LB.setting("boost", True) and not F.BOOSTER.active and not GP.has_profile(g):
             self.lib_boost = {"names": set(g.get("exes") or []), "ts": time.time(), "seen": False}
             self.auto_boost = True
             self.run_quick(tr("g.title"), lambda log, p: F.BOOSTER.start(log, game=main_exe or None), silent=True,
@@ -911,10 +924,15 @@ class Main(QWidget):
                 game = wanted[running[0]] if running[0] in mine else None
                 self.run_quick(tr("g.title"), lambda log, p: F.BOOSTER.start(log, game=game), silent=True,
                                on_done=lambda _r: (self.update_booster_ui(), self.toast(tr("g.auto_on"))))
-            elif not game_on and F.BOOSTER.active and self.auto_boost and not self.lib_boost:
+            elif (not game_on and F.BOOSTER.active and self.auto_boost and not self.lib_boost
+                  and not GP.MANAGER.holds_booster()):
                 self.auto_boost = False
                 self.run_quick(tr("g.title"), lambda log, p: F.BOOSTER.stop(log), silent=True,
                                on_done=lambda _r: (self.update_booster_ui(), self.toast(tr("g.auto_off"))))
+        try:  # профілі ігор: гра з профілем запустилася чи закрилася
+            self.gameprof_tick()
+        except Exception as e:
+            LOG.write(f"  gameprof: {type(e).__name__}: {e}")
         # фоновий чистильник пам'яті
         c = F.CFG["cleaner"]
         if c.get("enabled"):
@@ -968,6 +986,34 @@ class Main(QWidget):
         # майнінгова карта: на якій карті насправді малює запущена гра (раз за запуск гри, через 40 с після старту)
         if self.hw and MG.active(self.hw) and (F.CFG["mining"] or {}).get("check", True):
             self._render_watch(names)
+
+    def gameprof_tick(self, force: bool = False):
+        """Профілі ігор: дешева перевірка в потоці інтерфейсу, зміни — у фоні й лише тоді, коли щось змінилося."""
+        if self._gp_busy or not GP.MANAGER.ready or not (force or GP.MANAGER.needs_sync()):
+            return
+        self._gp_busy = True
+
+        def done(r):
+            self._gp_busy = False
+            if not isinstance(r, dict):
+                return
+            for name in r.get("started") or []:
+                self.toast(tr("gprof.toast_fail" if r.get("fail") else "gprof.toast_on", game=name),
+                           "warn" if r.get("fail") else "ok")
+            for name in r.get("ended") or []:
+                self.toast(tr("gprof.toast_off", game=name))
+            if r.get("started") or r.get("ended"):
+                self.update_booster_ui()
+                lib = self.pages.get("library")
+                if lib and lib.isVisible():
+                    lib.on_show()
+        self.run_quick(tr("gprof.title_short"), lambda log, p: GP.MANAGER.sync(log), silent=True, on_done=done)
+
+    def open_fps_test(self, g: dict):
+        """Тест FPS «до/після» для гри з «Бібліотеки» (розділ «Діагностика»)."""
+        self.go("diagnose")
+        if g.get("main"):
+            self.pages["diagnose"]._set_game(g["main"])
 
     def _render_watch(self, names=None):
         card = self.pages["games"].mining
@@ -1565,6 +1611,8 @@ class Main(QWidget):
         E.stop_all()  # закриття програми — скасувати всі дії, а не лише одну
         for w in running:
             w.wait(3000)
+        if GP.MANAGER.busy():  # профілі ігор: схема живлення, пріоритети й режим гри, які вони ввімкнули
+            RunDialog(self, tr("gprof.title_short"), lambda log, p: GP.MANAGER.stop_all(log)).exec()
         if F.BOOSTER.active:
             # 6.17: до 9 × net start по 30 с — не в потоці інтерфейсу (вікно «Не відповідає»), а з видимим ходом
             RunDialog(self, tr("g.title"), lambda log, p: F.BOOSTER.stop(log)).exec()
