@@ -898,8 +898,14 @@ class Main(QWidget):
         except Exception as e:
             LOG.write(f"  gpu: {type(e).__name__}: {e}")
         names = None
+        snap = {}
+
+        def procs():  # 7.2: один знімок процесів на такт — для бібліотеки, режиму гри й профілів ігор
+            if "p" not in snap:
+                snap["p"] = E.processes()
+            return snap["p"]
         if self._ticks % 3 == 0:  # бібліотека: сесії ігор, режим гри від запуску, FPS
-            names = F.running_game_names()
+            names = {(n or "").lower() for _, n in procs()}
             try:
                 self._library_tick(names)
             except Exception as e:  # облік ігор не повинен зупиняти решту фонових перевірок
@@ -911,7 +917,7 @@ class Main(QWidget):
                 LOG.write(f"  freeze: {type(e).__name__}: {e}")
         # автоматичний режим гри
         if F.CFG["booster"].get("auto"):
-            names = names if names is not None else F.running_game_names()
+            names = names if names is not None else {(n or "").lower() for _, n in procs()}
             mine = {ntpath.basename(g["path"]).lower(): g["path"] for g in F.CFG["games"] or [] if g.get("boost")}
             found = {}
             if F.CFG["booster"].get("found"):  # Game Booster 2.0: і ігри, знайдені в Steam / Epic / GOG / Ubisoft
@@ -930,7 +936,7 @@ class Main(QWidget):
                 self.run_quick(tr("g.title"), lambda log, p: F.BOOSTER.stop(log), silent=True,
                                on_done=lambda _r: (self.update_booster_ui(), self.toast(tr("g.auto_off"))))
         try:  # профілі ігор: гра з профілем запустилася чи закрилася
-            self.gameprof_tick()
+            self.gameprof_tick(procs=procs)
         except Exception as e:
             LOG.write(f"  gameprof: {type(e).__name__}: {e}")
         # фоновий чистильник пам'яті
@@ -987,9 +993,10 @@ class Main(QWidget):
         if self.hw and MG.active(self.hw) and (F.CFG["mining"] or {}).get("check", True):
             self._render_watch(names)
 
-    def gameprof_tick(self, force: bool = False):
-        """Профілі ігор: дешева перевірка в потоці інтерфейсу, зміни — у фоні й лише тоді, коли щось змінилося."""
-        if self._gp_busy or not GP.MANAGER.ready or not (force or GP.MANAGER.needs_sync()):
+    def gameprof_tick(self, force: bool = False, procs=None):
+        """Профілі ігор: дешева перевірка в потоці інтерфейсу, зміни — у фоні й лише тоді, коли щось змінилося.
+        procs — знімок процесів цього такту (список або функція, що його дає)."""
+        if self._gp_busy or not GP.MANAGER.ready or not (force or GP.MANAGER.needs_sync(procs)):
             return
         self._gp_busy = True
 
@@ -1622,7 +1629,8 @@ class Main(QWidget):
             RunDialog(self, tr("gprof.title_short"), lambda log, p: GP.MANAGER.stop_all(log)).exec()
         if F.BOOSTER.active:
             # 6.17: до 9 × net start по 30 с — не в потоці інтерфейсу (вікно «Не відповідає»), а з видимим ходом
-            RunDialog(self, tr("g.title"), lambda log, p: F.BOOSTER.stop(log)).exec()
+            # 7.2: shutdown_cleanup — E.stop_all() вище скасував усі дії, а повернути режим гри треба
+            RunDialog(self, tr("g.title"), E.shutdown_cleanup(lambda log, p: F.BOOSTER.stop(log))).exec()
         self.balancer.restore_all(LOG.write)
         self.hk.stop()
         try:

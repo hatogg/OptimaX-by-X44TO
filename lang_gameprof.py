@@ -64,6 +64,12 @@ STRINGS = {
     "gprof.prio_fail": ("  ⚠ пріоритет {exe} змінити не вдалося (захищений процес чи античит)",
                         "  ⚠ приоритет {exe} изменить не удалось (защищённый процесс или античит)",
                         "  ⚠ could not change {exe} priority (protected process or anti-cheat)"),
+    "gprof.state_fail": ("  ⚠ стан профілю гри не записано ({err}) — після аварії пріоритет повернеться із "
+                         "закриттям гри",
+                         "  ⚠ состояние профиля игры не записано ({err}) — после аварии приоритет вернётся с закрытием "
+                         "игры",
+                         "  ⚠ game profile state not saved ({err}) — after a crash the priority resets when the game "
+                         "closes"),
     "gprof.prio_skip": ("  {exe}: нестандартний пріоритет задано не OptimaX — не чіпаю",
                         "  {exe}: нестандартный приоритет задан не OptimaX — не трогаю",
                         "  {exe}: an unusual priority was set by something else — leaving it"),

@@ -24,13 +24,17 @@ OptimaX — профілі ігор (Game Booster 2.0): що змінювати,
 • пріоритет — лише процесам, чий exe лежить у папці гри з бібліотеки; повертається, лише якщо в процесу досі наш
   пріоритет (гру закрили — повертати нічого).
 
-Межа довіри: settings.json (профілі, бібліотека, стан сесії) пише будь-яка програма користувача. Звідти беремо лише
-значення з білих списків; шлях exe — лише ім'я значення реєстру HKCU і перевірка «процес лежить у папці гри»: він
-ніколи не запускається і не стає командою.
+Межа довіри: settings.json (профілі, бібліотека) пише будь-яка програма користувача. Звідти беремо лише значення з
+білих списків; шлях exe — лише ім'я значення реєстру HKCU і перевірка «процес лежить у папці гри»: він ніколи не
+запускається і не стає командою. Стан сесії («кому який пріоритет повернути після аварії») — у захищеній папці
+%ProgramData%\\OptimaX\\state (як журнал відкату), і навіть із неї пріоритет повертається лише процесу з папки гри,
+який досі має саме той пріоритет, що поставив профіль.
 """
 from __future__ import annotations
 
+import json
 import ntpath
+import os
 import threading
 import time
 
@@ -48,7 +52,8 @@ DEFAULT = {"enabled": True, "power": "keep", "gpu": "keep", "prio": "keep", "boo
 POWER_ID = F.PROFILE_POWER_ID
 GPU_PREFIX = "gprof:gpu:"
 CFG_KEY = "game_profiles"
-STATE_KEY = "game_profile_state"
+STATE_FILE = "gameprof.json"  # 7.2: стан сесії — у захищеній папці (E.admin_dir), а не в settings.json
+RETRY_AFTER = 60  # с: невдалий відкат схеми живлення — повторити не раніше
 HIST_KEY = "game_profile_hist"
 HIST_KEEP = 20
 MAX_KEY = 400
@@ -161,7 +166,6 @@ def gpu_paths(g: dict) -> list:
     """Повні шляхи exe гри для налаштування «Графіка»: головний exe і exe з бібліотеки, знайдені в папці гри."""
     out = [g["main"]] if g.get("main") else []
     if E.IS_WIN:
-        import os
         import mining as MG
         if os.path.isdir(g["dir"]):
             for x in MG.scan_exes(g["dir"]):
@@ -354,6 +358,8 @@ class Manager:
         self.power = None  # ціль схеми, яку вже пробували для поточного набору ігор
         self.booster_ours = False
         self.ready = False  # до відновлення після аварії (recover) нічого не застосовуємо
+        self.retry_at = 0.0  # схему живлення повернути не вдалося — коли спробувати знову (0 — не треба)
+        self.state_error = ""
 
     # ── для інтерфейсу ──
     def active_keys(self) -> set:
@@ -379,15 +385,20 @@ class Manager:
         """Є що повертати (закриття OptimaX)."""
         return bool(self.active or self.booster_ours or E.JOURNAL.has(POWER_ID))
 
-    def needs_sync(self, procs: list = None) -> bool:
-        """Дешево, у потоці інтерфейсу: чи запустилася / закрилася гра з профілем або з'явився новий її процес."""
+    def needs_sync(self, procs=None) -> bool:
+        """Дешево, у потоці інтерфейсу: чи запустилася / закрилася гра з профілем або з'явився новий її процес.
+        procs — знімок процесів такту (список чи функція, що його дає), щоб не робити ще один."""
         if not self.ready or not self.lock.acquire(blocking=False):
             return False
         try:
+            if self.retry_at and time.time() >= self.retry_at:
+                return True
             w = watched()
             if not w and not self.active:
                 return bool(self.booster_ours or self.power)
-            run = _match(w, procs if procs is not None else _procs())
+            if procs is None:
+                procs = _procs
+            run = _match(w, procs() if callable(procs) else procs)
             if any(k not in run for k in self.active):
                 return True
             return any(set(pids) - self.seen.get(k, set()) for k, pids in run.items())
@@ -432,7 +443,7 @@ class Manager:
                 self._apply_prio(a, new, log, res)
             self._sync_power(log, res)
             self._sync_booster(log, res, started)
-            self._save_state()
+            self._save_state(log)
             return res
 
     def _apply_prio(self, a: dict, pids: dict, log, res: dict) -> None:
@@ -451,7 +462,7 @@ class Manager:
                 log(tr("gprof.prio_skip", exe=name))
                 continue
             a["prio"][pid] = [name, old, want]
-            self._save_state()  # запис «що повертати» — до зміни
+            self._save_state(log)  # запис «що повертати» — до зміни
             if _set_prio(pid, want):
                 res["ok"] += 1
                 log(tr("gprof.prio_set", exe=name, prio=tr(f"gprof.prio.{a['want_prio']}")))
@@ -487,15 +498,18 @@ class Manager:
         want = max((a.get("power") for a in self.active.values() if a.get("power") in POWER_RANK),
                    key=POWER_RANK.get, default=None)
         if want is None:
-            if self.power is not None:
-                self._undo_power(log, res)
+            if self.power is not None or self.retry_at:
+                self._retry(self._undo_power(log, res))
             self.power = None
             return
-        if want == self.power:  # уже пробували (вдалося, не вдалося чи схему повернули вручну) — не повторюємо
+        if want == self.power:
+            self.retry_at = 0.0
+            return  # уже пробували (вдалося, не вдалося чи схему повернули вручну) — не повторюємо
+        # інша ціль: спершу повертаємо початкову схему, потім нову. 7.2: не вдалося — self.power лишається старим,
+        # тож наступна синхронізація (needs_sync через RETRY_AFTER) спробує ще раз
+        if not self._retry(self._undo_power(log, res)):
             return
         self.power = want
-        if not self._undo_power(log, res):  # інша ціль: спершу повертаємо початкову схему, потім нову
-            return
         st = F.CFG["booster_state"]
         if F.BOOSTER.active and isinstance(st, dict) and isinstance(st.get("plan"), str):
             log(tr("gprof.power_booster"))  # схему вже змінив режим гри — він її й поверне
@@ -503,6 +517,10 @@ class Manager:
         r = E.apply_tweaks([power_tweak(want)], log, header=False, by="gameprof")
         res["ok"] += int(r.get("ok") or 0)
         res["fail"] += int(r.get("fail") or 0) + int(r.get("partial") or 0)
+
+    def _retry(self, ok: bool) -> bool:
+        self.retry_at = 0.0 if ok else time.time() + RETRY_AFTER
+        return ok
 
     def _sync_booster(self, log, res: dict, started: list) -> None:
         want = any(a.get("boost") for a in self.active.values())
@@ -521,9 +539,11 @@ class Manager:
             self.booster_ours = False
 
     # ── закриття OptimaX і відновлення після аварії ──
+    @E.shutdown_cleanup
     @E._serial
     def stop_all(self, log) -> dict:
-        """OptimaX закривається: усе, що змінили профілі, — як до гри."""
+        """OptimaX закривається: усе, що змінили профілі, — як до гри. 7.2: shutdown_cleanup — закриття програми
+        (E.stop_all) уже скасувало всі дії, а цей відкат має виконатися."""
         with self.lock:
             res = {"ok": 0, "fail": 0, "ended": []}
             for key, a in list(self.active.items()):
@@ -533,11 +553,12 @@ class Manager:
             self.active.clear()
             self.seen = {}
             self.power = None
-            self._undo_power(log, res)
+            self.retry_at = 0.0
+            self._undo_power(log, res)  # не вдалося — запис лишається в журналі: наступний запуск (recover) чи Rescue
             if self.booster_ours and F.BOOSTER.active:
                 F.BOOSTER.stop(log)
             self.booster_ours = False
-            self._save_state()
+            self._save_state(log)
             return res
 
     @E._serial
@@ -550,40 +571,50 @@ class Manager:
                 if E.JOURNAL.has(POWER_ID):
                     res["did"] = True
                     self._undo_power(log, res)
-                st = F.CFG[STATE_KEY]
+                st = load_state()
                 items = st.get("prio") if isinstance(st, dict) else None
                 if isinstance(items, list) and items:
-                    names = {e for g, _p in watched().values() for e in g["exes"]}
+                    games = [g for g, _p in watched().values()]
                     alive = {pid: (n or "").lower() for pid, n in _procs()}
                     for it in items[:MAX_STATE]:
                         if not (isinstance(it, list) and len(it) == 4):
                             continue
                         pid, name, old, new = it
+                        # 7.2: лише те, що профіль міг поставити сам (above / high, не normal), процесу з папки гри,
+                        # який досі має саме цей пріоритет
                         if not (isinstance(pid, int) and not isinstance(pid, bool) and isinstance(name, str)
-                                and name.lower() in names and old in F.PRIORITY_CLASSES
-                                and new in PRIO_CLASS.values() and old != new):
+                                and old in F.PRIORITY_CLASSES and new in (PRIO_CLASS["above"], PRIO_CLASS["high"])
+                                and old != new and alive.get(pid) == name.lower()):
                             continue
-                        if alive.get(pid) == name.lower() and _get_prio(pid) == new:
+                        g = next((g for g in games if name.lower() in g["exes"] and _verified(g, pid)), None)
+                        if g and _get_prio(pid) == new:
                             res["did"] = True
                             if _set_prio(pid, old):
                                 log(tr("gprof.prio_back", exe=name))
                             else:
                                 res["fail"] += 1
                 if st is not None:
-                    F.CFG[STATE_KEY] = None
+                    self._write_state(None, log)
             finally:
                 self.ready = True
             return res
 
     # ── стан на диску ──
-    def _save_state(self) -> None:
+    def _save_state(self, log=None) -> None:
         prio = [[pid, n, old, new] for a in self.active.values() for pid, (n, old, new) in a["prio"].items()]
         state = None
         if self.active or self.booster_ours:
             state = {"ts": int(time.time()), "games": sorted(self.active), "prio": prio[:MAX_STATE],
                      "booster": self.booster_ours}
-        if F.CFG[STATE_KEY] != state:
-            F.CFG[STATE_KEY] = state
+        self._write_state(state, log)
+
+    def _write_state(self, state, log=None) -> None:
+        if state is not None and load_state() == state:
+            return
+        err = write_state(state)
+        if err and err != self.state_error and log:
+            log(tr("gprof.state_fail", err=err))
+        self.state_error = err
 
     def _hist(self, key: str, a: dict) -> None:
         data = hist_all()
@@ -593,8 +624,35 @@ class Manager:
         F.CFG[HIST_KEY] = data
 
 
+def state_path() -> str:
+    return os.path.join(E.admin_dir("state"), STATE_FILE)
+
+
+def load_state():
+    try:
+        with open(state_path(), encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return d if isinstance(d, dict) else None
+
+
+def write_state(state) -> str:
+    """-> "" або текст помилки запису (стан без запису — після аварії пріоритет повернеться із закриттям гри)."""
+    try:
+        path = state_path()
+        if state is None:
+            if os.path.exists(path):
+                os.remove(path)
+        else:
+            E._write_atomic(path, state, durable=True)
+        return ""
+    except OSError as e:
+        return f"{type(e).__name__}: {e}"
+
+
 def needs_recovery() -> bool:
-    st = F.CFG[STATE_KEY]
+    st = load_state()
     return E.JOURNAL.has(POWER_ID) or bool(isinstance(st, dict) and st.get("prio"))
 
 
