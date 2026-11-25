@@ -58,10 +58,15 @@ def check_66(st: dict) -> None:
 
 
 def check_hwc(st: dict) -> None:
-    """Hardware Center: 19 розділів (з перевіркою збірки, затримками й кулерами), тести на демо-залізі пройдені, звіт і
-    перевірка перед покупкою, кулери й андервольт демо-карти."""
+    """Hardware Center: 20 розділів (з перевіркою збірки, затримками, кулерами й мишею), тести на демо-залізі
+    пройдені, звіт і перевірка перед покупкою, кулери й андервольт демо-карти, частота опитування й відкат миші."""
     h = st["hwc"]
-    assert h["built"] == 19, h
+    assert h["built"] == 20, h
+    mo = h["mouse"]
+    assert mo["poll"]["ok"] and mo["poll"]["demo"] and mo["poll"]["nearest"] in (125, 500, 1000), mo
+    assert mo["applied"] == [True, True, True], ("speed 10 + no acceleration goes through the rollback journal", mo)
+    assert mo["undone"] == [False, mo["before"]], ("the rollback returns the previous values", mo)
+    assert "0.629" in mo["conv"], mo  # CS2 2.0 → Valorant: 2 × 0.022 / 0.07
     g = h["gputune"]
     assert g["off"] == [True, False, False], ("test mode: the driver must not be touched until turned on", g)
     assert g["enabled"] and g["name"] and g["caps"] == 5 and g["fans"], g

@@ -101,6 +101,7 @@ def _load() -> None:
     from lang_channel import STRINGS as channel
     from lang_winget import STRINGS as winget
     from lang_gpuz import STRINGS as gpuz
+    from lang_mouse import STRINGS as mouse
     from lang_tweaks import TEXTS
     STR.update(eng)
     STR.update(ui)
@@ -120,6 +121,7 @@ def _load() -> None:
     STR.update(channel)
     STR.update(winget)
     STR.update(gpuz)
+    STR.update(mouse)
     TWEAK_TEXT.update(TEXTS)
 
 

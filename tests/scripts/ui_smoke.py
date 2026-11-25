@@ -483,6 +483,25 @@ try:
     hwc["pdf"] = os.path.getsize(pdf)
 except Exception as e:  # noqa: BLE001 — звіт про причину в результаті тесту
     hwc["pdf"] = f"{type(e).__name__}: {e}"
+# «Миша»: тест частоти опитування на імітованому потоці, рекомендація через журнал відкату і її відкат, перерахунок
+import mousetools as MT  # noqa: E402
+import pages_mouse as PM  # noqa: E402
+PM.PollDialog.SPEED = 200.0
+hc.show_section("mouse")
+ms = hc.ms
+PM.run_poll(hc)
+mo = {"poll": {k: (ms.get("poll") or {}).get(k) for k in ("ok", "nearest", "demo")},
+      "notes": ms["poll_notes"].count(), "before": ms["settings"]["ok"]}
+PM.apply_rec(hc)
+pump(lambda: E.JOURNAL.has(MT.ACCEL_TWEAK) and ms["apply_btn"].text() == UK.tr("mouse.win.apply"), 30)
+mo["applied"] = [E.JOURNAL.has(MT.ACCEL_TWEAK), ms["settings"]["ok"], not ms["undo_btn"].isHidden()]
+PM.undo_rec(hc)
+pump(lambda: not E.JOURNAL.has(MT.ACCEL_TWEAK) and ms["undo_btn"].isHidden(), 30)
+mo["undone"] = [E.JOURNAL.has(MT.ACCEL_TWEAK), ms["settings"]["ok"]]
+ms["sens"].setText("2")
+ms["to"].setCurrentIndex(list(MT.GAMES).index("valorant"))
+mo["conv"] = ms["conv_out"].text()
+hwc["mouse"] = mo
 hc.show_section("overview")
 hc.refresh_overview()
 hwc["tiles"] = hc.ov_grid.count()
