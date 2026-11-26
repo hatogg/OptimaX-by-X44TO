@@ -2,7 +2,7 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
-## [7.2.0] — 2026-11-25
+## [7.2.0] — 2026-11-26
 
 Аналоги GPU-Z і AIDA64 у Hardware Center, профілі для кожної гри, модуль миші, «Відновити winget» і канал
 оновлень «Стабільний / Бета».
