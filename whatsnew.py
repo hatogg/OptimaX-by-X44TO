@@ -9,6 +9,8 @@ import features as F
 
 # версія -> ключі рядків (lang_life.py); у вікні — у такому порядку
 NOTES = {
+    # 7.2.1 — портативні консолі (ROG Ally та інші) і повернення з простого вигляду
+    "7.2.1": ["wn.721.handheld", "wn.721.simple"],
     # 7.2.0 — GPU-Z, датчики, профілі ігор, миша, winget, канал оновлень
     "7.2.0": ["wn.720.gpuz", "wn.720.sensors", "wn.720.gameprof", "wn.720.mouse", "wn.720.winget",
               "wn.720.channel"],

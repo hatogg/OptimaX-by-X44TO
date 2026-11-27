@@ -487,8 +487,8 @@ class BuildCheck:
 
     def set_hw(self, hw: dict, checks: list):
         clear_layout(self.notes)
-        for key in ("x3d_dual", "hybrid", "xeon", "old", "laptop"):
-            if hw.get(key):
+        for key in ("x3d_dual", "hybrid", "xeon", "old", "handheld", "laptop"):
+            if hw.get(key) and not (key == "laptop" and hw.get("handheld")):
                 f = QFrame()
                 f.setObjectName("bannerWarn" if key in ("x3d_dual", "old") else "bannerInfo")
                 fh = vbox(f, (18, 12, 18, 12), 3)

@@ -931,8 +931,11 @@ class HomePage(QWidget):
         head.addLayout(hv, 1)
         self.btn_an = button(tr("home.reanalyze"), None, main.run_analysis)
         head.addWidget(self.btn_an, 0, Qt.AlignmentFlag.AlignVCenter)
-        head.addWidget(button(tr("home.s.simple"), "ghost", lambda: main.apply_simple(True)), 0,
-                       Qt.AlignmentFlag.AlignVCenter)
+        # 7.2.1: кнопка в шапці — перемикач в обидва боки. Раніше в простому вигляді вона й далі казала «Простий
+        # вигляд» і нічого не робила, а «Усі можливості» губилася сірим текстом у кутку картки — люди думали, що
+        # назад не повернутися.
+        self.btn_view = button(tr("home.s.simple"), "ghost", lambda: main.apply_simple(not F.CFG["simple_ui"]))
+        head.addWidget(self.btn_view, 0, Qt.AlignmentFlag.AlignVCenter)
         v.addLayout(head)
 
         # сповіщення: пробний режим і сторож налаштувань
@@ -971,7 +974,7 @@ class HomePage(QWidget):
         sbh.addWidget(self.s_btn)
         sbh.addWidget(button(tr("home.s.lag"), None, lambda: main.go("diagnose")))
         sbh.addStretch()
-        sbh.addWidget(button(tr("home.s.full"), "ghost", lambda: main.apply_simple(False)))
+        sbh.addWidget(button(tr("home.s.full"), None, lambda: main.apply_simple(False)))  # 7.2.1: помітна кнопка
         stv.addLayout(sbh)
         sh.addLayout(stv, 1)
         sv.addLayout(sh)
@@ -1219,6 +1222,11 @@ class HomePage(QWidget):
 
     def set_simple(self, on: bool):
         self.simple.setVisible(on)
+        self.btn_view.setText(tr("home.s.full") if on else tr("home.s.simple"))
+        # у простому вигляді — звичайна обведена кнопка, щоб шлях назад було видно одразу
+        self.btn_view.setObjectName("" if on else "ghost")
+        self.btn_view.style().unpolish(self.btn_view)
+        self.btn_view.style().polish(self.btn_view)
         for w in (self.an_card, self.adv, self.ba_card, self.quick_box):
             w.setVisible(not on)
 

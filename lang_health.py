@@ -39,6 +39,23 @@ STRINGS = {
                        "функции раньше.",
                        "Update channel in Settings: Stable gets tested versions only, Beta gets new features "
                        "earlier."),
+    # ── «Що нового» 7.2.1 ──
+    "wn.721.handheld": ("Портативні консолі: ROG Ally, Legion Go, MSI Claw і Steam Deck з Windows розпізнаються "
+                        "самі (або виберіть «Портативна консоль» у майстрі). План — для ігор, без розгону процесора, що "
+                        "забирав би вати у відеокарти, і без змін, які ламають оверлей Armoury Crate чи Steam.",
+                        "Портативные консоли: ROG Ally, Legion Go, MSI Claw и Steam Deck с Windows распознаются сами "
+                        "(или выберите «Портативная консоль» в мастере). План — для игр, без разгона процессора, который "
+                        "забирал бы ватты у видеокарты, и без изменений, ломающих оверлей Armoury Crate или Steam.",
+                        "Handheld consoles: ROG Ally, Legion Go, MSI Claw and Steam Deck on Windows are detected "
+                        "automatically (or pick Handheld console in the wizard). The plan is built for games, doesn't "
+                        "push the CPU and steal watts from the GPU, and skips changes that break the Armoury Crate or "
+                        "Steam overlay."),
+    "wn.721.simple": ("Простий вигляд: кнопка в шапці дашборда тепер перемикає в обидва боки — «Усі можливості» "
+                      "повертає повне меню.",
+                      "Простой вид: кнопка в шапке дашборда теперь переключает в обе стороны — «Все возможности» "
+                      "возвращает полное меню.",
+                      "Simple view: the dashboard header button now works both ways — All features brings the full "
+                      "menu back."),
     # ── «Що нового» 7.1.1 ──
     "wn.711.safety": ("Безпека: OptimaX більше не довіряє папкам, куди може писати будь-яка програма (TEMP, "
                       "%LOCALAPPDATA%, кеш шейдерів), і не запускає програми за самим ім'ям.",

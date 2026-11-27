@@ -2,6 +2,50 @@
 
 Формат — за [Keep a Changelog](https://keepachangelog.com/uk/1.1.0/), версії — `VERSION` в `engine.py`.
 
+## [7.2.1] — 2026-11-27
+
+Підтримка портативних консолей на Windows і виправлення простого вигляду — обидва за відгуками користувачів.
+
+### Додано
+
+- **Портативна консоль** — новий тип пристрою в майстрі й на дашборді. ROG Ally / Ally X / ROG Xbox Ally, Legion Go,
+  MSI Claw, Steam Deck з Windows, AYANEO, OneXPlayer, AOKZOE, ZOTAC ZONE розпізнаються за виробником і моделлю
+  (лише точні назви й лише з батареєю); будь-який інший — вибором «Портативна консоль» у майстрі. Основа — профіль
+  ноутбука (батарея, нагрів), але: майстер одразу пропонує «Переважно ігри»; у плані немає змін, що підвищують
+  споживання процесора (`laptop_ac_max`, Turbo, мінімальний стан процесора тощо) — процесор і відеокарта APU ділять
+  один ліміт потужності, і такі зміни забирають вати у відеокарти; немає змін, що ламають звичне на консолі
+  (`fso_global` — оверлеї Armoury Crate / Steam і VRR працюють у вікні без рамки, `bg_apps_off` — фонові
+  завантаження Xbox-застосунку, `disable_mouse_accel` — джойстик у режимі миші, `disable_xbox_gamebar`); додано
+  `windowed_opt` (оптимізації для ігор у вікні, Windows 11). «Слабким ПК» консоль не вважається, навіть якщо частину
+  пам'яті забрала відеокарта. На сторінці платформи — пояснення: TDP і пам'ять під відеокарту задаються в Armoury
+  Crate SE / Legion Space, OptimaX їх не змінює.
+
+### Виправлено
+
+- **Простий вигляд:** після переходу в нього кнопка в шапці дашборда й далі казала «Простий вигляд» і нічого не
+  робила, а «Усі можливості» була малопомітним текстом у кутку картки — здавалося, що повернутися не можна. Тепер
+  кнопка в шапці перемикає в обидва боки («Усі можливості» в простому вигляді), а кнопка на картці — звичайна
+  обведена.
+
+<details>
+<summary>English</summary>
+
+**Added — Handheld console** as a device type in the wizard and on the dashboard. ROG Ally / Ally X / ROG Xbox Ally,
+Legion Go, MSI Claw, Steam Deck on Windows, AYANEO, OneXPlayer, AOKZOE and ZOTAC ZONE are detected by vendor and
+model (exact names only, battery required); anything else can be picked in the wizard. It builds on the laptop
+profile, but the wizard defaults to “Mostly games”; the plan leaves out changes that raise CPU power
+(`laptop_ac_max`, Turbo, minimum processor state…) because the APU's CPU and GPU share one power limit; it skips
+changes that break handheld habits (`fso_global` — Armoury Crate / Steam overlays and VRR work in borderless
+windows, `bg_apps_off` — Xbox app background downloads, `disable_mouse_accel` — stick-as-mouse, and
+`disable_xbox_gamebar`) and adds `windowed_opt` (Windows 11). A handheld is never treated as a low-end PC because the
+GPU reserved part of the RAM. The platform page explains that TDP and graphics memory are set in Armoury Crate SE /
+Legion Space and OptimaX doesn't touch them.
+
+**Fixed — Simple view:** the dashboard header button kept saying “Simple view” and did nothing once you were in it,
+and “All features” was faint text in the card corner, so there seemed to be no way back. The header button now
+toggles both ways and the card button is a regular outlined button.
+</details>
+
 ## [7.2.0] — 2026-11-26
 
 Аналоги GPU-Z і AIDA64 у Hardware Center, профілі для кожної гри, модуль миші, «Відновити winget» і канал

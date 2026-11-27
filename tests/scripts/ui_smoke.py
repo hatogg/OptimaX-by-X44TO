@@ -177,6 +177,13 @@ opt.back_from_review()
 w.go("home")
 setp.sw_simple.click()
 pump(timeout=0.1)
+# 7.2.1: кнопка в шапці дашборда — перемикач в обидва боки (раніше в простому вигляді вона не вела назад)
+home.btn_view.click()
+pump(timeout=0.1)
+st_s["header_toggle"] = [F.CFG["simple_ui"], home.simple.isVisible()]
+home.btn_view.click()
+pump(timeout=0.1)
+st_s["header_toggle"] += [F.CFG["simple_ui"], home.simple.isVisible(), home.an_card.isVisible()]
 st_s["restored"] = (all(w.nav.button(i).isVisible() == w.nav_visible(k) for i, k in enumerate(w.nav_keys))
                     and all(w.nav_visible(k) for k in w.nav_keys if k != "laptop") and home.an_card.isVisible()
                     and not home.simple.isVisible() and not F.CFG["simple_ui"])

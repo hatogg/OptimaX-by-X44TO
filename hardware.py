@@ -20,6 +20,18 @@ import hwnative as HN
 from i18n import tr
 
 LAPTOP_CHASSIS = {8, 9, 10, 14, 30, 31, 32}
+# 7.2.1: портативні консолі на Windows — за виробником і моделлю (Win32_ComputerSystem). Лише точні назви, без
+# здогадок: якщо модель не впізнано, користувач сам вибере «Портативна консоль» у майстрі.
+HANDHELD_MODEL = re.compile(r"ROG (?:Xbox )?Ally|\bRC7[123][A-Z]*\b|Legion Go|\bClaw\b|ONEXPLAYER|ONEXFLY|AOKZOE|"
+                            r"AYANEO|AYADEVICE|ZOTAC GAMING ZONE|GPD WIN", re.I)
+HANDHELD_EXACT = {("valve", "jupiter"), ("valve", "galileo"),  # Steam Deck LCD / OLED з Windows
+                  ("lenovo", "83e1")}  # Legion Go: Lenovo пише в модель лише код машини
+
+
+def is_handheld(vendor, model) -> bool:
+    vendor, model = str(vendor or "").strip(), str(model or "").strip()
+    first = (vendor.split() or [""])[0].lower()
+    return bool(HANDHELD_MODEL.search(f"{vendor} {model}")) or (first, model.lower()) in HANDHELD_EXACT
 VIRTUAL_GPU = r"Parsec|Virtual|Remote|Indirect|Microsoft Basic|RDP|SpaceDesk|Moonlight|Sunshine|AnyDesk|TeamViewer|VNC|Citrix|Meta"
 
 
@@ -299,6 +311,10 @@ def _finish(hw: dict) -> dict:
     else:
         hw["profile"] = "M"
     hw["device"] = {"O": "old", "X": "xeon", "T": "laptop", "M": "gaming"}[hw["profile"]]
+    # 7.2.1: портативна консоль — та сама основа, що й ноутбук (батарея, нагрів), але план свій (features.build_plan)
+    hw["handheld"] = bool(hw.get("battery")) and is_handheld(hw.get("vendor"), hw.get("model"))
+    if hw["handheld"] and hw["profile"] == "T":
+        hw["device"] = "handheld"
     hw["big_ram"] = hw["ram_gb"] >= 30
     hw["cores_mode"] = ("vcache" if hw.get("vcache_mask") else "numa" if hw.get("numa_mask") else
                         "pcores" if hw.get("p_mask") else None)

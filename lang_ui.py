@@ -111,6 +111,7 @@ STRINGS = {
     "dev.laptop": ("Ноутбук", "Ноутбук", "Laptop"),
     "dev.old": ("Старий / слабкий ПК", "Старый / слабый ПК", "Old / low-end PC"),
     "dev.xeon": ("Збірка на Xeon", "Сборка на Xeon", "Xeon build"),
+    "dev.handheld": ("Портативна консоль", "Портативная консоль", "Handheld console"),
     "home.build_check": ("Перевірка збірки", "Проверка сборки", "Build check"),
     "home.warns": ("Попереджень: {n}", "Предупреждений: {n}", "Warnings: {n}"),
     "home.tips": ("Порад: {n}", "Советов: {n}", "Tips: {n}"),
@@ -253,6 +254,11 @@ STRINGS = {
     "wz.device.laptop": ("Ноутбук", "Ноутбук", "Laptop"),
     "wz.device.laptop.d": ("Сучасний ноутбук: важливі батарея й нагрів.", "Современный ноутбук: важны батарея и нагрев.",
                            "A modern laptop: battery and heat matter."),
+    "wz.device.handheld": ("Портативна консоль", "Портативная консоль", "Handheld console"),
+    "wz.device.handheld.d": ("ROG Ally, Legion Go, MSI Claw, Steam Deck з Windows: переважно ігри, важливі батарея "
+                             "й нагрів.", "ROG Ally, Legion Go, MSI Claw, Steam Deck с Windows: в основном игры, "
+                             "важны батарея и нагрев.", "ROG Ally, Legion Go, MSI Claw, Steam Deck on Windows: mostly "
+                             "games, battery and heat matter."),
     "wz.device.old": ("Старий або слабкий ПК", "Старый или слабый ПК", "Old or low-end PC"),
     "wz.device.old.d": ("2–4 ГБ пам'яті, HDD, Celeron або Pentium — потрібна легкість.",
                         "2–4 ГБ памяти, HDD, Celeron или Pentium — нужна лёгкость.",
@@ -573,6 +579,19 @@ STRINGS = {
     "plat.old.d": ("Рекомендовано профіль «Старий ПК»: без анімацій, фонових програм і зайвих служб.",
                    "Рекомендуется профиль «Старый ПК»: без анимаций, фоновых программ и лишних служб.",
                    "The “Old PC” profile is recommended: no animations, background apps or extra services."),
+    "plat.handheld.t": ("Портативна консоль", "Портативная консоль", "Handheld console"),
+    "plat.handheld.d": ("Ліміт потужності (TDP) і пам'ять під відеокарту задаються в Armoury Crate SE чи Legion Space "
+                        "— OptimaX їх не змінює. Процесор і відеокарта ділять один ліміт, тож план не розганяє "
+                        "процесор, щоб не забрати вати у відеокарти. Найбільше на FPS тут впливають режим потужності "
+                        "(Turbo від зарядки) і роздільна здатність або FSR у самій грі.",
+                        "Лимит мощности (TDP) и память под видеокарту задаются в Armoury Crate SE или Legion Space — "
+                        "OptimaX их не меняет. Процессор и видеокарта делят один лимит, поэтому план не разгоняет "
+                        "процессор, чтобы не забрать ватты у видеокарты. Сильнее всего на FPS здесь влияют режим "
+                        "мощности (Turbo от зарядки) и разрешение или FSR в самой игре.",
+                        "The power limit (TDP) and graphics memory are set in Armoury Crate SE or Legion Space — "
+                        "OptimaX doesn't change them. The CPU and GPU share one power limit, so the plan doesn't push "
+                        "the CPU and steal watts from the GPU. Here FPS depends most on the power mode (Turbo while "
+                        "charging) and on resolution or FSR in the game itself."),
     "plat.laptop.t": ("Ноутбук", "Ноутбук", "Laptop"),
     "plat.laptop.d": ("Налаштування від мережі й батареї, холодний режим і звіт про батарею — у розділі «Ноутбук».",
                       "Настройки от сети и батареи, холодный режим и отчёт о батарее — в разделе «Ноутбук».",

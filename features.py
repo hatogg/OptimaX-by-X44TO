@@ -732,13 +732,22 @@ def import_profile(path: str) -> dict:
 
 # ───────────────────────── майстер (опитувальник) ─────────────────────────
 WIZARD = [
-    {"id": "device", "opts": ["gaming", "laptop", "old", "xeon"]},
+    {"id": "device", "opts": ["gaming", "laptop", "handheld", "old", "xeon"]},
     {"id": "usage", "opts": ["games", "mixed", "work"]},
     {"id": "goal", "opts": ["latency", "fps", "quiet"], "when": ("usage", ("games", "mixed"))},
     {"id": "av", "opts": ["defender", "other"]},
     {"id": "ms", "opts": ["onedrive", "xbox", "search", "copilot"], "multi": True},
 ]
-DEVICE_PROFILE = {"gaming": "M", "laptop": "T", "old": "O", "xeon": "X"}
+DEVICE_PROFILE = {"gaming": "M", "laptop": "T", "handheld": "T", "old": "O", "xeon": "X"}
+# 7.2.1: портативна консоль (ROG Ally, Legion Go, MSI Claw, Steam Deck з Windows). Основа — профіль ноутбука, але:
+# • без HOT: процесор і відеокарта APU ділять один ліміт потужності — «максимум процесора» забирає вати у
+#   відеокарти, і в іграх, що впираються у відеокарту, FPS падає. Сам ліміт (TDP) задає Armoury Crate SE /
+#   Legion Space — OptimaX його не чіпає;
+# • HANDHELD_SKIP — зміни, що ламають звичне на консолі: оверлеї Armoury Crate / Steam і VRR працюють у вікні без
+#   рамки (не в ексклюзивному повноекранному), Xbox-застосунок качає ігри у фоні, джойстик у режимі миші;
+# • HANDHELD_ADD — оптимізації для ігор у вікні без рамки (Windows 11): flip-модель, VRR, менша затримка.
+HANDHELD_SKIP = ["fso_global", "bg_apps_off", "disable_mouse_accel", "disable_xbox_gamebar"]
+HANDHELD_ADD = ["windowed_opt"]
 # 6.9: без мережевих змін (шутери працюють через UDP, а Nagle стосується лише TCP); з вимкненим прискоренням миші —
 # це звичка, тож її додає лише явно вибрана мета «мінімальна затримка»
 LATENCY = ["processor_idle", "timer_resolution", "dynamic_tick", "msi_gpu", "fso_global", "turbo_aggressive",
@@ -751,7 +760,9 @@ GAME_ONLY = ["disable_mouse_accel", "fso_global", "timer_resolution", "dynamic_t
 
 
 def wizard_defaults(hw: dict) -> dict:
-    return {"device": hw.get("device", "gaming"), "usage": "mixed", "goal": "fps", "av": "defender", "ms": []}
+    dev = hw.get("device", "gaming")
+    return {"device": dev, "usage": "games" if dev == "handheld" else "mixed", "goal": "fps", "av": "defender",
+            "ms": []}
 
 
 def build_plan(ans: dict, hw: dict) -> list:
@@ -769,6 +780,10 @@ def build_plan(ans: dict, hw: dict) -> list:
             ids.add("cool_mode")
     else:
         ids -= set(GAME_ONLY)
+    if ans.get("device") == "handheld":
+        ids -= set(HOT) | set(HANDHELD_SKIP)
+        if usage in ("games", "mixed"):
+            ids |= set(HANDHELD_ADD)
     # інший антивірус сам переводить Defender у пасивний режим; вимикати його політикою не можна — якщо той
     # антивірус колись видалять, ПК лишиться без жодного захисту
     ids.discard("disable_defender")

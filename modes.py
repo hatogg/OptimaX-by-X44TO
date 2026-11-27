@@ -61,6 +61,8 @@ def latest_bottleneck(cfg=None) -> dict:
 
 def lowend(hw: dict) -> bool:
     hw = hw or {}
+    if hw.get("device") == "handheld":  # 7.2.1: у консолі свій план; частину пам'яті забирає відеокарта APU
+        return False
     return hw.get("device") == "old" or (hw.get("ram_gb") or 16) <= 8 or bool(hw.get("hdd"))
 
 
@@ -76,7 +78,8 @@ def _base(mode: str, hw: dict) -> list:
     if mode == "lowend":
         return [t.id for t in E.TWEAKS if "O" in t.p]
     if mode == "gaming":
-        dev = "laptop" if laptop else hw.get("device") if hw.get("device") in ("gaming", "xeon") else "gaming"
+        dev = ("handheld" if hw.get("device") == "handheld" else "laptop" if laptop else
+               hw.get("device") if hw.get("device") in ("gaming", "xeon") else "gaming")
         ans = {"device": dev, "usage": "games", "goal": "fps", "av": "defender", "ms": []}
         return F.build_plan(ans, hw)
     return []
